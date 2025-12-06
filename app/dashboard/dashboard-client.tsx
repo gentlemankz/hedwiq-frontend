@@ -25,6 +25,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Video, Users } from "lucide-react";
 import { validateRoomId, sanitizeRoomId } from "@/lib/validation";
+import { getInitials } from "@/lib/utils";
 import type { User } from "@/types/user";
 
 /**
@@ -41,18 +42,6 @@ function generateRoomId(): string {
       ).join("")
     )
     .join("-");
-}
-
-/**
- * Returns initials from a name (max 2 characters)
- */
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 }
 
 export function DashboardClient({ user }: { user: User }) {

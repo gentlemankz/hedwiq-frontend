@@ -68,6 +68,9 @@ function checkRateLimit(userId: string): { allowed: boolean; retryAfter?: number
 /** Token TTL - short-lived tokens as recommended by LiveKit */
 const TOKEN_TTL = "5m";
 
+/** Default transcription agent name for room dispatch */
+const TRANSCRIPTION_AGENT_NAME = process.env.LIVEKIT_TRANSCRIPTION_AGENT?.trim() || "transcription-agent";
+
 interface TokenParams {
   userId: string;
   userName: string;
@@ -135,7 +138,7 @@ async function createRoomToken(params: TokenParams): Promise<{
   at.roomConfig = new RoomConfiguration({
     agents: [
       new RoomAgentDispatch({
-        agentName: "transcription-agent",
+        agentName: TRANSCRIPTION_AGENT_NAME,
       }),
     ],
   });
@@ -207,13 +210,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: roomValidation.error }, { status: 400 });
     }
 
-    // Validate display name if provided
-    if (displayName) {
-      const usernameValidation = validateUsername(displayName);
-      if (!usernameValidation.isValid) {
-        return NextResponse.json({ error: usernameValidation.error }, { status: 400 });
-      }
-    }
+    // Note: displayName validation is handled by createRoomToken
 
     // Generate token using shared helper
     const result = await createRoomToken({

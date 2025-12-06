@@ -1,12 +1,90 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { useRoomContext, useParticipants } from "@livekit/components-react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
+import { useRoomContext } from "@livekit/components-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, getInitials, getHashedColor } from "@/lib/utils";
 import { FileText, ChevronDown, X } from "lucide-react";
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** LiveKit transcription topic name */
+const TRANSCRIPTION_TOPIC = "lk.transcription";
+
+/** Maximum number of transcription entries to keep in memory */
+const MAX_ENTRIES = 500;
+
+/** Scroll threshold in pixels to determine if user is at bottom */
+const SCROLL_THRESHOLD = 50;
+
+// ============================================================================
+// Custom Hooks
+// ============================================================================
+
+/**
+ * Custom hook for auto-scroll behavior with manual scroll detection
+ */
+function useAutoScroll(deps: React.DependencyList) {
+  const scrollContainerRef = useRef<Element | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  // Auto-scroll to bottom when dependencies change
+  useEffect(() => {
+    if (autoScroll && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop =
+        scrollContainerRef.current.scrollHeight;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoScroll, ...deps]);
+
+  // Handle scroll events to detect manual scrolling
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    const isAtBottom =
+      target.scrollHeight - target.scrollTop - target.clientHeight <
+      SCROLL_THRESHOLD;
+    setAutoScroll(isAtBottom);
+  }, []);
+
+  // Scroll to bottom and re-enable auto-scroll
+  const scrollToBottom = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop =
+        scrollContainerRef.current.scrollHeight;
+      setAutoScroll(true);
+    }
+  }, []);
+
+  // Ref callback to capture the scroll container element
+  const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      scrollContainerRef.current = node.querySelector(
+        "[data-radix-scroll-area-viewport]"
+      );
+    }
+  }, []);
+
+  return {
+    autoScroll,
+    handleScroll,
+    scrollToBottom,
+    setScrollContainer,
+  };
+}
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface TranscriptionEntry {
   id: string;
@@ -17,65 +95,90 @@ interface TranscriptionEntry {
   isFinal: boolean;
 }
 
+interface TextStreamReader {
+  info: {
+    id: string;
+    timestamp?: number;
+    attributes?: Record<string, string>;
+  };
+  readAll: () => Promise<string>;
+  [Symbol.asyncIterator]: () => AsyncIterator<string>;
+}
+
+interface ParticipantInfo {
+  identity: string;
+}
+
 interface TranscriptionSidebarProps {
   className?: string;
   onClose?: () => void;
 }
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export function TranscriptionSidebar({
   className,
   onClose,
 }: TranscriptionSidebarProps) {
   const room = useRoomContext();
-  const participants = useParticipants();
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [entries, setEntries] = useState<TranscriptionEntry[]>([]);
+  const isMountedRef = useRef(true);
 
-  // Memoize participant map for name lookups
-  const participantMap = useMemo(() => {
-    return new Map(
-      participants.map((p) => [p.identity, p.name || p.identity])
-    );
-  }, [participants]);
+  // Use Map for O(1) entry lookups by segment ID
+  const [entriesMap, setEntriesMap] = useState<Map<string, TranscriptionEntry>>(
+    () => new Map()
+  );
 
-  // Register text stream handler directly on the room
+  // Track mounted state to prevent state updates after unmount
   useEffect(() => {
-    if (!room) return;
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-    console.log("=== Registering lk.transcription handler ===");
+  // Convert Map to sorted array and split into final/interim in single pass
+  const { sortedEntries, finalEntries, interimEntries } = useMemo(() => {
+    const sorted = Array.from(entriesMap.values()).sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
+    const final: TranscriptionEntry[] = [];
+    const interim: TranscriptionEntry[] = [];
+    for (const entry of sorted) {
+      (entry.isFinal ? final : interim).push(entry);
+    }
+    return { sortedEntries: sorted, finalEntries: final, interimEntries: interim };
+  }, [entriesMap]);
 
-    const handleTextStream = async (
-      reader: {
-        info: {
-          id: string;
-          timestamp?: number;
-          attributes?: Record<string, string>;
-        };
-        readAll: () => Promise<string>;
-        [Symbol.asyncIterator]: () => AsyncIterator<string>;
-      },
-      participantInfo: { identity: string }
-    ) => {
-      const attrs = reader.info.attributes || {};
+  // Use custom auto-scroll hook
+  const { autoScroll, handleScroll, scrollToBottom, setScrollContainer } =
+    useAutoScroll([sortedEntries]);
+
+  // Handle text stream from transcription agent
+  const handleTextStream = useCallback(
+    async (reader: TextStreamReader, participantInfo: ParticipantInfo) => {
+      const attrs = reader.info.attributes ?? {};
       const segmentId = attrs["lk.segment_id"] || reader.info.id;
       const isFinal = attrs["lk.transcription_final"] === "true";
-      const speakerIdentity = attrs["speaker_identity"] || participantInfo.identity;
-      const speakerName = attrs["speaker_name"] || speakerIdentity;
+      const speakerIdentity =
+        attrs["speaker_identity"]?.trim() || participantInfo.identity;
+      const speakerName =
+        attrs["speaker_name"]?.trim() || speakerIdentity || "Unknown";
 
-      console.log("=== TEXT STREAM RECEIVED ===", {
-        segmentId,
-        isFinal,
-        speakerIdentity,
-        speakerName,
-        participantIdentity: participantInfo.identity,
-        streamId: reader.info.id,
-      });
+      let text: string;
+      try {
+        text = await reader.readAll();
+      } catch (err) {
+        // Stream failed - silently ignore to prevent UI disruption
+        if (process.env.NODE_ENV === "development") {
+          console.error("Failed to read transcription stream:", err);
+        }
+        return;
+      }
 
-      // Read all text from the stream
-      const text = await reader.readAll();
-
-      console.log("=== TEXT CONTENT ===", { segmentId, text, isFinal });
+      // Check if component is still mounted before updating state
+      if (!isMountedRef.current) return;
 
       if (!text.trim()) return;
 
@@ -84,114 +187,46 @@ export function TranscriptionSidebar({
         participantIdentity: speakerIdentity,
         participantName: speakerName,
         text,
-        timestamp: reader.info.timestamp || Date.now(),
+        timestamp: reader.info.timestamp ?? Date.now(),
         isFinal,
       };
 
-      setEntries((prev) => {
-        // Find existing entry with same segment ID
-        const existingIndex = prev.findIndex((e) => e.id === segmentId);
+      setEntriesMap((prev) => {
+        const existing = prev.get(segmentId);
 
-        if (existingIndex !== -1) {
-          // Update existing entry
-          const existing = prev[existingIndex];
-          // Only update if: new text is longer, or replacing interim with final
-          if (isFinal || text.length > existing.text.length) {
-            const updated = [...prev];
-            updated[existingIndex] = entry;
-            console.log("=== UPDATED ENTRY ===", { segmentId, text });
-            return updated;
-          }
+        // Only update if: new text is longer, or replacing interim with final
+        if (existing && !isFinal && text.length <= existing.text.length) {
           return prev;
-        } else {
-          // Add new entry
-          console.log("=== NEW ENTRY ADDED ===", { segmentId, text, totalEntries: prev.length + 1 });
-          return [...prev, entry].sort((a, b) => a.timestamp - b.timestamp);
         }
-      });
-    };
 
-    // Register the handler
-    room.registerTextStreamHandler("lk.transcription", handleTextStream);
-    console.log("=== Handler registered for lk.transcription ===");
+        const updated = new Map(prev);
+        updated.set(segmentId, entry);
+
+        // Prune oldest entries if exceeding limit
+        if (updated.size > MAX_ENTRIES) {
+          const entriesByTime = Array.from(updated.entries()).sort(
+            ([, a], [, b]) => a.timestamp - b.timestamp
+          );
+          const toRemove = entriesByTime.slice(0, updated.size - MAX_ENTRIES);
+          toRemove.forEach(([id]) => updated.delete(id));
+        }
+
+        return updated;
+      });
+    },
+    []
+  );
+
+  // Register text stream handler
+  useEffect(() => {
+    if (!room) return;
+
+    room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, handleTextStream);
 
     return () => {
-      console.log("=== Unregistering lk.transcription handler ===");
-      room.unregisterTextStreamHandler("lk.transcription");
+      room.unregisterTextStreamHandler(TRANSCRIPTION_TOPIC);
     };
-  }, [room]);
-
-  // Auto-scroll to bottom when new transcriptions arrive
-  useEffect(() => {
-    if (autoScroll && scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector(
-        "[data-radix-scroll-area-viewport]"
-      );
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      }
-    }
-  }, [entries, autoScroll]);
-
-  // Handle scroll events to detect manual scrolling
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement;
-    const isAtBottom =
-      target.scrollHeight - target.scrollTop - target.clientHeight < 50;
-    setAutoScroll(isAtBottom);
-  }, []);
-
-  // Scroll to bottom button handler
-  const scrollToBottom = useCallback(() => {
-    if (scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector(
-        "[data-radix-scroll-area-viewport]"
-      );
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight;
-        setAutoScroll(true);
-      }
-    }
-  }, []);
-
-  // Get initials for avatar fallback
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
-  // Get a consistent color for each participant
-  const getParticipantColor = (identity: string) => {
-    const colors = [
-      "bg-blue-500",
-      "bg-green-500",
-      "bg-purple-500",
-      "bg-orange-500",
-      "bg-pink-500",
-      "bg-cyan-500",
-      "bg-yellow-500",
-      "bg-red-500",
-    ];
-    let hash = 0;
-    for (let i = 0; i < identity.length; i++) {
-      hash = identity.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return colors[Math.abs(hash) % colors.length];
-  };
-
-  // Get final entries as individual messages (no grouping - each sentence is separate)
-  const finalEntries = useMemo(() => {
-    return entries.filter(e => e.isFinal);
-  }, [entries]);
-
-  // Get the current interim transcription (if any)
-  const interimEntry = useMemo(() => {
-    return entries.find(e => !e.isFinal);
-  }, [entries]);
+  }, [room, handleTextStream]);
 
   return (
     <div
@@ -203,7 +238,7 @@ export function TranscriptionSidebar({
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
-          <FileText className="h-5 w-5 text-muted-foreground" />
+          <FileText className="size-5 text-muted-foreground" />
           <h2 className="font-semibold">Transcription</h2>
           {finalEntries.length > 0 && (
             <span className="text-xs text-muted-foreground">
@@ -215,24 +250,21 @@ export function TranscriptionSidebar({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="size-8"
             onClick={onClose}
           >
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </Button>
         )}
       </div>
 
       {/* Transcription content */}
-      <div className="relative flex-1" ref={scrollAreaRef}>
-        <ScrollArea
-          className="h-full"
-          onScrollCapture={handleScroll}
-        >
+      <div className="relative flex-1" ref={setScrollContainer}>
+        <ScrollArea className="h-full" onScrollCapture={handleScroll}>
           <div className="space-y-4 p-4">
-            {finalEntries.length === 0 && !interimEntry ? (
+            {finalEntries.length === 0 && interimEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                <FileText className="mb-2 h-8 w-8 opacity-50" />
+                <FileText className="mb-2 size-8 opacity-50" />
                 <p className="text-sm">No transcriptions yet</p>
                 <p className="text-xs">
                   Transcriptions will appear here as people speak
@@ -240,66 +272,33 @@ export function TranscriptionSidebar({
               </div>
             ) : (
               <>
+                {/* Final transcriptions */}
                 {finalEntries.map((entry) => (
-                  <div key={entry.id} className="flex gap-3">
-                    <Avatar className="h-8 w-8 shrink-0">
-                      <AvatarFallback
-                        className={cn(
-                          "text-xs text-white",
-                          getParticipantColor(entry.participantIdentity)
-                        )}
-                      >
-                        {getInitials(entry.participantName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium leading-none">
-                        {entry.participantName}
-                      </p>
-                      <p className="text-sm text-foreground">
-                        {entry.text}
-                      </p>
-                    </div>
-                  </div>
+                  <TranscriptionMessage key={entry.id} entry={entry} />
                 ))}
-                {/* Show interim transcription with typing indicator */}
-                {interimEntry && (
-                  <div className="flex gap-3 opacity-60">
-                    <Avatar className="h-8 w-8 shrink-0">
-                      <AvatarFallback
-                        className={cn(
-                          "text-xs text-white",
-                          getParticipantColor(interimEntry.participantIdentity)
-                        )}
-                      >
-                        {getInitials(interimEntry.participantName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium leading-none">
-                        {interimEntry.participantName}
-                        <span className="ml-2 text-xs text-muted-foreground italic">typing...</span>
-                      </p>
-                      <p className="text-sm text-foreground italic">
-                        {interimEntry.text}
-                      </p>
-                    </div>
-                  </div>
-                )}
+
+                {/* Interim transcriptions (multiple speakers supported) */}
+                {interimEntries.map((entry) => (
+                  <TranscriptionMessage
+                    key={entry.id}
+                    entry={entry}
+                    isInterim
+                  />
+                ))}
               </>
             )}
           </div>
         </ScrollArea>
 
         {/* Scroll to bottom button */}
-        {!autoScroll && entries.length > 0 && (
+        {!autoScroll && sortedEntries.length > 0 && (
           <Button
             variant="secondary"
             size="sm"
             className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg"
             onClick={scrollToBottom}
           >
-            <ChevronDown className="mr-1 h-4 w-4" />
+            <ChevronDown className="mr-1 size-4" />
             New messages
           </Button>
         )}
@@ -307,3 +306,45 @@ export function TranscriptionSidebar({
     </div>
   );
 }
+
+// ============================================================================
+// Sub-components
+// ============================================================================
+
+interface TranscriptionMessageProps {
+  entry: TranscriptionEntry;
+  isInterim?: boolean;
+}
+
+const TranscriptionMessage = React.memo(function TranscriptionMessage({
+  entry,
+  isInterim,
+}: TranscriptionMessageProps) {
+  return (
+    <div className={cn("flex gap-3", isInterim && "opacity-60")}>
+      <Avatar className="size-8 shrink-0">
+        <AvatarFallback
+          className={cn(
+            "text-xs text-white",
+            getHashedColor(entry.participantIdentity)
+          )}
+        >
+          {getInitials(entry.participantName)}
+        </AvatarFallback>
+      </Avatar>
+      <div className="flex-1 space-y-1">
+        <p className="text-sm font-medium leading-none">
+          {entry.participantName}
+          {isInterim && (
+            <span className="ml-2 text-xs text-muted-foreground italic">
+              typing...
+            </span>
+          )}
+        </p>
+        <p className={cn("text-sm text-foreground", isInterim && "italic")}>
+          {entry.text}
+        </p>
+      </div>
+    </div>
+  );
+});
