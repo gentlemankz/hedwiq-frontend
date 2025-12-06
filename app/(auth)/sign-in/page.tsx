@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-export default function SignInPage() {
+function SignInContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
@@ -106,5 +106,29 @@ export default function SignInPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl font-bold">Welcome to Hedwiq</CardTitle>
+              <CardDescription>
+                Sign in to start your AI-powered meetings
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex justify-center py-8">
+              <div className="size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+            </CardContent>
+          </Card>
+        </div>
+      }
+    >
+      <SignInContent />
+    </Suspense>
   );
 }
