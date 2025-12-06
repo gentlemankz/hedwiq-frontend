@@ -1,125 +1,162 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useCallback } from "react";
+import { LocalUserChoices } from "@livekit/components-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Spinner } from "@/components/ui/spinner";
-import { Video, Mic, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { useMediaDevices } from "@/hooks/use-media-devices";
+import { sanitizeUsername } from "@/lib/validation";
+import type { User } from "@/types/user";
+import { VideoPreview } from "./components/video-preview";
+import { MediaControls } from "./components/media-controls";
+import { UsernameForm } from "./components/username-form";
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  image?: string | null;
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface UserChoices extends LocalUserChoices {
+  userId: string;
+  userImage?: string | null;
 }
 
 interface PreJoinScreenProps {
   roomId: string;
   user: User;
-  onJoin: () => void;
+  onSubmit: (choices: UserChoices) => void;
   isConnecting: boolean;
   error: string | null;
 }
 
+// ============================================================================
+// Component
+// ============================================================================
+
+/**
+ * Pre-join screen for configuring media devices before joining a meeting.
+ * Split into subcomponents for better maintainability:
+ * - VideoPreview: Camera feed preview
+ * - MediaControls: Camera/mic toggle buttons and device selectors
+ * - UsernameForm: Display name input and join button
+ */
 export function PreJoinScreen({
   roomId,
   user,
-  onJoin,
+  onSubmit,
   isConnecting,
   error,
 }: PreJoinScreenProps) {
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
+  // Use custom hook for media device management
+  const {
+    videoEnabled,
+    videoStream,
+    videoDevices,
+    selectedVideoDevice,
+    audioEnabled,
+    audioDevices,
+    selectedAudioDevice,
+    toggleVideo,
+    toggleAudio,
+    setSelectedVideoDevice,
+    setSelectedAudioDevice,
+    permissionError,
+    isTogglingVideo,
+    isTogglingAudio,
+    stopAllStreams,
+  } = useMediaDevices();
+
+  // Handle form submission - combines username with device settings
+  const handleUsernameSubmit = useCallback(
+    (username: string) => {
+      // Stop preview stream before joining
+      stopAllStreams();
+
+      onSubmit({
+        username: sanitizeUsername(username),
+        videoEnabled,
+        audioEnabled,
+        videoDeviceId: selectedVideoDevice,
+        audioDeviceId: selectedAudioDevice,
+        userId: user.id,
+        userImage: user.image,
+      });
+    },
+    [
+      videoEnabled,
+      audioEnabled,
+      selectedVideoDevice,
+      selectedAudioDevice,
+      user.id,
+      user.image,
+      stopAllStreams,
+      onSubmit,
+    ]
+  );
+
+  // Combine error messages - show only one at a time
+  const displayError = error || permissionError;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Join Meeting</CardTitle>
-          <CardDescription>
-            Room: <span className="font-mono font-medium">{roomId}</span>
-          </CardDescription>
-        </CardHeader>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
+      {/* Header with room info and back button */}
+      <div className="mb-6 flex w-full max-w-2xl items-center justify-between">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/dashboard">
+            <ArrowLeft className="mr-2 size-4" />
+            Back to Dashboard
+          </Link>
+        </Button>
+        <div className="text-sm text-muted-foreground">
+          Room: <span className="font-mono font-medium">{roomId}</span>
+        </div>
+      </div>
 
-        <CardContent className="space-y-6">
-          {/* User info */}
-          <div className="flex items-center justify-center gap-3">
-            <Avatar className="size-12">
-              <AvatarImage src={user.image || undefined} alt={user.name} />
-              <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{user.name}</p>
-              <p className="text-sm text-muted-foreground">{user.email}</p>
-            </div>
-          </div>
+      {/* Error messages */}
+      {displayError && (
+        <Alert variant="destructive" className="mb-4 w-full max-w-2xl">
+          <AlertCircle className="size-4" />
+          <AlertDescription>{displayError}</AlertDescription>
+        </Alert>
+      )}
 
-          {/* Media info */}
-          <div className="rounded-lg border bg-muted/50 p-4">
-            <p className="mb-3 text-center text-sm text-muted-foreground">
-              After joining, you can enable:
-            </p>
-            <div className="flex justify-center gap-6">
-              <div className="flex items-center gap-2">
-                <Video className="size-5 text-muted-foreground" />
-                <span className="text-sm">Camera</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Mic className="size-5 text-muted-foreground" />
-                <span className="text-sm">Microphone</span>
-              </div>
-            </div>
-            <p className="mt-2 text-center text-xs text-muted-foreground">
-              Use the control bar to toggle your devices
-            </p>
-          </div>
+      {/* Main PreJoin Card */}
+      <div className="w-full max-w-2xl rounded-lg border bg-card p-6 shadow-sm">
+        <div className="space-y-6">
+          {/* Video Preview */}
+          <VideoPreview videoEnabled={videoEnabled} videoStream={videoStream} />
 
-          {/* Error message */}
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="size-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
+          {/* Media Controls */}
+          <MediaControls
+            videoEnabled={videoEnabled}
+            videoDevices={videoDevices}
+            selectedVideoDevice={selectedVideoDevice}
+            isTogglingVideo={isTogglingVideo}
+            onToggleVideo={toggleVideo}
+            onVideoDeviceChange={setSelectedVideoDevice}
+            audioEnabled={audioEnabled}
+            audioDevices={audioDevices}
+            selectedAudioDevice={selectedAudioDevice}
+            isTogglingAudio={isTogglingAudio}
+            onToggleAudio={toggleAudio}
+            onAudioDeviceChange={setSelectedAudioDevice}
+          />
 
-        <CardFooter className="flex flex-col gap-3">
-          <Button
-            onClick={onJoin}
-            disabled={isConnecting}
-            className="w-full"
-            size="lg"
-          >
-            {isConnecting ? (
-              <>
-                <Spinner className="mr-2 size-4" />
-                Joining...
-              </>
-            ) : (
-              "Join Meeting"
-            )}
-          </Button>
+          {/* Username Input and Join Button */}
+          <UsernameForm
+            initialUsername={user.name}
+            isConnecting={isConnecting}
+            isValid={true}
+            onSubmit={handleUsernameSubmit}
+          />
+        </div>
+      </div>
 
-          <Button variant="ghost" asChild className="w-full">
-            <Link href="/dashboard">Back to Dashboard</Link>
-          </Button>
-        </CardFooter>
-      </Card>
+      {/* User info hint */}
+      <p className="mt-4 text-center text-sm text-muted-foreground">
+        Joining as <span className="font-medium">{user.email}</span>
+      </p>
     </div>
   );
 }

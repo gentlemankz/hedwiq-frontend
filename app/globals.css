@@ -121,35 +121,120 @@
   }
 }
 
-/* LiveKit theme overrides - map to shadcn colors */
-[data-lk-theme] {
-  --lk-bg: var(--background);
-  --lk-bg2: var(--card);
-  --lk-bg3: var(--muted);
-  --lk-bg4: var(--secondary);
-  --lk-bg5: var(--accent);
-  --lk-fg: var(--foreground);
-  --lk-fg2: var(--muted-foreground);
-  --lk-fg3: var(--muted-foreground);
-  --lk-fg4: var(--muted-foreground);
-  --lk-fg5: var(--muted-foreground);
-  --lk-border-color: var(--border);
-  --lk-accent-bg: var(--primary);
-  --lk-accent-fg: var(--primary-foreground);
-  --lk-accent2: var(--primary);
-  --lk-accent3: var(--primary);
-  --lk-accent4: var(--primary);
-  --lk-danger: var(--destructive);
-  --lk-danger-fg: var(--primary-foreground);
-  --lk-success: oklch(0.6 0.118 184.704);
-  --lk-success-fg: var(--primary-foreground);
-  --lk-control-bg: var(--secondary);
-  --lk-control-fg: var(--secondary-foreground);
-  --lk-control-hover-bg: var(--accent);
-  --lk-control-active-bg: var(--muted);
-  --lk-control-active-hover-bg: var(--accent);
+/* ============================================================================
+   LiveKit Theme Overrides
+   Maps LiveKit CSS variables to shadcn design tokens for consistent theming.
+   ============================================================================ */
+
+/* Base LiveKit theme - shared variables for both light and dark modes */
+[data-lk-theme="default"] {
+  /* Shared variables that don't change between themes */
   --lk-border-radius: var(--radius);
-  --lk-font-family: var(--font-sans);
-  --lk-box-shadow: 0 0.5rem 1.5rem oklch(0 0 0 / 15%);
-  --lk-drop-shadow: oklch(1 0 0 / 20%) 0px 0px 24px;
+  --lk-font-family: var(--font-geist-sans), system-ui, sans-serif;
+
+  /* Status colors - consistent across themes */
+  --lk-success: hsl(160 60% 45%);
+  --lk-success-fg: hsl(0 0% 98%);
+
+  /* Light mode colors (default) */
+  /* Background colors */
+  --lk-bg: hsl(0 0% 100%);
+  --lk-bg2: hsl(0 0% 100%);
+  --lk-bg3: hsl(0 0% 96%);
+  --lk-bg4: hsl(0 0% 96%);
+  --lk-bg5: hsl(0 0% 96%);
+
+  /* Foreground colors */
+  --lk-fg: hsl(0 0% 9%);
+  --lk-fg2: hsl(0 0% 45%);
+  --lk-fg3: hsl(0 0% 45%);
+  --lk-fg4: hsl(0 0% 45%);
+  --lk-fg5: hsl(0 0% 45%);
+
+  /* Border */
+  --lk-border-color: hsl(0 0% 90%);
+
+  /* Accent colors */
+  --lk-accent-bg: hsl(0 0% 13%);
+  --lk-accent-fg: hsl(0 0% 98%);
+  --lk-accent2: hsl(0 0% 13%);
+  --lk-accent3: hsl(0 0% 13%);
+  --lk-accent4: hsl(0 0% 13%);
+
+  /* Danger/destructive colors */
+  --lk-danger: hsl(0 84% 60%);
+  --lk-danger-fg: hsl(0 0% 98%);
+
+  /* Control colors */
+  --lk-control-bg: hsl(0 0% 96%);
+  --lk-control-fg: hsl(0 0% 13%);
+  --lk-control-hover-bg: hsl(0 0% 90%);
+  --lk-control-active-bg: hsl(0 0% 13%);
+  --lk-control-active-fg: hsl(0 0% 98%);
+  --lk-control-active-hover-bg: hsl(0 0% 20%);
+
+  /* Shadows */
+  --lk-box-shadow: 0 0.5rem 1.5rem hsl(0 0% 0% / 15%);
+  --lk-drop-shadow: hsl(0 0% 100% / 20%) 0px 0px 24px;
+}
+
+/* Dark mode overrides - only specify values that differ from light mode */
+.dark [data-lk-theme="default"] {
+  /* Background colors */
+  --lk-bg: hsl(0 0% 9%);
+  --lk-bg2: hsl(0 0% 13%);
+  --lk-bg3: hsl(0 0% 17%);
+  --lk-bg4: hsl(0 0% 17%);
+  --lk-bg5: hsl(0 0% 17%);
+
+  /* Foreground colors */
+  --lk-fg: hsl(0 0% 98%);
+  --lk-fg2: hsl(0 0% 64%);
+  --lk-fg3: hsl(0 0% 64%);
+  --lk-fg4: hsl(0 0% 64%);
+  --lk-fg5: hsl(0 0% 64%);
+
+  /* Border */
+  --lk-border-color: hsl(0 0% 100% / 10%);
+
+  /* Accent colors - inverted for dark mode */
+  --lk-accent-bg: hsl(0 0% 90%);
+  --lk-accent-fg: hsl(0 0% 13%);
+  --lk-accent2: hsl(0 0% 90%);
+  --lk-accent3: hsl(0 0% 90%);
+  --lk-accent4: hsl(0 0% 90%);
+
+  /* Danger - slightly adjusted for dark mode */
+  --lk-danger: hsl(0 72% 51%);
+
+  /* Control colors - inverted for dark mode */
+  --lk-control-bg: hsl(0 0% 17%);
+  --lk-control-fg: hsl(0 0% 98%);
+  --lk-control-hover-bg: hsl(0 0% 22%);
+  --lk-control-active-bg: hsl(0 0% 90%);
+  --lk-control-active-fg: hsl(0 0% 13%);
+  --lk-control-active-hover-bg: hsl(0 0% 80%);
+
+  /* Shadows - darker for dark mode */
+  --lk-box-shadow: 0 0.5rem 1.5rem hsl(0 0% 0% / 30%);
+  --lk-drop-shadow: hsl(0 0% 0% / 40%) 0px 0px 24px;
+}
+
+/* ============================================================================
+   LiveKit Component Styles
+   ============================================================================ */
+
+/* Ensure LiveKit room container takes full height */
+.lk-room-container {
+  height: 100%;
+}
+
+/* Style the focus ring on LiveKit buttons to match shadcn */
+[data-lk-theme="default"] .lk-button:focus-visible {
+  outline: 2px solid hsl(0 0% 64%);
+  outline-offset: 2px;
+}
+
+.dark [data-lk-theme="default"] .lk-button:focus-visible {
+  outline: 2px solid hsl(0 0% 45%);
 }
