@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AccessToken } from "livekit-server-sdk";
+import { RoomConfiguration, RoomAgentDispatch } from "@livekit/protocol";
 import { randomBytes } from "crypto";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
@@ -128,6 +129,15 @@ async function createRoomToken(params: TokenParams): Promise<{
     canPublishData: true,
     canSubscribe: true,
     canUpdateOwnMetadata: true,
+  });
+
+  // Configure room to dispatch transcription agent when participant joins
+  at.roomConfig = new RoomConfiguration({
+    agents: [
+      new RoomAgentDispatch({
+        agentName: "transcription-agent",
+      }),
+    ],
   });
 
   const token = await at.toJwt();

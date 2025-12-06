@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { LiveKitRoom, VideoConference } from "@livekit/components-react";
+import { LiveKitRoom } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { RoomOptions, VideoPresets } from "livekit-client";
 import { PreJoinScreen, UserChoices } from "./pre-join-screen";
+import { MeetingLayout } from "./components/meeting-layout";
 import type { User } from "@/types/user";
 
 interface MeetingRoomProps {
@@ -168,7 +169,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
           console.error("Media device failure:", failure);
         }}
       >
-        <VideoConference />
+        <MeetingLayout showTranscription={true} />
       </LiveKitRoom>
     </div>
   );
