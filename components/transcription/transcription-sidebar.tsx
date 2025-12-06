@@ -12,7 +12,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn, getInitials, getHashedColor } from "@/lib/utils";
-import { FileText, ChevronDown, X } from "lucide-react";
+import { FileText, ChevronDown } from "lucide-react";
+import { useInsights } from "@/hooks/use-insights";
+import { InsightBadge } from "@/components/insights/insight-badge";
+import type { Insight } from "@/types/insight";
 
 // ============================================================================
 // Constants
@@ -111,7 +114,8 @@ interface ParticipantInfo {
 
 interface TranscriptionSidebarProps {
   className?: string;
-  onClose?: () => void;
+  /** Callback when an insight is clicked */
+  onInsightClick?: (insight: Insight) => void;
 }
 
 // ============================================================================
@@ -120,7 +124,7 @@ interface TranscriptionSidebarProps {
 
 export function TranscriptionSidebar({
   className,
-  onClose,
+  onInsightClick,
 }: TranscriptionSidebarProps) {
   const room = useRoomContext();
   const isMountedRef = useRef(true);
@@ -129,6 +133,9 @@ export function TranscriptionSidebar({
   const [entriesMap, setEntriesMap] = useState<Map<string, TranscriptionEntry>>(
     () => new Map()
   );
+
+  // Get insights from the hook
+  const { getInsightsForTranscript } = useInsights();
 
   // Track mounted state to prevent state updates after unmount
   useEffect(() => {
@@ -221,88 +228,83 @@ export function TranscriptionSidebar({
   useEffect(() => {
     if (!room) return;
 
-    room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, handleTextStream);
+    // Unregister first in case of React StrictMode double-mount
+    try {
+      room.unregisterTextStreamHandler(TRANSCRIPTION_TOPIC);
+    } catch {
+      // Handler wasn't registered yet, ignore
+    }
+
+    try {
+      room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, handleTextStream);
+    } catch (err) {
+      console.warn("Failed to register transcription stream handler:", err);
+    }
 
     return () => {
-      room.unregisterTextStreamHandler(TRANSCRIPTION_TOPIC);
+      try {
+        room.unregisterTextStreamHandler(TRANSCRIPTION_TOPIC);
+      } catch {
+        // Already unregistered, ignore
+      }
     };
   }, [room, handleTextStream]);
 
   return (
     <div
       className={cn(
-        "flex h-full flex-col border-l bg-background",
+        "relative h-full bg-background",
         className
       )}
+      ref={setScrollContainer}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <FileText className="size-5 text-muted-foreground" />
-          <h2 className="font-semibold">Transcription</h2>
-          {finalEntries.length > 0 && (
-            <span className="text-xs text-muted-foreground">
-              ({finalEntries.length} messages)
-            </span>
+      <ScrollArea className="h-full" onScrollCapture={handleScroll}>
+        <div className="space-y-4 p-4">
+          {finalEntries.length === 0 && interimEntries.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+              <FileText className="mb-2 size-8 opacity-50" />
+              <p className="text-sm">No transcriptions yet</p>
+              <p className="text-xs">
+                Transcriptions will appear here as people speak
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Final transcriptions */}
+              {finalEntries.map((entry) => (
+                <TranscriptionMessage
+                  key={entry.id}
+                  entry={entry}
+                  insights={getInsightsForTranscript(entry.id)}
+                  onInsightClick={onInsightClick}
+                />
+              ))}
+
+              {/* Interim transcriptions (multiple speakers supported) */}
+              {interimEntries.map((entry) => (
+                <TranscriptionMessage
+                  key={entry.id}
+                  entry={entry}
+                  isInterim
+                />
+              ))}
+            </>
           )}
         </div>
-        {onClose && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8"
-            onClick={onClose}
-          >
-            <X className="size-4" />
-          </Button>
-        )}
-      </div>
+      </ScrollArea>
 
-      {/* Transcription content */}
-      <div className="relative flex-1" ref={setScrollContainer}>
-        <ScrollArea className="h-full" onScrollCapture={handleScroll}>
-          <div className="space-y-4 p-4">
-            {finalEntries.length === 0 && interimEntries.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                <FileText className="mb-2 size-8 opacity-50" />
-                <p className="text-sm">No transcriptions yet</p>
-                <p className="text-xs">
-                  Transcriptions will appear here as people speak
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Final transcriptions */}
-                {finalEntries.map((entry) => (
-                  <TranscriptionMessage key={entry.id} entry={entry} />
-                ))}
-
-                {/* Interim transcriptions (multiple speakers supported) */}
-                {interimEntries.map((entry) => (
-                  <TranscriptionMessage
-                    key={entry.id}
-                    entry={entry}
-                    isInterim
-                  />
-                ))}
-              </>
-            )}
-          </div>
-        </ScrollArea>
-
-        {/* Scroll to bottom button */}
-        {!autoScroll && sortedEntries.length > 0 && (
-          <Button
-            variant="secondary"
-            size="sm"
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg"
-            onClick={scrollToBottom}
-          >
-            <ChevronDown className="mr-1 size-4" />
-            New messages
-          </Button>
-        )}
-      </div>
+      {/* Scroll to bottom button */}
+      {!autoScroll && sortedEntries.length > 0 && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg z-10"
+          onClick={scrollToBottom}
+        >
+          <ChevronDown className="mr-1 size-4" />
+          New messages
+        </Button>
+      )}
     </div>
   );
 }
@@ -314,11 +316,17 @@ export function TranscriptionSidebar({
 interface TranscriptionMessageProps {
   entry: TranscriptionEntry;
   isInterim?: boolean;
+  /** Insights related to this transcript entry */
+  insights?: Insight[];
+  /** Callback when an insight badge is clicked */
+  onInsightClick?: (insight: Insight) => void;
 }
 
 const TranscriptionMessage = React.memo(function TranscriptionMessage({
   entry,
   isInterim,
+  insights = [],
+  onInsightClick,
 }: TranscriptionMessageProps) {
   return (
     <div className={cn("flex gap-3", isInterim && "opacity-60")}>
@@ -344,6 +352,20 @@ const TranscriptionMessage = React.memo(function TranscriptionMessage({
         <p className={cn("text-sm text-foreground", isInterim && "italic")}>
           {entry.text}
         </p>
+
+        {/* Inline insight badges */}
+        {insights.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {insights.map((insight) => (
+              <InsightBadge
+                key={insight.id}
+                type={insight.type}
+                content={insight.content}
+                onClick={() => onInsightClick?.(insight)}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

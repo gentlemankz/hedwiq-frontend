@@ -68,8 +68,12 @@ function checkRateLimit(userId: string): { allowed: boolean; retryAfter?: number
 /** Token TTL - short-lived tokens as recommended by LiveKit */
 const TOKEN_TTL = "5m";
 
-/** Default transcription agent name for room dispatch */
-const TRANSCRIPTION_AGENT_NAME = process.env.LIVEKIT_TRANSCRIPTION_AGENT?.trim() || "transcription-agent";
+/**
+ * Agent name for explicit dispatch (optional).
+ * If not set, auto-dispatch will be used and agents without agent_name will join.
+ * Set LIVEKIT_TRANSCRIPTION_AGENT env var to use explicit dispatch.
+ */
+const TRANSCRIPTION_AGENT_NAME = process.env.LIVEKIT_TRANSCRIPTION_AGENT?.trim() || "";
 
 interface TokenParams {
   userId: string;
@@ -135,13 +139,16 @@ async function createRoomToken(params: TokenParams): Promise<{
   });
 
   // Configure room to dispatch transcription agent when participant joins
-  at.roomConfig = new RoomConfiguration({
-    agents: [
-      new RoomAgentDispatch({
-        agentName: TRANSCRIPTION_AGENT_NAME,
-      }),
-    ],
-  });
+  // Only add explicit dispatch if agent name is configured
+  if (TRANSCRIPTION_AGENT_NAME) {
+    at.roomConfig = new RoomConfiguration({
+      agents: [
+        new RoomAgentDispatch({
+          agentName: TRANSCRIPTION_AGENT_NAME,
+        }),
+      ],
+    });
+  }
 
   const token = await at.toJwt();
 

@@ -27,15 +27,54 @@ This is a Next.js 16 application using the App Router with React 19 and TypeScri
 
 ### Directory Structure
 
-- `app/` - Next.js App Router pages and layouts
-- `app/(auth)/` - Authentication pages (sign-in, sign-up)
-- `app/api/auth/` - Better Auth API route handler
-- `components/ui/` - shadcn/ui component library (50+ pre-built components)
-- `lib/auth.ts` - Better Auth server configuration
-- `lib/auth-client.ts` - Better Auth client configuration
-- `lib/db/` - Drizzle ORM database setup and schema
-- `lib/utils.ts` - Utility functions, including the `cn()` helper for merging Tailwind classes
-- `proxy.ts` - Next.js 16 proxy for route protection
+```
+frontend/
+├── app/                          # Next.js App Router
+│   ├── (auth)/                   # Auth route group
+│   │   └── sign-in/              # Sign-in page
+│   ├── api/                      # API routes
+│   │   ├── auth/[...all]/        # Better Auth catch-all handler
+│   │   └── livekit/token/        # LiveKit token generation endpoint
+│   ├── dashboard/                # Dashboard page with client component
+│   ├── meetings/                 # Meeting pages
+│   │   └── [roomId]/             # Dynamic room routes
+│   │       ├── components/       # Room-specific components
+│   │       │   ├── media-controls.tsx
+│   │       │   ├── meeting-layout.tsx
+│   │       │   ├── username-form.tsx
+│   │       │   └── video-preview.tsx
+│   │       ├── meeting-room.tsx
+│   │       ├── page.tsx
+│   │       └── pre-join-screen.tsx
+│   ├── globals.css               # Global styles with LiveKit theme integration
+│   ├── layout.tsx                # Root layout
+│   └── page.tsx                  # Landing page
+├── components/
+│   ├── transcription/            # Real-time transcription components
+│   │   ├── index.ts
+│   │   ├── transcription-error-boundary.tsx
+│   │   └── transcription-sidebar.tsx
+│   └── ui/                       # shadcn/ui components (53 components)
+├── hooks/                        # Custom React hooks
+│   ├── use-media-devices.ts      # Camera/microphone device management
+│   └── use-mobile.ts             # Mobile detection hook
+├── lib/
+│   ├── auth.ts                   # Better Auth server configuration
+│   ├── auth-client.ts            # Better Auth client configuration
+│   ├── db/                       # Drizzle ORM setup
+│   │   ├── index.ts              # Database connection
+│   │   ├── schema.ts             # Database schema definitions
+│   │   └── migrations/           # SQL migrations
+│   ├── utils.ts                  # Utility functions (cn helper, etc.)
+│   └── validation.ts             # Zod validation schemas
+├── types/                        # TypeScript type definitions
+│   └── user.ts                   # User-related types
+├── docs/                         # Project documentation
+│   ├── PRD.md                    # Product Requirements Document
+│   └── startup-info.md           # Startup context
+├── public/                       # Static assets
+└── proxy.ts                      # Next.js 16 route protection middleware
+```
 
 ### Key Technologies
 
