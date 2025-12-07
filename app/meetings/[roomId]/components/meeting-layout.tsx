@@ -86,21 +86,32 @@ export function MeetingLayout({
             </div>
           </div>
 
-          {/* Tab content */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {activeTab === "transcript" ? (
+          {/* Tab content - both components always mounted, visibility controlled by CSS */}
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            <div
+              className={cn(
+                "absolute inset-0",
+                activeTab !== "transcript" && "invisible"
+              )}
+            >
               <TranscriptionErrorBoundary>
                 <TranscriptionSidebar
                   className="border-l-0 h-full"
                   onInsightClick={handleInsightClick}
                 />
               </TranscriptionErrorBoundary>
-            ) : (
+            </div>
+            <div
+              className={cn(
+                "absolute inset-0",
+                activeTab !== "insights" && "invisible"
+              )}
+            >
               <InsightsSummaryPanel
                 className="border-l-0 h-full"
                 onInsightClick={handleInsightClick}
               />
-            )}
+            </div>
           </div>
         </div>
       )}
