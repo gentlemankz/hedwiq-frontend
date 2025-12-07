@@ -18,6 +18,56 @@ const INSIGHT_TOPIC = "hedwiq.insight";
 /** Maximum number of insights to keep in memory */
 const MAX_INSIGHTS = 100;
 
+/** Semantic similarity threshold for frontend deduplication */
+const SIMILARITY_THRESHOLD = 0.5;
+
+/**
+ * Normalize timestamp to milliseconds.
+ * Handles both seconds and milliseconds from the agent.
+ */
+function normalizeTimestamp(ts: number | undefined): number {
+  if (!ts) return Date.now();
+  // If timestamp is less than 1e12, it's in seconds (Unix timestamp)
+  // Convert to milliseconds
+  return ts < 1e12 ? ts * 1000 : ts;
+}
+
+/**
+ * Calculate word-based similarity between two strings.
+ * Returns a value between 0 and 1.
+ */
+function calculateSimilarity(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+
+  const intersection = [...wordsA].filter(w => wordsB.has(w)).length;
+  const union = new Set([...wordsA, ...wordsB]).size;
+
+  return union > 0 ? intersection / union : 0;
+}
+
+/**
+ * Check if a new insight is semantically similar to any existing insight.
+ */
+function isSemanticallyDuplicate(
+  newContent: string,
+  newType: string,
+  existingInsights: Insight[]
+): boolean {
+  for (const existing of existingInsights.slice(0, 50)) {
+    // Only compare same type
+    if (existing.type !== newType) continue;
+
+    const similarity = calculateSimilarity(newContent, existing.content);
+    if (similarity > SIMILARITY_THRESHOLD) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Interface for the text stream reader from LiveKit
  */
@@ -92,6 +142,10 @@ export function InsightsProvider({ children }: { children: React.ReactNode }) {
         const data = JSON.parse(rawJson);
         const attrs = reader.info.attributes ?? {};
 
+        // Get raw timestamp and normalize it
+        const rawTimestamp = data.timestamp || reader.info.timestamp;
+        const normalizedTimestamp = normalizeTimestamp(rawTimestamp);
+
         // Create insight object from received data
         const insight: Insight = {
           id: data.id || reader.info.id,
@@ -103,7 +157,7 @@ export function InsightsProvider({ children }: { children: React.ReactNode }) {
             attrs["confidence"] || String(data.confidence || 0.8)
           ),
           transcriptRef: data.transcriptRef || data.transcript_ref,
-          timestamp: data.timestamp || reader.info.timestamp || Date.now(),
+          timestamp: normalizedTimestamp,
         };
 
         // Validate required fields
@@ -112,9 +166,22 @@ export function InsightsProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        // Validate minimum content length (at least 5 words)
+        const wordCount = insight.content.split(/\s+/).length;
+        if (wordCount < 5) {
+          console.debug("Insight too short, skipping:", insight.content);
+          return;
+        }
+
         setInsights((prev) => {
           // Check for duplicates by ID
           if (prev.some((i) => i.id === insight.id)) {
+            return prev;
+          }
+
+          // Check for semantic duplicates
+          if (isSemanticallyDuplicate(insight.content, insight.type, prev)) {
+            console.debug("Semantically duplicate insight, skipping:", insight.content);
             return prev;
           }
 
