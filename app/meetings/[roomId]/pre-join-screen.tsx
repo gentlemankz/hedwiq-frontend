@@ -1,17 +1,19 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { LocalUserChoices } from "@livekit/components-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowLeft } from "lucide-react";
+import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
 import { useMediaDevices } from "@/hooks/use-media-devices";
 import { sanitizeUsername } from "@/lib/validation";
 import type { User } from "@/types/user";
+import type { UploadedDocument } from "@/types/document";
 import { VideoPreview } from "./components/video-preview";
 import { MediaControls } from "./components/media-controls";
 import { UsernameForm } from "./components/username-form";
+import { DocumentUpload } from "@/components/documents";
 
 // ============================================================================
 // Types
@@ -20,6 +22,8 @@ import { UsernameForm } from "./components/username-form";
 export interface UserChoices extends LocalUserChoices {
   userId: string;
   userImage?: string | null;
+  /** Documents uploaded before joining */
+  uploadedDocuments?: UploadedDocument[];
 }
 
 interface PreJoinScreenProps {
@@ -67,6 +71,30 @@ export function PreJoinScreen({
     stopAllStreams,
   } = useMediaDevices();
 
+  // Document upload state
+  const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
+  const [isDocumentSectionExpanded, setIsDocumentSectionExpanded] = useState(false);
+
+  // Handle document upload complete
+  const handleDocumentUploadComplete = useCallback((doc: UploadedDocument) => {
+    setUploadedDocuments((prev) => [...prev, doc]);
+  }, []);
+
+  // Handle document removal
+  const handleRemoveDocument = useCallback(
+    async (docId: string) => {
+      try {
+        await fetch(`/api/documents/${docId}?roomId=${encodeURIComponent(roomId)}`, {
+          method: "DELETE",
+        });
+        setUploadedDocuments((prev) => prev.filter((d) => d.id !== docId));
+      } catch (error) {
+        console.error("Failed to remove document:", error);
+      }
+    },
+    [roomId]
+  );
+
   // Handle form submission - combines username with device settings
   const handleUsernameSubmit = useCallback(
     (username: string) => {
@@ -81,6 +109,7 @@ export function PreJoinScreen({
         audioDeviceId: selectedAudioDevice,
         userId: user.id,
         userImage: user.image,
+        uploadedDocuments,
       });
     },
     [
@@ -92,6 +121,7 @@ export function PreJoinScreen({
       user.image,
       stopAllStreams,
       onSubmit,
+      uploadedDocuments,
     ]
   );
 
@@ -142,6 +172,47 @@ export function PreJoinScreen({
             onToggleAudio={toggleAudio}
             onAudioDeviceChange={setSelectedAudioDevice}
           />
+
+          {/* Document Upload Section (Collapsible) */}
+          <div className="border rounded-lg">
+            <button
+              type="button"
+              onClick={() => setIsDocumentSectionExpanded(!isDocumentSectionExpanded)}
+              className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="size-5 text-muted-foreground" />
+                <div>
+                  <span className="font-medium">Reference Documents</span>
+                  {uploadedDocuments.length > 0 && (
+                    <span className="ml-2 text-sm text-muted-foreground">
+                      ({uploadedDocuments.length} uploaded)
+                    </span>
+                  )}
+                </div>
+              </div>
+              {isDocumentSectionExpanded ? (
+                <ChevronUp className="size-5 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="size-5 text-muted-foreground" />
+              )}
+            </button>
+
+            {isDocumentSectionExpanded && (
+              <div className="border-t p-4">
+                <p className="text-sm text-muted-foreground mb-4">
+                  Upload PDF documents to enable real-time reference detection during the meeting.
+                  The AI will automatically link spoken content to relevant document sections.
+                </p>
+                <DocumentUpload
+                  roomId={roomId}
+                  uploadedDocuments={uploadedDocuments}
+                  onUploadComplete={handleDocumentUploadComplete}
+                  onRemoveDocument={handleRemoveDocument}
+                />
+              </div>
+            )}
+          </div>
 
           {/* Username Input and Join Button */}
           <UsernameForm

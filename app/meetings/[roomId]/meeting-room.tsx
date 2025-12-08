@@ -7,6 +7,7 @@ import { RoomOptions, VideoPresets } from "livekit-client";
 import { PreJoinScreen, UserChoices } from "./pre-join-screen";
 import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
+import { DocumentsProvider } from "@/contexts/documents-context";
 import type { User } from "@/types/user";
 
 interface MeetingRoomProps {
@@ -171,7 +172,9 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         }}
       >
         <InsightsProvider>
-          <MeetingLayout showTranscription={true} />
+          <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
+            <MeetingLayout showTranscription={true} />
+          </DocumentsProvider>
         </InsightsProvider>
       </LiveKitRoom>
     </div>
