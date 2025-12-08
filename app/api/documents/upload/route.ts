@@ -213,12 +213,14 @@ export async function POST(request: NextRequest) {
       uploadedBy: session.user.id,
     });
 
-    // 14. Optionally forward to agent service for processing (embeddings, etc.)
+    // 14. Forward to agent service for processing (embeddings, etc.)
+    // This is critical for document reference detection to work
     const agentServiceUrl = process.env.AGENT_SERVICE_URL;
     if (agentServiceUrl) {
+      console.log(`[Document Upload] Notifying agent at ${agentServiceUrl}/documents/process`);
+
       try {
-        // Non-blocking call to agent service for processing
-        fetch(`${agentServiceUrl}/documents/process`, {
+        const agentResponse = await fetch(`${agentServiceUrl}/documents/process`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -228,14 +230,45 @@ export async function POST(request: NextRequest) {
             documentId,
             roomId,
             storagePath: `${STORAGE_BUCKETS.DOCUMENTS}/${storagePath}`,
+            uploadedBy: session.user.id,
           }),
-        }).catch((err) =>
-          console.error("Agent processing notification failed:", err)
-        );
+        });
+
+        if (!agentResponse.ok) {
+          const errorText = await agentResponse.text();
+          console.error(
+            `[Document Upload] Agent processing failed: ${agentResponse.status} - ${errorText}`
+          );
+          // Continue without failing - document is uploaded to Supabase
+          // but document reference detection may not work
+        } else {
+          const agentResult = await agentResponse.json();
+          console.log(
+            `[Document Upload] Agent processed document successfully:`,
+            agentResult
+          );
+
+          // Update response with segment count from agent
+          return NextResponse.json({
+            documentId,
+            title,
+            pageCount: agentResult.pageCount || 0,
+            segmentCount: agentResult.segmentCount,
+            status: "ready",
+          });
+        }
       } catch (err) {
-        // Log but don't fail - document is still usable without processing
-        console.error("Failed to notify agent service:", err);
+        // Log error but don't fail the upload
+        console.error(
+          "[Document Upload] Failed to notify agent service:",
+          err instanceof Error ? err.message : err
+        );
+        // Continue - document is in Supabase, but references won't work
       }
+    } else {
+      console.warn(
+        "[Document Upload] AGENT_SERVICE_URL not configured - document reference detection will not work"
+      );
     }
 
     return NextResponse.json({
