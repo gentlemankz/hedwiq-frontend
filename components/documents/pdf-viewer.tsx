@@ -5,6 +5,12 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   ChevronLeft,
   ChevronRight,
   ZoomIn,
@@ -12,6 +18,7 @@ import {
   RotateCw,
   Loader2,
   AlertCircle,
+  Maximize,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BoundingBox } from "@/types/document";
@@ -87,10 +94,88 @@ export function PdfViewer({
   const [pageDimensions, setPageDimensions] = useState<PageDimensions | null>(
     null
   );
+  const [containerWidth, setContainerWidth] = useState<number>(0);
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
+  const lastFittedWidthRef = useRef<number>(0);
+  const userHasZoomedRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
+
+  // Track mounted state to prevent state updates after unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // ============================================================================
+  // Auto-fit calculation helper (stable reference via ref for ResizeObserver)
+  // ============================================================================
+
+  const pageDimensionsRef = useRef<PageDimensions | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    pageDimensionsRef.current = pageDimensions;
+  }, [pageDimensions]);
+
+  const calculateFitToWidthScale = useCallback(
+    (availableWidth: number, pageWidth: number) => {
+      if (availableWidth > 0 && pageWidth > 0) {
+        const padding = 40;
+        const effectiveWidth = availableWidth - padding;
+        const optimalScale = effectiveWidth / pageWidth;
+        return Math.max(0.5, Math.min(2.0, optimalScale));
+      }
+      return 1.0;
+    },
+    []
+  );
+
+  // ============================================================================
+  // Container Resize Observer with auto-fit on significant changes
+  // ============================================================================
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const newWidth = entry.contentRect.width;
+        setContainerWidth(newWidth);
+
+        // Re-fit when container width changes significantly (sidebar/fullscreen toggle)
+        // Skip if user has manually zoomed to respect their preference
+        // This runs in the ResizeObserver callback, which is an external system subscription
+        if (
+          !userHasZoomedRef.current &&
+          lastFittedWidthRef.current > 0 &&
+          pageDimensionsRef.current &&
+          pageDimensionsRef.current.width > 0
+        ) {
+          const widthDelta = Math.abs(newWidth - lastFittedWidthRef.current);
+          if (widthDelta > 50) {
+            const optimalScale = calculateFitToWidthScale(
+              newWidth,
+              pageDimensionsRef.current.width
+            );
+            setScale(optimalScale);
+            lastFittedWidthRef.current = newWidth;
+          }
+        }
+      }
+    });
+
+    resizeObserver.observe(container);
+    // Initial measurement
+    setContainerWidth(container.clientWidth);
+
+    return () => resizeObserver.disconnect();
+  }, [calculateFitToWidthScale]);
 
   // ============================================================================
   // Document Load Handlers
@@ -98,6 +183,8 @@ export function PdfViewer({
 
   const handleDocumentLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
+      if (!isMountedRef.current) return;
+
       setNumPages(numPages);
       setIsLoading(false);
       setError(null);
@@ -107,6 +194,13 @@ export function PdfViewer({
   );
 
   const handleDocumentLoadError = useCallback((err: Error) => {
+    // Suppress AbortException - this is expected when unmounting
+    if (err?.name === "AbortException" || err?.message?.includes("cancelled")) {
+      return;
+    }
+
+    if (!isMountedRef.current) return;
+
     console.error("PDF load error:", err);
     const errorMessage = "Failed to load PDF document";
     setError(errorMessage);
@@ -116,13 +210,31 @@ export function PdfViewer({
 
   const handlePageLoadSuccess = useCallback(
     (page: { width: number; height: number }) => {
+      if (!isMountedRef.current) return;
+
       setPageDimensions({
         width: page.width,
         height: page.height,
       });
+
+      // Auto-fit to width on first page load
+      if (lastFittedWidthRef.current === 0 && page.width > 0 && containerWidth > 0) {
+        const optimalScale = calculateFitToWidthScale(containerWidth, page.width);
+        setScale(optimalScale);
+        lastFittedWidthRef.current = containerWidth;
+      }
     },
-    []
+    [calculateFitToWidthScale, containerWidth]
   );
+
+  // Handle page render errors (including TextLayer abort)
+  const handlePageRenderError = useCallback((error: Error) => {
+    // Suppress AbortException - this is expected when unmounting or changing pages
+    if (error?.name === "AbortException" || error?.message?.includes("TextLayer task cancelled")) {
+      return;
+    }
+    console.error("Page render error:", error);
+  }, []);
 
   // ============================================================================
   // Navigation
@@ -157,14 +269,17 @@ export function PdfViewer({
 
   const zoomIn = useCallback(() => {
     setScale((prev) => Math.min(prev + 0.25, 3.0));
+    userHasZoomedRef.current = true;
   }, []);
 
   const zoomOut = useCallback(() => {
     setScale((prev) => Math.max(prev - 0.25, 0.5));
+    userHasZoomedRef.current = true;
   }, []);
 
   const handleZoomChange = useCallback((values: number[]) => {
     setScale(values[0]);
+    userHasZoomedRef.current = true;
   }, []);
 
   // ============================================================================
@@ -174,6 +289,80 @@ export function PdfViewer({
   const rotate = useCallback(() => {
     setRotation((prev) => (prev + 90) % 360);
   }, []);
+
+  // ============================================================================
+  // Fit to Width
+  // ============================================================================
+
+  const fitToWidth = useCallback(() => {
+    if (containerWidth > 0 && pageDimensions && pageDimensions.width > 0) {
+      const optimalScale = calculateFitToWidthScale(containerWidth, pageDimensions.width);
+      setScale(optimalScale);
+      lastFittedWidthRef.current = containerWidth;
+      // Reset user zoom flag so auto-fit resumes on layout changes
+      userHasZoomedRef.current = false;
+    }
+  }, [containerWidth, pageDimensions, calculateFitToWidthScale]);
+
+  // ============================================================================
+  // Keyboard Shortcuts
+  // ============================================================================
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+
+      // Don't trigger if user is interacting with form elements or editable content
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target.isContentEditable ||
+        target.closest('[role="textbox"]') ||
+        target.closest('[role="listbox"]') ||
+        target.closest('[role="combobox"]') ||
+        target.closest('[role="slider"]') ||
+        target.closest('[role="spinbutton"]') ||
+        target.closest('[contenteditable="true"]')
+      ) {
+        return;
+      }
+
+      switch (e.key) {
+        case "ArrowLeft":
+          e.preventDefault();
+          goToPrevPage();
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          goToNextPage();
+          break;
+        case "+":
+        case "=":
+          e.preventDefault();
+          zoomIn();
+          break;
+        case "-":
+          e.preventDefault();
+          zoomOut();
+          break;
+        case "0":
+          e.preventDefault();
+          fitToWidth();
+          break;
+        case "r":
+        case "R":
+          if (!e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            rotate();
+          }
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [goToPrevPage, goToNextPage, zoomIn, zoomOut, fitToWidth, rotate]);
 
   // ============================================================================
   // Fuzzy Text Highlighting
@@ -346,161 +535,241 @@ export function PdfViewer({
   // ============================================================================
 
   return (
-    <div className={cn("flex flex-col h-full", className)}>
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4 p-2 border-b bg-background">
-        {/* Page Navigation */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={goToPrevPage}
-            disabled={currentPage <= 1}
-            className="size-8"
-          >
-            <ChevronLeft className="size-4" />
-          </Button>
-          <span className="text-sm min-w-[80px] text-center">
-            {currentPage} / {numPages || "?"}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={goToNextPage}
-            disabled={currentPage >= numPages}
-            className="size-8"
-          >
-            <ChevronRight className="size-4" />
-          </Button>
-          {highlightPage && currentPage !== highlightPage && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goToHighlightPage}
-              className="text-xs text-blue-600 hover:text-blue-700"
+    <TooltipProvider delayDuration={300}>
+      <div className={cn("flex flex-col h-full", className)}>
+        {/* Toolbar */}
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          {/* Page Navigation */}
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={goToPrevPage}
+                  disabled={currentPage <= 1}
+                  className="size-8"
+                  aria-label="Go to previous page"
+                >
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Previous page (←)</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <span
+              className="text-sm min-w-[70px] text-center font-medium tabular-nums"
+              aria-live="polite"
+              aria-atomic="true"
             >
-              Go to ref (p.{highlightPage})
-            </Button>
-          )}
-        </div>
+              <span className="sr-only">Page </span>
+              {currentPage} / {numPages || "?"}
+            </span>
 
-        {/* Zoom Controls */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={zoomOut}
-            disabled={scale <= 0.5}
-            className="size-8"
-          >
-            <ZoomOut className="size-4" />
-          </Button>
-          <div className="w-24">
-            <Slider
-              value={[scale]}
-              min={0.5}
-              max={3}
-              step={0.1}
-              onValueChange={handleZoomChange}
-            />
-          </div>
-          <span className="text-xs text-muted-foreground min-w-[40px]">
-            {Math.round(scale * 100)}%
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={zoomIn}
-            disabled={scale >= 3}
-            className="size-8"
-          >
-            <ZoomIn className="size-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={rotate}
-            className="size-8"
-          >
-            <RotateCw className="size-4" />
-          </Button>
-        </div>
-      </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={goToNextPage}
+                  disabled={currentPage >= numPages}
+                  className="size-8"
+                  aria-label="Go to next page"
+                >
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Next page (→)</p>
+              </TooltipContent>
+            </Tooltip>
 
-      {/* PDF Content */}
-      <div
-        ref={containerRef}
-        className="flex-1 overflow-auto bg-muted/30 flex justify-center p-4"
-      >
-        {/* Loading State */}
-        {isLoading && (
-          <div className="flex items-center justify-center h-full">
-            <div className="flex flex-col items-center gap-2">
-              <Loader2 className="size-8 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">
-                Loading document...
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Error State */}
-        {error && (
-          <div className="flex items-center justify-center h-full">
-            <div className="flex flex-col items-center gap-2 text-destructive">
-              <AlertCircle className="size-8" />
-              <span className="text-sm">{error}</span>
-            </div>
-          </div>
-        )}
-
-        {/* PDF Document */}
-        <Document
-          file={file}
-          onLoadSuccess={handleDocumentLoadSuccess}
-          onLoadError={handleDocumentLoadError}
-          loading={null}
-          error={null}
-          className={cn(isLoading && "hidden")}
-        >
-          <div className="relative shadow-lg">
-            <Page
-              pageNumber={currentPage}
-              scale={scale}
-              rotate={rotation}
-              onLoadSuccess={handlePageLoadSuccess}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-              customTextRenderer={customTextRenderer}
-              className="bg-white"
-            />
-
-            {/* Bounding Box Highlight Overlay */}
-            {bbox && currentPage === highlightPage && (
-              <div
-                ref={highlightRef}
-                className="absolute pointer-events-none bg-yellow-300/40 border-2 border-yellow-500 rounded-sm animate-pulse"
-                style={{ display: "none" }}
-                aria-hidden="true"
-              />
+            {highlightPage && currentPage !== highlightPage && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={goToHighlightPage}
+                className="ml-2 text-xs h-7 px-2"
+                aria-label={`Jump to referenced content on page ${highlightPage}`}
+              >
+                Jump to ref (p.{highlightPage})
+              </Button>
             )}
           </div>
-        </Document>
-      </div>
 
-      {/* Custom Styles for Text Highlighting */}
-      <style jsx global>{`
-        .pdf-highlight {
-          background-color: rgba(234, 179, 8, 0.4);
-          padding: 0 2px;
-          border-radius: 2px;
-        }
-        .pdf-highlight-partial {
-          background-color: rgba(234, 179, 8, 0.25);
-          padding: 0 1px;
-          border-radius: 1px;
-        }
-      `}</style>
-    </div>
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1.5" role="group" aria-label="Zoom and view controls">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={zoomOut}
+                  disabled={scale <= 0.5}
+                  className="size-8"
+                  aria-label="Zoom out"
+                >
+                  <ZoomOut className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Zoom out (-)</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <div className="w-32 px-1">
+              <Slider
+                value={[scale]}
+                min={0.5}
+                max={3}
+                step={0.05}
+                onValueChange={handleZoomChange}
+                className="cursor-pointer"
+                aria-label="Zoom level"
+              />
+            </div>
+
+            <span
+              className="text-xs text-muted-foreground min-w-[45px] text-center tabular-nums"
+              aria-live="polite"
+            >
+              <span className="sr-only">Zoom level: </span>
+              {Math.round(scale * 100)}%
+            </span>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={zoomIn}
+                  disabled={scale >= 3}
+                  className="size-8"
+                  aria-label="Zoom in"
+                >
+                  <ZoomIn className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Zoom in (+)</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={fitToWidth}
+                  className="size-8"
+                  aria-label="Fit document to container width"
+                >
+                  <Maximize className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Fit to width (0)</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={rotate}
+                  className="size-8"
+                  aria-label="Rotate document 90 degrees"
+                >
+                  <RotateCw className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Rotate (R)</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+
+        {/* PDF Content */}
+        <div
+          ref={containerRef}
+          className="flex-1 overflow-auto bg-muted/30 flex justify-center p-4"
+        >
+          {/* Loading State */}
+          {isLoading && (
+            <div className="flex items-center justify-center h-full">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  Loading document...
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && (
+            <div className="flex items-center justify-center h-full">
+              <div className="flex flex-col items-center gap-2 text-destructive">
+                <AlertCircle className="size-8" />
+                <span className="text-sm">{error}</span>
+              </div>
+            </div>
+          )}
+
+          {/* PDF Document */}
+          <Document
+            file={file}
+            onLoadSuccess={handleDocumentLoadSuccess}
+            onLoadError={handleDocumentLoadError}
+            loading={null}
+            error={null}
+            className={cn(isLoading && "hidden")}
+          >
+            <div className="relative shadow-lg">
+              <Page
+                key={`page-${currentPage}-${file}`}
+                pageNumber={currentPage}
+                scale={scale}
+                rotate={rotation}
+                onLoadSuccess={handlePageLoadSuccess}
+                onRenderError={handlePageRenderError}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+                customTextRenderer={customTextRenderer}
+                className="bg-white"
+              />
+
+              {/* Bounding Box Highlight Overlay */}
+              {bbox && currentPage === highlightPage && (
+                <div
+                  ref={highlightRef}
+                  className="absolute pointer-events-none bg-yellow-300/40 border-2 border-yellow-500 rounded-sm animate-pulse"
+                  style={{ display: "none" }}
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+          </Document>
+        </div>
+
+        {/* Custom Styles for Text Highlighting */}
+        <style jsx global>{`
+          .pdf-highlight {
+            background-color: rgba(234, 179, 8, 0.4);
+            padding: 0 2px;
+            border-radius: 2px;
+          }
+          .pdf-highlight-partial {
+            background-color: rgba(234, 179, 8, 0.25);
+            padding: 0 1px;
+            border-radius: 1px;
+          }
+        `}</style>
+      </div>
+    </TooltipProvider>
   );
 }
