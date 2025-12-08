@@ -8,6 +8,20 @@
       "when": 1764970531707,
       "tag": "0000_shallow_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1765199983128,
+      "tag": "0001_right_professor_monster",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1765201126068,
+      "tag": "0002_sleepy_redwing",
+      "breakpoints": true
     }
   ]
 }

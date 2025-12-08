@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { db } from "@/lib/db";
+import { document } from "@/lib/db/schema";
+import { uploadFile, STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase";
+import { validateRoomAccess } from "@/lib/db/room-access";
+import { eq, and, count } from "drizzle-orm";
 
 // Security constants
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_MIME_TYPES = ["application/pdf"];
 const MAX_FILENAME_LENGTH = 255;
+const MAX_DOCUMENTS_PER_ROOM = 10;
 const DANGEROUS_PATTERNS = [
-  /\.\./,           // Path traversal
-  /[<>:"|?*]/,      // Windows forbidden chars
-  /[\x00-\x1f]/,    // Control characters
+  /\.\./, // Path traversal
+  /[<>:"|?*]/, // Windows forbidden chars
+  /[\x00-\x1f]/, // Control characters
 ];
 
 /**
@@ -46,7 +52,7 @@ function isPdfContent(buffer: ArrayBuffer): boolean {
     bytes[1] === 0x50 && // P
     bytes[2] === 0x44 && // D
     bytes[3] === 0x46 && // F
-    bytes[4] === 0x2d    // -
+    bytes[4] === 0x2d // -
   );
 }
 
@@ -54,7 +60,27 @@ function isPdfContent(buffer: ArrayBuffer): boolean {
  * Check if filename contains dangerous patterns.
  */
 function hasDangerousPattern(filename: string): boolean {
-  return DANGEROUS_PATTERNS.some(pattern => pattern.test(filename));
+  return DANGEROUS_PATTERNS.some((pattern) => pattern.test(filename));
+}
+
+/**
+ * Generate a unique document ID
+ */
+function generateDocumentId(): string {
+  return `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Extract title from filename (removes extension and cleans up)
+ */
+function extractTitle(filename: string): string {
+  // Remove .pdf extension
+  let title = filename.replace(/\.pdf$/i, "");
+  // Replace underscores and hyphens with spaces
+  title = title.replace(/[_-]/g, " ");
+  // Capitalize first letter
+  title = title.charAt(0).toUpperCase() + title.slice(1);
+  return title || "Untitled Document";
 }
 
 export async function POST(request: NextRequest) {
@@ -74,10 +100,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Basic validation
     if (!file) {
-      return NextResponse.json(
-        { error: "No file provided" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
     if (!roomId) {
@@ -95,7 +118,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. File type validation (MIME type)
+    // 4. Validate room access (user must have accessed the room page first)
+    // This prevents privilege escalation via arbitrary roomId in uploads
+    const accessError = await validateRoomAccess(session.user.id, roomId);
+    if (accessError) {
+      return NextResponse.json(
+        { error: accessError },
+        { status: 403 }
+      );
+    }
+
+    // 5. File type validation (MIME type)
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
       return NextResponse.json(
         { error: "Only PDF files are supported" },
@@ -103,7 +136,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. File size validation
+    // 6. File size validation
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: `File too large (max ${MAX_FILE_SIZE / 1024 / 1024}MB)` },
@@ -113,24 +146,31 @@ export async function POST(request: NextRequest) {
 
     // 6. Filename validation
     if (file.name.length > MAX_FILENAME_LENGTH) {
-      return NextResponse.json(
-        { error: "Filename too long" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Filename too long" }, { status: 400 });
     }
 
     // 7. Check for dangerous patterns in filename
     if (hasDangerousPattern(file.name)) {
+      return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
+    }
+
+    // 8. Check document limit for room
+    const existingDocs = await db
+      .select({ count: count() })
+      .from(document)
+      .where(eq(document.roomId, roomId));
+
+    if (existingDocs[0]?.count >= MAX_DOCUMENTS_PER_ROOM) {
       return NextResponse.json(
-        { error: "Invalid filename" },
+        { error: `Maximum ${MAX_DOCUMENTS_PER_ROOM} documents per room` },
         { status: 400 }
       );
     }
 
-    // 8. Sanitize filename
+    // 9. Sanitize filename
     const sanitizedFilename = sanitizeFilename(file.name);
 
-    // 9. Read file content and validate PDF magic bytes
+    // 10. Read file content and validate PDF magic bytes
     const fileBuffer = await file.arrayBuffer();
     if (!isPdfContent(fileBuffer)) {
       return NextResponse.json(
@@ -139,67 +179,70 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 10. Forward to agent service for processing
-    const agentServiceUrl = process.env.AGENT_SERVICE_URL;
+    // 11. Generate document ID and storage path
+    const documentId = generateDocumentId();
+    const storagePath = STORAGE_PATHS.document(roomId, documentId);
+    const title = extractTitle(sanitizedFilename);
 
-    if (!agentServiceUrl) {
-      // If no agent service configured, return error
-      // In production, the agent service should always be available
-      console.error("AGENT_SERVICE_URL not configured");
+    // 12. Upload to Supabase Storage
+    const uploadResult = await uploadFile(
+      STORAGE_BUCKETS.DOCUMENTS,
+      storagePath,
+      Buffer.from(fileBuffer),
+      { contentType: "application/pdf", upsert: false }
+    );
+
+    if (!uploadResult) {
       return NextResponse.json(
-        { error: "Document processing service not available" },
-        { status: 503 }
+        { error: "Failed to upload file to storage" },
+        { status: 500 }
       );
     }
 
-    // Create form data for agent service
-    const agentFormData = new FormData();
-    agentFormData.append(
-      "file",
-      new Blob([fileBuffer], { type: "application/pdf" }),
-      sanitizedFilename
-    );
-    agentFormData.append("roomId", roomId);
-    agentFormData.append("uploadedBy", session.user.id);
+    // 13. Create database record
+    // Note: pageCount will be updated by the agent service after processing
+    await db.insert(document).values({
+      id: documentId,
+      roomId,
+      filename: sanitizedFilename,
+      title,
+      pageCount: 0, // Will be updated after processing
+      fileSize: file.size,
+      storagePath: `${STORAGE_BUCKETS.DOCUMENTS}/${storagePath}`,
+      status: "ready", // Set to ready since file is uploaded
+      uploadedBy: session.user.id,
+    });
 
-    // Forward to agent service
-    const agentResponse = await fetch(
-      `${agentServiceUrl}/documents/upload`,
-      {
-        method: "POST",
-        body: agentFormData,
-        headers: {
-          // Internal service authentication
-          "X-Internal-Token": process.env.INTERNAL_SERVICE_TOKEN || "",
-        },
-      }
-    );
-
-    if (!agentResponse.ok) {
-      const errorText = await agentResponse.text();
-      console.error("Agent processing failed:", errorText);
-
-      // Parse error if possible
+    // 14. Optionally forward to agent service for processing (embeddings, etc.)
+    const agentServiceUrl = process.env.AGENT_SERVICE_URL;
+    if (agentServiceUrl) {
       try {
-        const errorJson = JSON.parse(errorText);
-        return NextResponse.json(
-          { error: errorJson.error || "Document processing failed" },
-          { status: agentResponse.status }
+        // Non-blocking call to agent service for processing
+        fetch(`${agentServiceUrl}/documents/process`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Internal-Token": process.env.INTERNAL_SERVICE_TOKEN || "",
+          },
+          body: JSON.stringify({
+            documentId,
+            roomId,
+            storagePath: `${STORAGE_BUCKETS.DOCUMENTS}/${storagePath}`,
+          }),
+        }).catch((err) =>
+          console.error("Agent processing notification failed:", err)
         );
-      } catch {
-        return NextResponse.json(
-          { error: "Document processing failed" },
-          { status: 500 }
-        );
+      } catch (err) {
+        // Log but don't fail - document is still usable without processing
+        console.error("Failed to notify agent service:", err);
       }
     }
 
-    const result = await agentResponse.json();
-
     return NextResponse.json({
-      documentId: result.documentId,
-      title: result.title,
-      pageCount: result.pageCount,
+      documentId,
+      title,
+      pageCount: 0, // Will be updated after processing
+      status: "ready",
     });
   } catch (error) {
     console.error("Document upload error:", error);
@@ -208,16 +251,13 @@ export async function POST(request: NextRequest) {
       // Don't expose internal error details
       if (error.message.includes("fetch")) {
         return NextResponse.json(
-          { error: "Document processing service unavailable" },
+          { error: "Storage service unavailable" },
           { status: 503 }
         );
       }
     }
 
-    return NextResponse.json(
-      { error: "Upload failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }
 

@@ -10,6 +10,7 @@ import {
   validateRoomId,
   isValidImageUrl,
 } from "@/lib/validation";
+import { recordRoomParticipation } from "@/lib/db/room-access";
 
 const apiKey = process.env.LIVEKIT_API_KEY;
 const apiSecret = process.env.LIVEKIT_API_SECRET;
@@ -228,6 +229,9 @@ export async function POST(request: NextRequest) {
       roomName,
       displayName,
     });
+
+    // Record room participation for access control
+    await recordRoomParticipation(session.user.id, roomName);
 
     return NextResponse.json(result);
   } catch (error) {

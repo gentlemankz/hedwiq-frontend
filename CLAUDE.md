@@ -41,11 +41,15 @@ frontend/
 │   │   │   ├── [documentId]/
 │   │   │   │   ├── route.ts          # Get/delete document endpoint
 │   │   │   │   └── pdf/
-│   │   │   │       └── route.ts      # Serve PDF file endpoint
+│   │   │   │       └── route.ts      # Serve PDF via Supabase signed URL
 │   │   │   └── upload/
-│   │   │       └── route.ts          # Document upload endpoint
-│   │   └── livekit/token/
-│   │       └── route.ts              # LiveKit token generation endpoint
+│   │   │       └── route.ts          # Document upload to Supabase Storage
+│   │   ├── livekit/token/
+│   │   │   └── route.ts              # LiveKit token generation endpoint
+│   │   └── rooms/
+│   │       └── [roomId]/
+│   │           └── access/
+│   │               └── route.ts      # Room participation recording endpoint
 │   ├── dashboard/
 │   │   ├── dashboard-client.tsx      # Dashboard client component
 │   │   └── page.tsx                  # Dashboard page
@@ -67,7 +71,8 @@ frontend/
 │   │   ├── index.ts                  # Barrel export
 │   │   ├── document-upload.tsx       # PDF upload dialog component
 │   │   ├── document-reference-badge.tsx  # Inline badge for transcript refs
-│   │   └── document-viewer-modal.tsx # PDF viewer modal with reference details
+│   │   ├── document-viewer-modal.tsx # PDF viewer modal with reference details
+│   │   └── pdf-viewer.tsx            # react-pdf viewer with bbox/text highlighting
 │   ├── insights/                     # AI insights display components
 │   │   ├── index.ts                  # Barrel export
 │   │   ├── insight-badge.tsx         # Badge for insight types
@@ -91,14 +96,22 @@ frontend/
 │   ├── auth-client.ts                # Better Auth client configuration
 │   ├── db/                           # Drizzle ORM setup
 │   │   ├── index.ts                  # Database connection
-│   │   ├── schema.ts                 # Database schema definitions
+│   │   ├── schema.ts                 # Schema: user, session, account, verification,
+│   │   │                             #         roomParticipant, document
+│   │   ├── room-access.ts            # Room participation CRUD utilities
 │   │   └── migrations/               # SQL migrations
 │   │       ├── 0000_shallow_freak.sql
+│   │       ├── 0001_right_professor_monster.sql  # roomParticipant table
+│   │       ├── 0002_sleepy_redwing.sql           # document table
 │   │       └── meta/                 # Migration metadata
+│   ├── supabase/                     # Supabase Storage integration
+│   │   ├── index.ts                  # Barrel export + STORAGE_BUCKETS/PATHS
+│   │   ├── client.ts                 # Browser client (anon key)
+│   │   └── server.ts                 # Server client + signed URLs, upload/download
 │   ├── utils.ts                      # Utility functions (cn helper, etc.)
 │   └── validation.ts                 # Zod validation schemas
 ├── types/                            # TypeScript type definitions
-│   ├── document.ts                   # Document + DocumentReference types
+│   ├── document.ts                   # Document + DocumentReference + BoundingBox types
 │   ├── insight.ts                    # AI insight types
 │   └── user.ts                       # User-related types
 ├── docs/                             # Project documentation
@@ -109,6 +122,7 @@ frontend/
 │   ├── better-auth-llm.txt           # Better Auth reference docs
 │   └── livekit-llm.txt               # LiveKit reference docs
 ├── public/                           # Static assets
+│   ├── pdf.worker.min.mjs            # PDF.js worker for react-pdf
 │   ├── file.svg
 │   ├── globe.svg
 │   ├── next.svg
@@ -199,13 +213,26 @@ The `proxy.ts` file (Next.js 16 convention, replaces deprecated `middleware.ts`)
 
 Required environment variables (see `.env.example`):
 ```
+# Authentication (Better Auth)
 BETTER_AUTH_SECRET          # Auth secret key (openssl rand -base64 32)
 BETTER_AUTH_URL             # App URL (http://localhost:3000)
 BETTER_AUTH_TRUSTED_ORIGINS # Comma-separated trusted origins
 NEXT_PUBLIC_APP_URL         # Public app URL for client
 GOOGLE_CLIENT_ID            # Google OAuth client ID
 GOOGLE_CLIENT_SECRET        # Google OAuth client secret
+
+# Database
 DATABASE_URL                # PostgreSQL connection string
+
+# Supabase Storage
+NEXT_PUBLIC_SUPABASE_URL    # Supabase project URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY  # Public anon key (browser client)
+SUPABASE_SERVICE_ROLE_KEY   # Service role key (server-side storage ops)
+
+# LiveKit
+LIVEKIT_API_KEY             # LiveKit API key
+LIVEKIT_API_SECRET          # LiveKit API secret
+NEXT_PUBLIC_LIVEKIT_URL     # LiveKit WebSocket URL
 ```
 
 ### LiveKit Styling Integration
@@ -223,3 +250,65 @@ LiveKit React components use CSS variables prefixed with `--lk-`. These are over
 ```
 
 This ensures LiveKit components match the shadcn dark/light theme automatically.
+
+### Supabase Storage Pattern
+
+Documents (PDFs) are stored in Supabase Storage with the following architecture:
+
+```typescript
+// Bucket: "meeting-documents"
+// Path format: {roomId}/{documentId}.pdf
+
+import { uploadFile, getSignedUrl, downloadFile, deleteFiles } from "@/lib/supabase"
+import { STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase"
+
+// Upload a document
+const path = STORAGE_PATHS.document(roomId, documentId)
+await uploadFile(STORAGE_BUCKETS.DOCUMENTS, path, fileBuffer)
+
+// Get a signed URL for viewing (1 hour expiry)
+const url = await getSignedUrl(STORAGE_BUCKETS.DOCUMENTS, path, 3600)
+```
+
+**Important**: The server uses the service role key for storage operations (upload, delete, signed URLs). The browser client uses the anon key but document access is controlled via signed URLs generated server-side.
+
+### Room Access Control
+
+Room participation is tracked to control access to room-scoped resources (documents):
+
+```typescript
+import { recordRoomParticipation, isRoomParticipant, validateRoomAccess } from "@/lib/db/room-access"
+
+// Record when user visits a room (called from page.tsx or access API)
+await recordRoomParticipation(userId, roomId)
+
+// Check if user can access room resources
+const hasAccess = await isRoomParticipant(userId, roomId)
+
+// Validate and get error message (for API routes)
+const error = await validateRoomAccess(userId, roomId)
+if (error) return NextResponse.json({ error }, { status: 403 })
+```
+
+The `roomParticipant` table tracks which users have visited which rooms, enabling document upload authorization without requiring explicit room ownership.
+
+### PDF Viewer Component
+
+The `PdfViewer` component (`components/documents/pdf-viewer.tsx`) uses react-pdf with:
+- Bounding box highlighting (coordinate-based, rotation-aware)
+- Fuzzy text highlighting (fallback when no bbox)
+- Page navigation, zoom, and rotation controls
+- Local PDF.js worker (`public/pdf.worker.min.mjs`)
+
+```tsx
+import { PdfViewer } from "@/components/documents/pdf-viewer"
+
+<PdfViewer
+  file={pdfUrl}
+  initialPage={1}
+  bbox={{ x0: 100, y0: 200, x1: 400, y1: 250 }}  // Optional
+  highlightText="search term"                      // Fallback
+  highlightPage={3}
+  onPageChange={(page) => console.log(page)}
+/>
+```

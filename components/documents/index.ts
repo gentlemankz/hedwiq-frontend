@@ -4,3 +4,4 @@ export {
   DocumentReferenceBadgeIcon,
 } from "./document-reference-badge";
 export { DocumentViewerModal } from "./document-viewer-modal";
+export { PdfViewer } from "./pdf-viewer";

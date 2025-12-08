@@ -12,15 +12,19 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
   FileText,
-  Loader2,
   AlertCircle,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PdfViewer } from "./pdf-viewer";
 import type { DocumentReference, UploadedDocument } from "@/types/document";
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface DocumentViewerModalProps {
   /** The document reference to display */
@@ -35,11 +39,15 @@ interface DocumentViewerModalProps {
   onClose: () => void;
 }
 
+// ============================================================================
+// Component
+// ============================================================================
+
 /**
  * Modal component for viewing document references.
  *
  * Displays the referenced document with context about the match.
- * Uses native browser PDF rendering via iframe.
+ * Uses react-pdf for PDF rendering with bbox highlighting.
  *
  * @example
  * ```tsx
@@ -76,11 +84,10 @@ export function DocumentViewerModal({
   );
 }
 
-/**
- * Inner content component that holds the stateful logic.
- * Using key={reference.id} on this component ensures state resets
- * when switching between different references.
- */
+// ============================================================================
+// Inner Content Component
+// ============================================================================
+
 interface DocumentViewerContentProps {
   reference: DocumentReference;
   document: UploadedDocument;
@@ -92,59 +99,43 @@ function DocumentViewerContent({
   document,
   roomId,
 }: DocumentViewerContentProps) {
-  // State is now scoped to this component and resets via key prop
-  const [currentPage, setCurrentPage] = useState(reference.pageNumber);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [numPages, setNumPages] = useState<number>(document.pageCount || 0);
 
-  // Build PDF URL with page fragment
-  const getPdfUrl = useCallback(
-    (page?: number) => {
-      const baseUrl = `/api/documents/${reference.documentId}/pdf?roomId=${encodeURIComponent(roomId)}`;
-      // Add page fragment for PDF viewers that support it
-      return page ? `${baseUrl}#page=${page}` : baseUrl;
-    },
-    [reference.documentId, roomId]
-  );
+  // Build PDF URL
+  const pdfUrl = `/api/documents/${reference.documentId}/pdf?roomId=${encodeURIComponent(roomId)}`;
 
-  const pdfUrl = getPdfUrl(currentPage);
-
-  // Navigation handlers
-  const goToPrevPage = useCallback(() => {
-    setCurrentPage((prev) => Math.max(prev - 1, 1));
-    setIsLoading(true);
+  // Handle document load
+  const handleDocumentLoad = useCallback((pages: number) => {
+    setNumPages(pages);
+    setError(null);
   }, []);
 
-  const goToNextPage = useCallback(() => {
-    setCurrentPage((prev) => Math.min(prev + 1, document.pageCount));
-    setIsLoading(true);
-  }, [document.pageCount]);
-
-  const goToReferencedPage = useCallback(() => {
-    setCurrentPage(reference.pageNumber);
-    setIsLoading(true);
-  }, [reference.pageNumber]);
-
-  // Handle iframe load events
-  const handleIframeLoad = useCallback(() => {
-    setIsLoading(false);
-  }, []);
-
-  const handleIframeError = useCallback(() => {
-    setIsLoading(false);
-    setError("Failed to load document");
+  // Handle document error
+  const handleDocumentError = useCallback((errorMessage: string) => {
+    setError(errorMessage);
   }, []);
 
   // Open in new tab
   const openInNewTab = useCallback(() => {
-    const url = getPdfUrl();
-    if (url) {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
-  }, [getPdfUrl]);
+    window.open(pdfUrl, "_blank", "noopener,noreferrer");
+  }, [pdfUrl]);
+
+  // Toggle expanded view
+  const toggleExpanded = useCallback(() => {
+    setIsExpanded((prev) => !prev);
+  }, []);
 
   return (
-    <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0 gap-0">
+    <DialogContent
+      className={cn(
+        "flex flex-col p-0 gap-0 transition-all duration-200",
+        isExpanded
+          ? "max-w-[95vw] h-[95vh]"
+          : "max-w-5xl h-[90vh]"
+      )}
+    >
       {/* Header */}
       <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
         <div className="flex items-start justify-between gap-4">
@@ -154,25 +145,41 @@ function DocumentViewerContent({
               <span className="truncate">{document.title}</span>
             </DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {document.filename} &middot; {document.pageCount} pages
+              {document.filename} &middot; {numPages || document.pageCount} pages
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={openInNewTab}
-            className="flex-shrink-0"
-          >
-            <ExternalLink className="size-4 mr-2" />
-            Open in Tab
-          </Button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleExpanded}
+              className="size-8"
+            >
+              {isExpanded ? (
+                <Minimize2 className="size-4" />
+              ) : (
+                <Maximize2 className="size-4" />
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openInNewTab}
+            >
+              <ExternalLink className="size-4 mr-2" />
+              Open in Tab
+            </Button>
+          </div>
         </div>
       </DialogHeader>
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0">
         {/* Reference info sidebar */}
-        <div className="w-72 border-r flex-shrink-0 flex flex-col">
+        <div className={cn(
+          "border-r flex-shrink-0 flex flex-col transition-all duration-200",
+          isExpanded ? "w-80" : "w-72"
+        )}>
           <ScrollArea className="flex-1">
             <div className="p-4 space-y-4">
               {/* Reference details */}
@@ -181,14 +188,9 @@ function DocumentViewerContent({
                 <div className="space-y-3 text-sm">
                   <div>
                     <span className="text-muted-foreground">Page:</span>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="h-auto p-0 ml-2 text-blue-600"
-                      onClick={goToReferencedPage}
-                    >
+                    <span className="ml-2 font-medium">
                       Page {reference.pageNumber}
-                    </Button>
+                    </span>
                   </div>
 
                   {reference.sectionTitle && (
@@ -270,93 +272,32 @@ function DocumentViewerContent({
 
         {/* PDF viewer area */}
         <div className="flex-1 flex flex-col min-w-0 bg-muted/30">
-          {/* PDF iframe */}
-          <div className="flex-1 relative">
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-                <div className="flex flex-col items-center gap-2">
-                  <Loader2 className="size-8 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    Loading document...
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-                <div className="flex flex-col items-center gap-2 text-destructive">
-                  <AlertCircle className="size-8" />
-                  <span className="text-sm">{error}</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setError(null);
-                      setIsLoading(true);
-                    }}
-                  >
-                    Retry
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {pdfUrl && (
-              <iframe
-                key={`${reference.documentId}-${currentPage}`}
-                src={pdfUrl}
-                className="w-full h-full border-0"
-                title={`${document.title} - Page ${currentPage}`}
-                onLoad={handleIframeLoad}
-                onError={handleIframeError}
-              />
-            )}
-          </div>
-
-          {/* Page navigation */}
-          <div className="flex items-center justify-center gap-4 py-3 border-t bg-background">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goToPrevPage}
-              disabled={currentPage <= 1}
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Previous
-            </Button>
-
-            <div className="flex items-center gap-2">
-              <span className="text-sm">
-                Page{" "}
-                <span className="font-medium">{currentPage}</span> of{" "}
-                <span className="font-medium">{document.pageCount}</span>
-              </span>
-              {currentPage !== reference.pageNumber && (
+          {error ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-2 text-destructive">
+                <AlertCircle className="size-8" />
+                <span className="text-sm">{error}</span>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  onClick={goToReferencedPage}
-                  className={cn(
-                    "text-xs h-7 px-2",
-                    "text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                  )}
+                  onClick={() => setError(null)}
                 >
-                  Go to ref (p.{reference.pageNumber})
+                  Retry
                 </Button>
-              )}
+              </div>
             </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goToNextPage}
-              disabled={currentPage >= document.pageCount}
-            >
-              Next
-              <ChevronRight className="size-4 ml-1" />
-            </Button>
-          </div>
+          ) : (
+            <PdfViewer
+              file={pdfUrl}
+              initialPage={reference.pageNumber}
+              bbox={reference.bbox}
+              highlightText={reference.matchedText}
+              highlightPage={reference.pageNumber}
+              onDocumentLoad={handleDocumentLoad}
+              onError={handleDocumentError}
+              className="flex-1"
+            />
+          )}
         </div>
       </div>
     </DialogContent>

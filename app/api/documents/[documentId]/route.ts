@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { db } from "@/lib/db";
+import { document } from "@/lib/db/schema";
+import { deleteFiles, STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase";
+import { validateRoomAccess } from "@/lib/db/room-access";
+import { eq, and } from "drizzle-orm";
 
 export async function GET(
   request: NextRequest,
@@ -41,34 +46,41 @@ export async function GET(
     );
   }
 
-  const agentServiceUrl = process.env.AGENT_SERVICE_URL;
-
-  if (!agentServiceUrl) {
+  // Validate room access (user must have joined the room)
+  const accessError = await validateRoomAccess(session.user.id, roomId);
+  if (accessError) {
     return NextResponse.json(
-      { error: "Document service not available" },
-      { status: 503 }
+      { error: accessError },
+      { status: 403 }
     );
   }
 
   try {
-    const response = await fetch(
-      `${agentServiceUrl}/documents/${documentId}?roomId=${encodeURIComponent(roomId)}`,
-      {
-        headers: {
-          "X-Internal-Token": process.env.INTERNAL_SERVICE_TOKEN || "",
-        },
-      }
-    );
+    // Fetch document from database
+    const [doc] = await db
+      .select()
+      .from(document)
+      .where(and(eq(document.id, documentId), eq(document.roomId, roomId)))
+      .limit(1);
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        return NextResponse.json({ error: "Document not found" }, { status: 404 });
-      }
-      throw new Error(`Agent service returned ${response.status}`);
+    if (!doc) {
+      return NextResponse.json(
+        { error: "Document not found" },
+        { status: 404 }
+      );
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json({
+      id: doc.id,
+      filename: doc.filename,
+      title: doc.title,
+      pageCount: doc.pageCount,
+      fileSize: doc.fileSize,
+      status: doc.status,
+      uploadedAt: doc.createdAt.getTime(),
+      uploadedBy: doc.uploadedBy,
+      roomId: doc.roomId,
+    });
   } catch (error) {
     console.error("Document info error:", error);
     return NextResponse.json(
@@ -117,35 +129,53 @@ export async function DELETE(
     );
   }
 
-  const agentServiceUrl = process.env.AGENT_SERVICE_URL;
-
-  if (!agentServiceUrl) {
+  // Validate room access (user must have joined the room)
+  const accessError = await validateRoomAccess(session.user.id, roomId);
+  if (accessError) {
     return NextResponse.json(
-      { error: "Document service not available" },
-      { status: 503 }
+      { error: accessError },
+      { status: 403 }
     );
   }
 
   try {
-    const response = await fetch(
-      `${agentServiceUrl}/documents/${documentId}?roomId=${encodeURIComponent(roomId)}`,
-      {
-        method: "DELETE",
-        headers: {
-          "X-Internal-Token": process.env.INTERNAL_SERVICE_TOKEN || "",
-        },
-      }
-    );
+    // Fetch document from database to verify it exists
+    const [doc] = await db
+      .select()
+      .from(document)
+      .where(and(eq(document.id, documentId), eq(document.roomId, roomId)))
+      .limit(1);
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        return NextResponse.json({ error: "Document not found" }, { status: 404 });
-      }
-      throw new Error(`Agent service returned ${response.status}`);
+    if (!doc) {
+      return NextResponse.json(
+        { error: "Document not found" },
+        { status: 404 }
+      );
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    // Only allow document owner to delete
+    if (doc.uploadedBy !== session.user.id) {
+      return NextResponse.json(
+        { error: "Only the document owner can delete this document" },
+        { status: 403 }
+      );
+    }
+
+    // Delete from Supabase Storage
+    const storagePath = STORAGE_PATHS.document(roomId, documentId);
+    const deleted = await deleteFiles(STORAGE_BUCKETS.DOCUMENTS, [storagePath]);
+
+    if (!deleted) {
+      console.error("Failed to delete file from storage");
+      // Continue with database deletion even if storage deletion fails
+    }
+
+    // Delete from database
+    await db
+      .delete(document)
+      .where(and(eq(document.id, documentId), eq(document.roomId, roomId)));
+
+    return NextResponse.json({ success: true, documentId });
   } catch (error) {
     console.error("Document delete error:", error);
     return NextResponse.json(

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { db } from "@/lib/db";
+import { document } from "@/lib/db/schema";
+import { downloadFile, STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase";
+import { validateRoomAccess } from "@/lib/db/room-access";
+import { eq, and } from "drizzle-orm";
 
 export async function GET(
   request: NextRequest,
@@ -42,44 +47,60 @@ export async function GET(
     );
   }
 
-  const agentServiceUrl = process.env.AGENT_SERVICE_URL;
-
-  if (!agentServiceUrl) {
+  // Validate room access (user must have joined the room)
+  const accessError = await validateRoomAccess(session.user.id, roomId);
+  if (accessError) {
     return NextResponse.json(
-      { error: "Document service not available" },
-      { status: 503 }
+      { error: accessError },
+      { status: 403 }
     );
   }
 
   try {
-    // Fetch PDF from agent service with room validation
-    const response = await fetch(
-      `${agentServiceUrl}/documents/${documentId}/pdf?roomId=${encodeURIComponent(roomId)}`,
-      {
-        headers: {
-          "X-Internal-Token": process.env.INTERNAL_SERVICE_TOKEN || "",
-          "X-User-Id": session.user.id,
-        },
-      }
-    );
+    // Fetch document metadata from database
+    const [doc] = await db
+      .select()
+      .from(document)
+      .where(and(eq(document.id, documentId), eq(document.roomId, roomId)))
+      .limit(1);
 
-    if (!response.ok) {
-      if (response.status === 403) {
-        return NextResponse.json({ error: "Access denied" }, { status: 403 });
-      }
-      if (response.status === 404) {
-        return NextResponse.json({ error: "Document not found" }, { status: 404 });
-      }
-      throw new Error(`Agent service returned ${response.status}`);
+    if (!doc) {
+      return NextResponse.json(
+        { error: "Document not found" },
+        { status: 404 }
+      );
     }
 
-    const pdfBuffer = await response.arrayBuffer();
+    // Check if document is ready
+    if (doc.status === "error") {
+      return NextResponse.json(
+        { error: "Document processing failed" },
+        { status: 400 }
+      );
+    }
+
+    // Get storage path
+    const storagePath = STORAGE_PATHS.document(roomId, documentId);
+
+    // Download file from Supabase Storage
+    const fileBlob = await downloadFile(STORAGE_BUCKETS.DOCUMENTS, storagePath);
+
+    if (!fileBlob) {
+      return NextResponse.json(
+        { error: "Failed to retrieve document from storage" },
+        { status: 500 }
+      );
+    }
+
+    // Convert blob to array buffer
+    const pdfBuffer = await fileBlob.arrayBuffer();
 
     return new NextResponse(pdfBuffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${documentId}.pdf"`,
+        "Content-Disposition": `inline; filename="${doc.filename}"`,
         "Cache-Control": "private, max-age=3600",
+        "Content-Length": pdfBuffer.byteLength.toString(),
       },
     });
   } catch (error) {
