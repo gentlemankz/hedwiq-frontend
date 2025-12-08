@@ -15,7 +15,10 @@ import { cn, getInitials, getHashedColor } from "@/lib/utils";
 import { FileText, ChevronDown } from "lucide-react";
 import { useInsights } from "@/hooks/use-insights";
 import { InsightBadge } from "@/components/insights/insight-badge";
+import { DocumentReferenceBadge } from "@/components/documents/document-reference-badge";
+import { useDocumentsContext } from "@/contexts/documents-context";
 import type { Insight } from "@/types/insight";
+import type { DocumentReference } from "@/types/document";
 
 // ============================================================================
 // Constants
@@ -116,6 +119,8 @@ interface TranscriptionSidebarProps {
   className?: string;
   /** Callback when an insight is clicked */
   onInsightClick?: (insight: Insight) => void;
+  /** Callback when a document reference is clicked */
+  onDocumentReferenceClick?: (reference: DocumentReference) => void;
 }
 
 // ============================================================================
@@ -125,6 +130,7 @@ interface TranscriptionSidebarProps {
 export function TranscriptionSidebar({
   className,
   onInsightClick,
+  onDocumentReferenceClick,
 }: TranscriptionSidebarProps) {
   const room = useRoomContext();
   const isMountedRef = useRef(true);
@@ -136,6 +142,9 @@ export function TranscriptionSidebar({
 
   // Get insights from the hook
   const { getInsightsForTranscript } = useInsights();
+
+  // Get document references from context
+  const { getReferencesForTranscript, getDocument } = useDocumentsContext();
 
   // Track mounted state to prevent state updates after unmount
   useEffect(() => {
@@ -277,6 +286,9 @@ export function TranscriptionSidebar({
                   entry={entry}
                   insights={getInsightsForTranscript(entry.id)}
                   onInsightClick={onInsightClick}
+                  documentReferences={getReferencesForTranscript(entry.id)}
+                  onDocumentReferenceClick={onDocumentReferenceClick}
+                  getDocumentTitle={(docId) => getDocument(docId)?.title}
                 />
               ))}
 
@@ -320,6 +332,12 @@ interface TranscriptionMessageProps {
   insights?: Insight[];
   /** Callback when an insight badge is clicked */
   onInsightClick?: (insight: Insight) => void;
+  /** Document references related to this transcript entry */
+  documentReferences?: DocumentReference[];
+  /** Callback when a document reference badge is clicked */
+  onDocumentReferenceClick?: (reference: DocumentReference) => void;
+  /** Function to get document title by ID */
+  getDocumentTitle?: (docId: string) => string | undefined;
 }
 
 const TranscriptionMessage = React.memo(function TranscriptionMessage({
@@ -327,7 +345,12 @@ const TranscriptionMessage = React.memo(function TranscriptionMessage({
   isInterim,
   insights = [],
   onInsightClick,
+  documentReferences = [],
+  onDocumentReferenceClick,
+  getDocumentTitle,
 }: TranscriptionMessageProps) {
+  const hasBadges = insights.length > 0 || documentReferences.length > 0;
+
   return (
     <div className={cn("flex gap-3", isInterim && "opacity-60")}>
       <Avatar className="size-8 shrink-0">
@@ -353,15 +376,26 @@ const TranscriptionMessage = React.memo(function TranscriptionMessage({
           {entry.text}
         </p>
 
-        {/* Inline insight badges */}
-        {insights.length > 0 && (
+        {/* Inline badges (insights and document references) */}
+        {hasBadges && (
           <div className="flex flex-wrap gap-1.5 mt-2">
+            {/* Insight badges */}
             {insights.map((insight) => (
               <InsightBadge
                 key={insight.id}
                 type={insight.type}
                 content={insight.content}
                 onClick={() => onInsightClick?.(insight)}
+              />
+            ))}
+
+            {/* Document reference badges */}
+            {documentReferences.map((reference) => (
+              <DocumentReferenceBadge
+                key={reference.id}
+                reference={reference}
+                documentTitle={getDocumentTitle?.(reference.documentId)}
+                onClick={() => onDocumentReferenceClick?.(reference)}
               />
             ))}
           </div>

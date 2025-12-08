@@ -29,51 +29,99 @@ This is a Next.js 16 application using the App Router with React 19 and TypeScri
 
 ```
 frontend/
-├── app/                          # Next.js App Router
-│   ├── (auth)/                   # Auth route group
-│   │   └── sign-in/              # Sign-in page
-│   ├── api/                      # API routes
-│   │   ├── auth/[...all]/        # Better Auth catch-all handler
-│   │   └── livekit/token/        # LiveKit token generation endpoint
-│   ├── dashboard/                # Dashboard page with client component
-│   ├── meetings/                 # Meeting pages
-│   │   └── [roomId]/             # Dynamic room routes
-│   │       ├── components/       # Room-specific components
+├── app/                              # Next.js App Router
+│   ├── (auth)/                       # Auth route group
+│   │   ├── layout.tsx                # Auth pages layout
+│   │   └── sign-in/
+│   │       └── page.tsx              # Sign-in page
+│   ├── api/                          # API routes
+│   │   ├── auth/[...all]/
+│   │   │   └── route.ts              # Better Auth catch-all handler
+│   │   ├── documents/
+│   │   │   ├── [documentId]/
+│   │   │   │   ├── route.ts          # Get/delete document endpoint
+│   │   │   │   └── pdf/
+│   │   │   │       └── route.ts      # Serve PDF file endpoint
+│   │   │   └── upload/
+│   │   │       └── route.ts          # Document upload endpoint
+│   │   └── livekit/token/
+│   │       └── route.ts              # LiveKit token generation endpoint
+│   ├── dashboard/
+│   │   ├── dashboard-client.tsx      # Dashboard client component
+│   │   └── page.tsx                  # Dashboard page
+│   ├── meetings/
+│   │   └── [roomId]/                 # Dynamic room routes
+│   │       ├── components/           # Room-specific components
 │   │       │   ├── media-controls.tsx
-│   │       │   ├── meeting-layout.tsx
+│   │       │   ├── meeting-layout.tsx  # Sidebar tabs + document viewer modal
 │   │       │   ├── username-form.tsx
 │   │       │   └── video-preview.tsx
-│   │       ├── meeting-room.tsx
+│   │       ├── meeting-room.tsx      # LiveKit room wrapper with providers
 │   │       ├── page.tsx
 │   │       └── pre-join-screen.tsx
-│   ├── globals.css               # Global styles with LiveKit theme integration
-│   ├── layout.tsx                # Root layout
-│   └── page.tsx                  # Landing page
+│   ├── globals.css                   # Global styles with LiveKit theme integration
+│   ├── layout.tsx                    # Root layout
+│   └── page.tsx                      # Landing page
 ├── components/
-│   ├── transcription/            # Real-time transcription components
-│   │   ├── index.ts
+│   ├── documents/                    # Document reference components (Phase 3)
+│   │   ├── index.ts                  # Barrel export
+│   │   ├── document-upload.tsx       # PDF upload dialog component
+│   │   ├── document-reference-badge.tsx  # Inline badge for transcript refs
+│   │   └── document-viewer-modal.tsx # PDF viewer modal with reference details
+│   ├── insights/                     # AI insights display components
+│   │   ├── index.ts                  # Barrel export
+│   │   ├── insight-badge.tsx         # Badge for insight types
+│   │   ├── insight-card.tsx          # Individual insight display card
+│   │   └── insights-summary-panel.tsx # Collapsible insights panel
+│   ├── transcription/                # Real-time transcription components
+│   │   ├── index.ts                  # Barrel export
 │   │   ├── transcription-error-boundary.tsx
-│   │   └── transcription-sidebar.tsx
-│   └── ui/                       # shadcn/ui components (53 components)
-├── hooks/                        # Custom React hooks
-│   ├── use-media-devices.ts      # Camera/microphone device management
-│   └── use-mobile.ts             # Mobile detection hook
+│   │   └── transcription-sidebar.tsx # Shows transcripts + insight/doc badges
+│   └── ui/                           # shadcn/ui components (53 components)
+├── contexts/                         # React context providers
+│   ├── index.ts                      # Barrel export
+│   ├── documents-context.tsx         # Document refs + deduplication + LiveKit stream
+│   └── insights-context.tsx          # AI insights state management
+├── hooks/                            # Custom React hooks
+│   ├── use-insights.ts               # Hook for consuming insights context
+│   ├── use-media-devices.ts          # Camera/microphone device management
+│   └── use-mobile.ts                 # Mobile detection hook
 ├── lib/
-│   ├── auth.ts                   # Better Auth server configuration
-│   ├── auth-client.ts            # Better Auth client configuration
-│   ├── db/                       # Drizzle ORM setup
-│   │   ├── index.ts              # Database connection
-│   │   ├── schema.ts             # Database schema definitions
-│   │   └── migrations/           # SQL migrations
-│   ├── utils.ts                  # Utility functions (cn helper, etc.)
-│   └── validation.ts             # Zod validation schemas
-├── types/                        # TypeScript type definitions
-│   └── user.ts                   # User-related types
-├── docs/                         # Project documentation
-│   ├── PRD.md                    # Product Requirements Document
-│   └── startup-info.md           # Startup context
-├── public/                       # Static assets
-└── proxy.ts                      # Next.js 16 route protection middleware
+│   ├── auth.ts                       # Better Auth server configuration
+│   ├── auth-client.ts                # Better Auth client configuration
+│   ├── db/                           # Drizzle ORM setup
+│   │   ├── index.ts                  # Database connection
+│   │   ├── schema.ts                 # Database schema definitions
+│   │   └── migrations/               # SQL migrations
+│   │       ├── 0000_shallow_freak.sql
+│   │       └── meta/                 # Migration metadata
+│   ├── utils.ts                      # Utility functions (cn helper, etc.)
+│   └── validation.ts                 # Zod validation schemas
+├── types/                            # TypeScript type definitions
+│   ├── document.ts                   # Document + DocumentReference types
+│   ├── insight.ts                    # AI insight types
+│   └── user.ts                       # User-related types
+├── docs/                             # Project documentation
+│   ├── PRD.md                        # Product Requirements Document
+│   ├── startup-info.md               # Startup context
+│   ├── DOCUMENT_REFERENCE_PLAN.md    # Document feature plan
+│   ├── PHASE2_INSIGHTS_PLAN.md       # AI insights implementation plan
+│   ├── better-auth-llm.txt           # Better Auth reference docs
+│   └── livekit-llm.txt               # LiveKit reference docs
+├── public/                           # Static assets
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
+├── proxy.ts                          # Next.js 16 route protection middleware
+├── drizzle.config.ts                 # Drizzle ORM configuration
+├── components.json                   # shadcn/ui configuration
+├── tsconfig.json                     # TypeScript configuration
+├── next.config.ts                    # Next.js configuration
+├── eslint.config.mjs                 # ESLint configuration
+├── postcss.config.mjs                # PostCSS configuration
+└── package.json                      # Project dependencies
 ```
 
 ### Key Technologies

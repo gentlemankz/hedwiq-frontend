@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { VideoConference } from "@livekit/components-react";
+import { VideoConference, useRoomContext } from "@livekit/components-react";
 import {
   TranscriptionSidebar,
   TranscriptionErrorBoundary,
@@ -10,6 +10,8 @@ import {
   InsightsSummaryPanel,
   InsightsIndicator,
 } from "@/components/insights";
+import { DocumentViewerModal } from "@/components/documents/document-viewer-modal";
+import { useDocumentsContext } from "@/contexts/documents-context";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +19,7 @@ import { FileText, Sparkles, X, PanelRightClose } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useInsights } from "@/hooks/use-insights";
 import type { Insight } from "@/types/insight";
+import type { DocumentReference } from "@/types/document";
 
 interface MeetingLayoutProps {
   showTranscription?: boolean;
@@ -27,15 +30,37 @@ type SidebarTab = "transcript" | "insights";
 export function MeetingLayout({
   showTranscription: initialShowTranscription = true,
 }: MeetingLayoutProps) {
+  const room = useRoomContext();
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
   const [activeTab, setActiveTab] = useState<SidebarTab>("transcript");
   const { insightCount } = useInsights();
+  const { getDocument } = useDocumentsContext();
+
+  // Document reference viewer state
+  const [selectedReference, setSelectedReference] =
+    useState<DocumentReference | null>(null);
+
+  // Get room ID from LiveKit room name
+  const roomId = room?.name || "";
 
   // Handle insight click - switch to insights tab
   const handleInsightClick = useCallback((insight: Insight) => {
     setActiveTab("insights");
     // Could also scroll to the insight or highlight it
     console.log("Insight clicked:", insight);
+  }, []);
+
+  // Handle document reference click - open viewer modal
+  const handleDocumentReferenceClick = useCallback(
+    (reference: DocumentReference) => {
+      setSelectedReference(reference);
+    },
+    []
+  );
+
+  // Close document viewer
+  const handleCloseDocumentViewer = useCallback(() => {
+    setSelectedReference(null);
   }, []);
 
   return (
@@ -98,6 +123,7 @@ export function MeetingLayout({
                 <TranscriptionSidebar
                   className="border-l-0 h-full"
                   onInsightClick={handleInsightClick}
+                  onDocumentReferenceClick={handleDocumentReferenceClick}
                 />
               </TranscriptionErrorBoundary>
             </div>
@@ -139,6 +165,17 @@ export function MeetingLayout({
           </Button>
         </div>
       )}
+
+      {/* Document viewer modal */}
+      <DocumentViewerModal
+        reference={selectedReference}
+        document={
+          selectedReference ? getDocument(selectedReference.documentId) ?? null : null
+        }
+        roomId={roomId}
+        open={!!selectedReference}
+        onClose={handleCloseDocumentViewer}
+      />
     </div>
   );
 }
