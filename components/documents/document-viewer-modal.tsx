@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Maximize2,
   Minimize2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PdfViewer } from "./pdf-viewer";
@@ -37,6 +38,8 @@ interface DocumentViewerModalProps {
   open: boolean;
   /** Callback when modal is closed */
   onClose: () => void;
+  /** Whether document metadata is still loading */
+  isLoadingDocument?: boolean;
 }
 
 // ============================================================================
@@ -66,20 +69,55 @@ export function DocumentViewerModal({
   roomId,
   open,
   onClose,
+  isLoadingDocument = false,
 }: DocumentViewerModalProps) {
-  if (!reference || !document) {
+  // Don't render dialog if we have no reference (nothing to show)
+  if (!reference) {
     return null;
   }
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      {/* Use key to reset inner component state when reference changes */}
-      <DocumentViewerContent
-        key={reference.id}
-        reference={reference}
-        document={document}
-        roomId={roomId}
-      />
+      {isLoadingDocument ? (
+        // Loading state while document metadata is being fetched
+        <DialogContent className="max-w-md">
+          <div className="flex flex-col items-center justify-center py-12 gap-4">
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
+            <div className="text-center">
+              <p className="font-medium">Loading document...</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Fetching document metadata
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      ) : !document ? (
+        // Error state when document can't be found
+        <DialogContent className="max-w-md">
+          <div className="flex flex-col items-center justify-center py-12 gap-4">
+            <AlertCircle className="size-8 text-destructive" />
+            <div className="text-center">
+              <p className="font-medium">Document not found</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                The referenced document could not be loaded.
+                <br />
+                Document ID: <code className="text-xs">{reference.documentId}</code>
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      ) : (
+        // Normal content when document is available
+        <DocumentViewerContent
+          key={reference.id}
+          reference={reference}
+          document={document}
+          roomId={roomId}
+        />
+      )}
     </Dialog>
   );
 }

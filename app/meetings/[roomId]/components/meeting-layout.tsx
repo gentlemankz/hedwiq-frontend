@@ -34,7 +34,7 @@ export function MeetingLayout({
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
   const [activeTab, setActiveTab] = useState<SidebarTab>("transcript");
   const { insightCount } = useInsights();
-  const { getDocument } = useDocumentsContext();
+  const { getDocument, isHydrating, isDocumentLoading, documentCount } = useDocumentsContext();
 
   // Document reference viewer state
   const [selectedReference, setSelectedReference] =
@@ -53,9 +53,23 @@ export function MeetingLayout({
   // Handle document reference click - open viewer modal
   const handleDocumentReferenceClick = useCallback(
     (reference: DocumentReference) => {
+      // Debug logging to help track document reference issues
+      const doc = getDocument(reference.documentId);
+      console.log("[DocumentViewer] Reference clicked:", {
+        documentId: reference.documentId,
+        documentFound: !!doc,
+        documentCount,
+        isHydrating,
+      });
+      if (!doc) {
+        console.warn(
+          `[DocumentViewer] Document not found for ID: ${reference.documentId}. ` +
+          `Available docs: ${documentCount}. Still hydrating: ${isHydrating}`
+        );
+      }
       setSelectedReference(reference);
     },
-    []
+    [getDocument, documentCount, isHydrating]
   );
 
   // Close document viewer
@@ -175,6 +189,11 @@ export function MeetingLayout({
         roomId={roomId}
         open={!!selectedReference}
         onClose={handleCloseDocumentViewer}
+        isLoadingDocument={
+          !!selectedReference &&
+          !getDocument(selectedReference.documentId) &&
+          (isHydrating || isDocumentLoading(selectedReference.documentId))
+        }
       />
     </div>
   );
