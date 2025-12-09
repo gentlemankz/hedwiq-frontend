@@ -153,10 +153,12 @@ export function PdfViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const highlightRef = useRef<HTMLDivElement>(null);
   const lastFittedWidthRef = useRef<number>(0);
   const userHasZoomedRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
   const isScrollingToPageRef = useRef<boolean>(false);
+  const hasScrolledToHighlightRef = useRef<boolean>(false);
 
   // First page dimensions for initial fit calculation (before all pages load)
   const firstPageDimensionsRef = useRef<PageDimensions | null>(null);
@@ -371,16 +373,81 @@ export function PdfViewer({
     }
   }, []);
 
-  // Scroll to initial page or highlight page on mount
+  // ============================================================================
+  // Scroll to Highlight (Smart positioning)
+  // ============================================================================
+
+  /**
+   * Scroll the highlight element into view, centered in the viewport.
+   * This is better UX than jumping to a page - it ensures the referenced
+   * content is immediately visible regardless of where it is on the page.
+   */
+  const scrollToHighlight = useCallback(() => {
+    if (highlightRef.current && scrollContainerRef.current) {
+      isScrollingToPageRef.current = true;
+
+      // Scroll the highlight into the center of the viewport
+      highlightRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "center",
+      });
+
+      hasScrolledToHighlightRef.current = true;
+
+      // Reset the scrolling flag after animation
+      setTimeout(() => {
+        isScrollingToPageRef.current = false;
+      }, 500);
+
+      return true;
+    }
+    return false;
+  }, []);
+
+  // Scroll to highlight when it becomes available
+  // Uses a polling approach since the highlight element renders after the page
   useEffect(() => {
-    if (numPages > 0 && !isLoading) {
+    if (numPages > 0 && !isLoading && highlightPage && bbox && !hasScrolledToHighlightRef.current) {
+      // Check if the highlight page dimensions are loaded
+      const pageDims = pageDimensionsMap.get(highlightPage);
+      if (!pageDims) {
+        return; // Wait for page to load
+      }
+
+      // Try to scroll to highlight, retry if element not ready yet
+      const attemptScroll = (retries = 0) => {
+        if (retries > 10) {
+          // Fallback: scroll to page if highlight element never appears
+          scrollToPage(highlightPage);
+          return;
+        }
+
+        if (highlightRef.current) {
+          scrollToHighlight();
+        } else {
+          // Retry after a short delay
+          setTimeout(() => attemptScroll(retries + 1), 100);
+        }
+      };
+
+      // Start attempting to scroll after a short delay for render
+      setTimeout(() => attemptScroll(), 150);
+    }
+  }, [numPages, isLoading, highlightPage, bbox, pageDimensionsMap, scrollToHighlight, scrollToPage]);
+
+  // Fallback: Scroll to page if no bbox (text-only highlight)
+  useEffect(() => {
+    if (numPages > 0 && !isLoading && !bbox && !hasScrolledToHighlightRef.current) {
       const targetPage = highlightPage || initialPage;
       if (targetPage > 1) {
-        // Small delay to ensure pages are rendered
-        setTimeout(() => scrollToPage(targetPage), 100);
+        setTimeout(() => {
+          scrollToPage(targetPage);
+          hasScrolledToHighlightRef.current = true;
+        }, 100);
       }
     }
-  }, [numPages, isLoading, highlightPage, initialPage, scrollToPage]);
+  }, [numPages, isLoading, highlightPage, initialPage, bbox, scrollToPage]);
 
   // ============================================================================
   // Zoom
@@ -711,16 +778,21 @@ export function PdfViewer({
               {currentPage} / {numPages || "?"}
             </span>
 
-            {highlightPage && currentPage !== highlightPage && (
+            {highlightPage && (
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => scrollToPage(highlightPage)}
+                onClick={() => {
+                  // Prefer scrolling to highlight element, fallback to page
+                  if (!scrollToHighlight()) {
+                    scrollToPage(highlightPage);
+                  }
+                }}
                 className="text-xs h-7 px-2"
                 aria-label={`Jump to referenced content on page ${highlightPage}`}
               >
                 <ChevronsUp className="size-3 mr-1" />
-                Jump to ref (p.{highlightPage})
+                Jump to reference
               </Button>
             )}
           </div>
@@ -885,6 +957,7 @@ export function PdfViewer({
                   {/* Bounding Box Highlight Overlay for this page */}
                   {bboxStyle && (
                     <div
+                      ref={highlightRef}
                       className="absolute pointer-events-none rounded-[2px]"
                       style={{
                         ...bboxStyle,
