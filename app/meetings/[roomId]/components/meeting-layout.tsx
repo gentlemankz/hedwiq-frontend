@@ -10,8 +10,11 @@ import {
   InsightsSummaryPanel,
   InsightsIndicator,
 } from "@/components/insights";
+import { AgendaProgressPanel, AgendaHeader } from "@/components/agenda";
 import { DocumentViewerModal } from "@/components/documents/document-viewer-modal";
 import { useDocumentsContext } from "@/contexts/documents-context";
+import { useAgendaContextSafe } from "@/contexts/agenda-context";
+import { AGENDA_CONSTANTS } from "@/types/agenda";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +38,11 @@ export function MeetingLayout({
   const [activeTab, setActiveTab] = useState<SidebarTab>("transcript");
   const { insightCount } = useInsights();
   const { getDocument, isHydrating, isDocumentLoading, documentCount } = useDocumentsContext();
+  const agendaContext = useAgendaContextSafe();
+
+  // Check if agenda is active to determine sidebar width
+  const hasAgenda = agendaContext?.isAgendaActive ?? false;
+  const sidebarWidth = hasAgenda ? AGENDA_CONSTANTS.SIDEBAR_WIDTH : 384; // 384 = w-96
 
   // Document reference viewer state
   const [selectedReference, setSelectedReference] =
@@ -80,13 +88,22 @@ export function MeetingLayout({
   return (
     <div className="flex h-full">
       {/* Main video area */}
-      <div className={cn("flex-1 transition-all", showSidebar && "mr-96")}>
+      <div
+        className={cn("flex-1 transition-all")}
+        style={{ marginRight: showSidebar ? sidebarWidth : 0 }}
+      >
         <VideoConference />
       </div>
 
       {/* Combined sidebar with tabs */}
       {showSidebar && (
-        <div className="fixed right-0 top-0 bottom-0 w-96 z-50 flex flex-col bg-background border-l">
+        <div
+          className="fixed right-0 top-0 bottom-0 z-50 flex flex-col bg-background border-l"
+          style={{ width: sidebarWidth }}
+        >
+          {/* Agenda header showing current topic (if agenda active) */}
+          <AgendaHeader />
+
           {/* Sidebar header with tabs */}
           <div className="border-b">
             <div className="flex items-center justify-between px-4 py-2">
@@ -125,32 +142,38 @@ export function MeetingLayout({
             </div>
           </div>
 
-          {/* Tab content - both components always mounted, visibility controlled by CSS */}
-          <div className="flex-1 min-h-0 overflow-hidden relative">
-            <div
-              className={cn(
-                "absolute inset-0",
-                activeTab !== "transcript" && "invisible"
-              )}
-            >
-              <TranscriptionErrorBoundary>
-                <TranscriptionSidebar
+          {/* Content area - with agenda panel if active */}
+          <div className="flex-1 min-h-0 overflow-hidden flex">
+            {/* Agenda progress panel (shown when agenda is active) */}
+            {hasAgenda && <AgendaProgressPanel />}
+
+            {/* Tab content - both components always mounted, visibility controlled by CSS */}
+            <div className="flex-1 min-h-0 overflow-hidden relative">
+              <div
+                className={cn(
+                  "absolute inset-0",
+                  activeTab !== "transcript" && "invisible"
+                )}
+              >
+                <TranscriptionErrorBoundary>
+                  <TranscriptionSidebar
+                    className="border-l-0 h-full"
+                    onInsightClick={handleInsightClick}
+                    onDocumentReferenceClick={handleDocumentReferenceClick}
+                  />
+                </TranscriptionErrorBoundary>
+              </div>
+              <div
+                className={cn(
+                  "absolute inset-0",
+                  activeTab !== "insights" && "invisible"
+                )}
+              >
+                <InsightsSummaryPanel
                   className="border-l-0 h-full"
                   onInsightClick={handleInsightClick}
-                  onDocumentReferenceClick={handleDocumentReferenceClick}
                 />
-              </TranscriptionErrorBoundary>
-            </div>
-            <div
-              className={cn(
-                "absolute inset-0",
-                activeTab !== "insights" && "invisible"
-              )}
-            >
-              <InsightsSummaryPanel
-                className="border-l-0 h-full"
-                onInsightClick={handleInsightClick}
-              />
+              </div>
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ import { PreJoinScreen, UserChoices } from "./pre-join-screen";
 import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
 import { DocumentsProvider } from "@/contexts/documents-context";
+import { AgendaProvider } from "@/contexts/agenda-context";
 import type { User } from "@/types/user";
 
 interface MeetingRoomProps {
@@ -171,11 +172,16 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
           console.error("Media device failure:", failure);
         }}
       >
-        <InsightsProvider>
-          <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
-            <MeetingLayout showTranscription={true} />
-          </DocumentsProvider>
-        </InsightsProvider>
+        <AgendaProvider
+          initialItems={userChoices.agendaItems}
+          createdBy={userChoices.userId}
+        >
+          <InsightsProvider>
+            <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
+              <MeetingLayout showTranscription={true} />
+            </DocumentsProvider>
+          </InsightsProvider>
+        </AgendaProvider>
       </LiveKitRoom>
     </div>
   );

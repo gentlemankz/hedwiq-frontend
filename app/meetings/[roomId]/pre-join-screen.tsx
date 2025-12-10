@@ -4,16 +4,18 @@ import { useCallback, useState } from "react";
 import { LocalUserChoices } from "@livekit/components-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo } from "lucide-react";
 import Link from "next/link";
 import { useMediaDevices } from "@/hooks/use-media-devices";
 import { sanitizeUsername } from "@/lib/validation";
 import type { User } from "@/types/user";
 import type { UploadedDocument } from "@/types/document";
+import type { AgendaItem } from "@/types/agenda";
 import { VideoPreview } from "./components/video-preview";
 import { MediaControls } from "./components/media-controls";
 import { UsernameForm } from "./components/username-form";
 import { DocumentUpload } from "@/components/documents";
+import { AgendaCreator } from "@/components/agenda";
 
 // ============================================================================
 // Types
@@ -24,6 +26,8 @@ export interface UserChoices extends LocalUserChoices {
   userImage?: string | null;
   /** Documents uploaded before joining */
   uploadedDocuments?: UploadedDocument[];
+  /** Meeting agenda items created before joining */
+  agendaItems?: AgendaItem[];
 }
 
 interface PreJoinScreenProps {
@@ -75,6 +79,10 @@ export function PreJoinScreen({
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
   const [isDocumentSectionExpanded, setIsDocumentSectionExpanded] = useState(false);
 
+  // Agenda state
+  const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
+  const [isAgendaSectionExpanded, setIsAgendaSectionExpanded] = useState(false);
+
   // Handle document upload complete
   const handleDocumentUploadComplete = useCallback((doc: UploadedDocument) => {
     setUploadedDocuments((prev) => [...prev, doc]);
@@ -110,6 +118,7 @@ export function PreJoinScreen({
         userId: user.id,
         userImage: user.image,
         uploadedDocuments,
+        agendaItems: agendaItems.length > 0 ? agendaItems : undefined,
       });
     },
     [
@@ -122,6 +131,7 @@ export function PreJoinScreen({
       stopAllStreams,
       onSubmit,
       uploadedDocuments,
+      agendaItems,
     ]
   );
 
@@ -209,6 +219,45 @@ export function PreJoinScreen({
                   uploadedDocuments={uploadedDocuments}
                   onUploadComplete={handleDocumentUploadComplete}
                   onRemoveDocument={handleRemoveDocument}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Meeting Agenda Section (Collapsible) */}
+          <div className="border rounded-lg">
+            <button
+              type="button"
+              onClick={() => setIsAgendaSectionExpanded(!isAgendaSectionExpanded)}
+              className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <ListTodo className="size-5 text-muted-foreground" />
+                <div>
+                  <span className="font-medium">Meeting Agenda</span>
+                  {agendaItems.length > 0 && (
+                    <span className="ml-2 text-sm text-muted-foreground">
+                      ({agendaItems.length} item{agendaItems.length !== 1 ? "s" : ""})
+                    </span>
+                  )}
+                </div>
+              </div>
+              {isAgendaSectionExpanded ? (
+                <ChevronUp className="size-5 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="size-5 text-muted-foreground" />
+              )}
+            </button>
+
+            {isAgendaSectionExpanded && (
+              <div className="border-t p-4">
+                <p className="text-sm text-muted-foreground mb-4">
+                  Create an agenda to help structure your meeting. The AI will track progress
+                  through topics and notify participants when topics change.
+                </p>
+                <AgendaCreator
+                  items={agendaItems}
+                  onItemsChange={setAgendaItems}
                 />
               </div>
             )}
