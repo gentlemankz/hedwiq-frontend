@@ -9,7 +9,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useRoomContext } from "@livekit/components-react";
+import { useRoomContext, useConnectionState, useRemoteParticipants } from "@livekit/components-react";
+import { ConnectionState, RoomEvent } from "livekit-client";
 import type {
   Agenda,
   AgendaItem,
@@ -108,6 +109,8 @@ export function AgendaProvider({
   createdBy,
 }: AgendaProviderProps) {
   const room = useRoomContext();
+  // Use reactive connection state hook - this properly triggers re-renders when state changes
+  const connectionState = useConnectionState();
   const isMountedRef = useRef(true);
 
   // Initialize agenda from props using lazy initialization
@@ -213,26 +216,16 @@ export function AgendaProvider({
       setIsAgendaSent(true);
       hasSentAgendaRef.current = true;
 
-      // Update agenda with actual roomId and start the first item
+      // Update agenda with actual roomId only
+      // NOTE: Do NOT start the first item here - let the agent drive progress (Phase 1)
+      // The agent will send a 'topic_started' event when it detects discussion has begun
       setAgenda((prev) => {
         if (!prev) return prev;
-        const updatedItems = [...prev.items];
-
-        // Start the first item if not started
-        if (prev.currentItemIndex === -1 && prev.items.length > 0) {
-          updatedItems[0] = {
-            ...updatedItems[0],
-            status: "in_progress",
-            startedAt: Date.now(),
-          };
-        }
-
         return {
           ...prev,
           roomId: actualRoomId,
-          items: updatedItems,
-          currentItemIndex: prev.currentItemIndex === -1 && prev.items.length > 0 ? 0 : prev.currentItemIndex,
-          meetingStartedAt: prev.meetingStartedAt || Date.now(),
+          // Keep items unchanged - agent will update via progress events
+          // Keep currentItemIndex as -1 until agent sends topic_started
         };
       });
     } catch (err) {
@@ -305,11 +298,16 @@ export function AgendaProvider({
             setTopicChanges((prevChanges) => [...prevChanges, topicChange]);
           }
 
+          // Set meetingStartedAt on first topic_started event
+          const shouldSetMeetingStart =
+            data.type === "topic_started" && !prev.meetingStartedAt;
+
           return {
             ...prev,
             items: updatedItems,
             currentItemIndex:
               data.status === "in_progress" ? data.itemIndex : prev.currentItemIndex,
+            meetingStartedAt: shouldSetMeetingStart ? data.timestamp : prev.meetingStartedAt,
           };
         });
       } catch (err) {
@@ -347,13 +345,65 @@ export function AgendaProvider({
   }, [room, handleProgressUpdate]);
 
   // Send agenda to agent when room is connected and agenda exists
+  // IMPORTANT: Use reactive connectionState hook, not room.state
+  // room.state doesn't trigger re-renders when it changes
   useEffect(() => {
-    if (room && agenda && !hasSentAgendaRef.current && room.state === "connected") {
+    if (room && agenda && !hasSentAgendaRef.current && connectionState === ConnectionState.Connected) {
+      console.log("[AgendaContext] Room connected, sending agenda to agent automatically");
       // Note: hasSentAgendaRef is set inside sendAgendaToAgent after successful send
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       sendAgendaToAgent();
     }
-  }, [room, agenda, sendAgendaToAgent]);
+  }, [room, agenda, connectionState, sendAgendaToAgent]);
+
+  // Re-send agenda when a new participant joins (handles race condition where agent joins after frontend)
+  // The agent might connect after the frontend, missing the initial agenda send
+  useEffect(() => {
+    if (!room || !agenda || !isAgendaSent) return;
+
+    const handleParticipantConnected = () => {
+      // A new participant joined - this could be the agent
+      // Re-send the agenda to ensure the agent receives it
+      console.log("[AgendaContext] New participant joined, re-sending agenda to agent");
+
+      // Small delay to ensure the agent has registered its handlers
+      setTimeout(async () => {
+        try {
+          const localParticipant = room.localParticipant;
+          if (!localParticipant) return;
+
+          const payload = {
+            type: "agenda_init",
+            agenda: {
+              id: agenda.id,
+              roomId: agenda.roomId || room.name || "",
+              items: agenda.items.map(({ id, title, description, estimatedMinutes, leadBy, order }) => ({
+                id,
+                title,
+                description,
+                estimatedMinutes,
+                leadBy,
+                order,
+              })),
+            },
+          };
+
+          await localParticipant.sendText(JSON.stringify(payload), {
+            topic: AGENDA_TOPICS.AGENDA_INIT,
+          });
+          console.log("[AgendaContext] Re-sent agenda to newly joined participant");
+        } catch (err) {
+          console.error("[AgendaContext] Failed to re-send agenda:", err);
+        }
+      }, 1500); // 1.5 second delay to let agent register handlers
+    };
+
+    // Use RoomEvent.ParticipantConnected for type safety
+    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+
+    return () => {
+      room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
+    };
+  }, [room, agenda, isAgendaSent]);
 
   /**
    * Manually mark an item as completed
