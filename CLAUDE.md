@@ -100,9 +100,21 @@ frontend/
 │   └── ui/                           # shadcn/ui components (53 components)
 ├── contexts/                         # React context providers
 │   ├── index.ts                      # Barrel export
+│   ├── agenda/                       # Agenda context module (modular architecture)
+│   │   ├── index.ts                  # Barrel export for agenda context
+│   │   ├── agenda-context.tsx        # Main provider orchestrating all hooks
+│   │   ├── types.ts                  # Context types + LiveKit interfaces
+│   │   ├── constants.ts              # Agent prefix, retry settings, debug flag
+│   │   ├── validators.ts             # Type guards for events + state attributes
+│   │   ├── use-agenda-api.ts         # API fetch with retry/backoff logic
+│   │   ├── use-agenda-computed.ts    # Memoized computed values from state
+│   │   ├── use-agenda-event-processor.ts  # LiveKit event processing logic
+│   │   ├── use-agenda-late-joiner-sync.ts # Late joiner sync via agent attributes
+│   │   └── use-agenda-livekit.ts     # LiveKit stream subscription handler
 │   ├── documents-context.tsx         # Document refs + deduplication + LiveKit stream
 │   └── insights-context.tsx          # AI insights state management
 ├── hooks/                            # Custom React hooks
+│   ├── use-agenda.ts                 # Hook for consuming agenda context with utilities
 │   ├── use-insights.ts               # Hook for consuming insights context
 │   ├── use-media-devices.ts          # Camera/microphone device management
 │   └── use-mobile.ts                 # Mobile detection hook

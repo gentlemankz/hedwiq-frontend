@@ -42,10 +42,10 @@ export const AgendaProgressItem = React.memo(function AgendaProgressItem({
   item,
   isCurrent,
   isLast,
-  index: _index,
+  // Note: index is available in props for future numbering display (e.g., "1. Topic")
+  // Currently unused but kept for API stability with parent component
   className,
 }: AgendaProgressItemProps) {
-  void _index; // Reserved for future numbering display
   const isCompleted = item.status === "completed";
   const isSkipped = item.status === "skipped";
   const isDone = isCompleted || isSkipped;

@@ -28,9 +28,7 @@ export interface UserChoices extends LocalUserChoices {
   uploadedDocuments?: UploadedDocument[];
   /** Agenda items created before joining */
   agendaItems?: DraftAgendaItem[];
-  /** Agenda ID returned from server after save/publish (set by meeting-room.tsx) */
-  agendaId?: string;
-  /** Agenda version for cache invalidation */
+  /** Agenda version for cache invalidation (set by meeting-room.tsx after publish) */
   agendaVersion?: number;
 }
 

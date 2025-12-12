@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from "react";
-import { useAgendaContext } from "@/contexts/agenda-context";
+import { useAgendaContext } from "@/contexts/agenda";
 import type { AgendaItem, AgendaItemStatus } from "@/types/agenda";
 
 /**

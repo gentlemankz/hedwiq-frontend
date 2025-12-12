@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { ListTodo, AlertCircle, Clock, RefreshCw } from "lucide-react";
+import { ListTodo, AlertCircle, Clock, RefreshCw, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAgenda } from "@/hooks/use-agenda";
 import { AgendaProgressItem } from "./agenda-progress-item";
@@ -36,6 +36,7 @@ interface AgendaProgressProps {
  * - Loading: Skeleton UI
  * - No agenda: Empty state message
  * - Error: Error with retry button
+ * - Agent state only: Partial state from agent, awaiting definition
  * - Active: Full progress display
  */
 export function AgendaProgress({ className }: AgendaProgressProps) {
@@ -49,6 +50,9 @@ export function AgendaProgress({ className }: AgendaProgressProps) {
     progressSummary,
     remainingTimeLabel,
     refreshAgenda,
+    hasAgentStateOnly,
+    isMeetingStarted,
+    currentItem,
   } = useAgenda();
 
   // Loading state
@@ -60,8 +64,8 @@ export function AgendaProgress({ className }: AgendaProgressProps) {
     );
   }
 
-  // Error state
-  if (error) {
+  // Error state (only show if no agent recovery)
+  if (error && !hasAgentStateOnly) {
     return (
       <div className={cn("p-4", className)}>
         <Alert variant="destructive">
@@ -79,6 +83,37 @@ export function AgendaProgress({ className }: AgendaProgressProps) {
             </Button>
           </AlertDescription>
         </Alert>
+      </div>
+    );
+  }
+
+  // Agent state only: we have partial state from agent but no agenda definition
+  // This allows showing progress even when API failed but agent is connected
+  if (hasAgentStateOnly && !hasAgenda) {
+    return (
+      <div className={cn("p-4", className)}>
+        <div className="flex flex-col items-center justify-center py-6 text-center">
+          <div className="relative mb-3">
+            <Radio className="size-8 text-primary animate-pulse" />
+          </div>
+          <p className="text-sm font-medium text-foreground">
+            Connected to meeting
+          </p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
+            {isMeetingStarted
+              ? `Meeting in progress${currentItem ? `: ${currentItem.title}` : ""}`
+              : "Waiting for agenda definition..."}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refreshAgenda()}
+            className="mt-3"
+          >
+            <RefreshCw className="size-3 mr-1" />
+            Retry Loading
+          </Button>
+        </div>
       </div>
     );
   }

@@ -57,8 +57,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         // 4. Connect to LiveKit
         // This order ensures the agent can fetch the agenda when it joins.
 
-        // Track agenda metadata from server response
-        let agendaId: string | undefined;
+        // Track agenda version from server response (for cache invalidation)
         let agendaVersion: number | undefined;
 
         // Step 1 & 2: Save and publish agenda if items exist
@@ -104,9 +103,8 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
             throw new Error(data.error || "Failed to publish agenda");
           }
 
-          // Capture agenda metadata for downstream consumers
+          // Capture agenda version for cache invalidation
           const publishData: AgendaPublishResponse = await publishResponse.json();
-          agendaId = publishData.agenda.id;
           agendaVersion = publishData.agenda.version;
         }
 
@@ -133,10 +131,9 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         // Step 4: Only update state if this request wasn't aborted
         // (LiveKit connection happens via state update triggering LiveKitRoom)
         if (!abortController.signal.aborted) {
-          // Update choices with server-assigned agenda metadata
+          // Update choices with agenda version for cache invalidation
           setUserChoices({
             ...choices,
-            agendaId,
             agendaVersion,
           });
           setToken(data.token);
@@ -243,7 +240,6 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
           <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
             <MeetingLayout
               showTranscription={true}
-              agendaId={userChoices.agendaId}
               agendaVersion={userChoices.agendaVersion}
             />
           </DocumentsProvider>

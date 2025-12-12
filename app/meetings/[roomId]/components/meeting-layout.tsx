@@ -13,7 +13,7 @@ import {
 import { AgendaProgress } from "@/components/agenda";
 import { DocumentViewerModal } from "@/components/documents/document-viewer-modal";
 import { useDocumentsContext } from "@/contexts/documents-context";
-import { AgendaProvider } from "@/contexts/agenda-context";
+import { AgendaProvider } from "@/contexts/agenda";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -29,10 +29,11 @@ import { useAgenda } from "@/hooks/use-agenda";
 import type { Insight } from "@/types/insight";
 import type { DocumentReference } from "@/types/document";
 
+/** Enable debug logging (disabled in production) */
+const DEBUG = process.env.NODE_ENV === "development";
+
 interface MeetingLayoutProps {
   showTranscription?: boolean;
-  /** Agenda ID for progress tracking */
-  agendaId?: string;
   /** Agenda version for cache invalidation */
   agendaVersion?: number;
 }
@@ -41,7 +42,6 @@ type SidebarTab = "transcript" | "insights";
 
 export function MeetingLayout({
   showTranscription: initialShowTranscription = true,
-  agendaId,
   agendaVersion,
 }: MeetingLayoutProps) {
   const room = useRoomContext();
@@ -50,7 +50,6 @@ export function MeetingLayout({
   return (
     <AgendaProvider
       roomId={roomId}
-      agendaId={agendaId}
       agendaVersion={agendaVersion}
     >
       <MeetingLayoutInner
@@ -84,24 +83,28 @@ function MeetingLayoutInner({
   // Handle insight click - switch to insights tab
   const handleInsightClick = useCallback((insight: Insight) => {
     setActiveTab("insights");
-    console.log("Insight clicked:", insight);
+    if (DEBUG) {
+      console.log("Insight clicked:", insight);
+    }
   }, []);
 
   // Handle document reference click - open viewer modal
   const handleDocumentReferenceClick = useCallback(
     (reference: DocumentReference) => {
       const doc = getDocument(reference.documentId);
-      console.log("[DocumentViewer] Reference clicked:", {
-        documentId: reference.documentId,
-        documentFound: !!doc,
-        documentCount,
-        isHydrating,
-      });
-      if (!doc) {
-        console.warn(
-          `[DocumentViewer] Document not found for ID: ${reference.documentId}. ` +
-            `Available docs: ${documentCount}. Still hydrating: ${isHydrating}`
-        );
+      if (DEBUG) {
+        console.log("[DocumentViewer] Reference clicked:", {
+          documentId: reference.documentId,
+          documentFound: !!doc,
+          documentCount,
+          isHydrating,
+        });
+        if (!doc) {
+          console.warn(
+            `[DocumentViewer] Document not found for ID: ${reference.documentId}. ` +
+              `Available docs: ${documentCount}. Still hydrating: ${isHydrating}`
+          );
+        }
       }
       setSelectedReference(reference);
     },
@@ -239,86 +242,24 @@ function MeetingLayoutInner({
 }
 
 // ============================================================================
-// Split Sidebar Content (with Agenda)
+// Shared Tab Content (extracted to reduce duplication)
 // ============================================================================
 
-interface SplitSidebarContentProps {
+interface TabContentProps {
   activeTab: SidebarTab;
   onInsightClick: (insight: Insight) => void;
   onDocumentReferenceClick: (reference: DocumentReference) => void;
 }
 
-function SplitSidebarContent({
+/**
+ * Shared content panel for transcript and insights tabs.
+ * Extracted from Split/Single panel variants to eliminate duplication.
+ */
+function TabContent({
   activeTab,
   onInsightClick,
   onDocumentReferenceClick,
-}: SplitSidebarContentProps) {
-  // Note: getDocument intentionally removed - SplitSidebarContent delegates to
-  // TranscriptionSidebar/InsightsSummaryPanel which handle document references
-
-  return (
-    <ResizablePanelGroup direction="horizontal" className="h-full">
-      {/* Agenda Panel (left side) */}
-      <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
-        <div className="h-full border-r">
-          <AgendaProgress className="h-full" />
-        </div>
-      </ResizablePanel>
-
-      <ResizableHandle withHandle />
-
-      {/* Transcript/Insights Panel (right side) */}
-      <ResizablePanel defaultSize={65} minSize={50}>
-        <div className="h-full relative">
-          {/* Transcript tab content */}
-          <div
-            className={cn(
-              "absolute inset-0",
-              activeTab !== "transcript" && "invisible"
-            )}
-          >
-            <TranscriptionErrorBoundary>
-              <TranscriptionSidebar
-                className="border-l-0 h-full"
-                onInsightClick={onInsightClick}
-                onDocumentReferenceClick={onDocumentReferenceClick}
-              />
-            </TranscriptionErrorBoundary>
-          </div>
-
-          {/* Insights tab content */}
-          <div
-            className={cn(
-              "absolute inset-0",
-              activeTab !== "insights" && "invisible"
-            )}
-          >
-            <InsightsSummaryPanel
-              className="border-l-0 h-full"
-              onInsightClick={onInsightClick}
-            />
-          </div>
-        </div>
-      </ResizablePanel>
-    </ResizablePanelGroup>
-  );
-}
-
-// ============================================================================
-// Single Panel Content (no Agenda)
-// ============================================================================
-
-interface SinglePanelContentProps {
-  activeTab: SidebarTab;
-  onInsightClick: (insight: Insight) => void;
-  onDocumentReferenceClick: (reference: DocumentReference) => void;
-}
-
-function SinglePanelContent({
-  activeTab,
-  onInsightClick,
-  onDocumentReferenceClick,
-}: SinglePanelContentProps) {
+}: TabContentProps) {
   return (
     <div className="h-full relative">
       {/* Transcript tab content */}
@@ -350,5 +291,67 @@ function SinglePanelContent({
         />
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// Split Sidebar Content (with Agenda)
+// ============================================================================
+
+interface SplitSidebarContentProps {
+  activeTab: SidebarTab;
+  onInsightClick: (insight: Insight) => void;
+  onDocumentReferenceClick: (reference: DocumentReference) => void;
+}
+
+function SplitSidebarContent({
+  activeTab,
+  onInsightClick,
+  onDocumentReferenceClick,
+}: SplitSidebarContentProps) {
+  return (
+    <ResizablePanelGroup direction="horizontal" className="h-full">
+      {/* Agenda Panel (left side) */}
+      <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
+        <div className="h-full border-r">
+          <AgendaProgress className="h-full" />
+        </div>
+      </ResizablePanel>
+
+      <ResizableHandle withHandle />
+
+      {/* Transcript/Insights Panel (right side) */}
+      <ResizablePanel defaultSize={65} minSize={50}>
+        <TabContent
+          activeTab={activeTab}
+          onInsightClick={onInsightClick}
+          onDocumentReferenceClick={onDocumentReferenceClick}
+        />
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  );
+}
+
+// ============================================================================
+// Single Panel Content (no Agenda)
+// ============================================================================
+
+interface SinglePanelContentProps {
+  activeTab: SidebarTab;
+  onInsightClick: (insight: Insight) => void;
+  onDocumentReferenceClick: (reference: DocumentReference) => void;
+}
+
+function SinglePanelContent({
+  activeTab,
+  onInsightClick,
+  onDocumentReferenceClick,
+}: SinglePanelContentProps) {
+  return (
+    <TabContent
+      activeTab={activeTab}
+      onInsightClick={onInsightClick}
+      onDocumentReferenceClick={onDocumentReferenceClick}
+    />
   );
 }
