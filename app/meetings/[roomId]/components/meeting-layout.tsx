@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { VideoConference, useRoomContext } from "@livekit/components-react";
+import { VideoConference } from "@livekit/components-react";
 import {
   TranscriptionSidebar,
   TranscriptionErrorBoundary,
@@ -36,6 +36,8 @@ interface MeetingLayoutProps {
   showTranscription?: boolean;
   /** Agenda version for cache invalidation */
   agendaVersion?: number;
+  /** Room ID (passed from parent to avoid race condition with room context) */
+  roomId: string;
 }
 
 type SidebarTab = "transcript" | "insights";
@@ -43,9 +45,15 @@ type SidebarTab = "transcript" | "insights";
 export function MeetingLayout({
   showTranscription: initialShowTranscription = true,
   agendaVersion,
+  roomId,
 }: MeetingLayoutProps) {
-  const room = useRoomContext();
-  const roomId = room?.name || "";
+  // Debug logging for room context
+  if (DEBUG) {
+    console.log("[MeetingLayout] Props:", {
+      roomId,
+      agendaVersion,
+    });
+  }
 
   return (
     <AgendaProvider
@@ -72,9 +80,21 @@ function MeetingLayoutInner({
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
   const [activeTab, setActiveTab] = useState<SidebarTab>("transcript");
   const { insightCount } = useInsights();
-  const { hasAgenda } = useAgenda();
+  const { hasAgenda, agenda, isLoading, error } = useAgenda();
   const { getDocument, isHydrating, isDocumentLoading, documentCount } =
     useDocumentsContext();
+
+  // Debug logging for agenda state
+  if (DEBUG) {
+    console.log("[MeetingLayout] Agenda state:", {
+      hasAgenda,
+      agendaId: agenda?.id,
+      itemCount: agenda?.items?.length,
+      isLoading,
+      error,
+      roomId,
+    });
+  }
 
   // Document reference viewer state
   const [selectedReference, setSelectedReference] =

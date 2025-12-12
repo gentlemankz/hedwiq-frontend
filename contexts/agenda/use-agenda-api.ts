@@ -75,6 +75,9 @@ export function useAgendaApi({
 
     // Handle empty roomId - set loading false to prevent permanent skeleton
     if (!roomId) {
+      if (DEBUG) {
+        console.log("[AgendaContext] No roomId provided, skipping fetch");
+      }
       if (isMountedRef.current) {
         setIsLoading(false);
         setApiLoadComplete(true);
@@ -91,12 +94,19 @@ export function useAgendaApi({
       fetchRetryCountRef.current = 0;
     }
 
+    if (DEBUG) {
+      console.log(`[AgendaContext] Fetching agenda for room: ${roomId}, isRetry: ${isRetry}`);
+    }
+
     try {
       const response = await fetch(`/api/rooms/${roomId}/agenda`);
 
       if (!response.ok) {
         if (response.status === 404) {
           // No agenda exists - not an error, mark load complete
+          if (DEBUG) {
+            console.log("[AgendaContext] No agenda found (404)");
+          }
           if (isMountedRef.current) {
             setAgenda(null);
             setApiLoadComplete(true);
@@ -106,10 +116,17 @@ export function useAgendaApi({
           }
           return;
         }
-        throw new Error(`Failed to fetch agenda (${response.status})`);
+        const errorText = await response.text();
+        if (DEBUG) {
+          console.error(`[AgendaContext] API error ${response.status}:`, errorText);
+        }
+        throw new Error(`Failed to fetch agenda (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
+      if (DEBUG) {
+        console.log("[AgendaContext] Agenda fetched successfully:", data);
+      }
 
       if (!isMountedRef.current) return;
 

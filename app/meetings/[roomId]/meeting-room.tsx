@@ -241,6 +241,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
             <MeetingLayout
               showTranscription={true}
               agendaVersion={userChoices.agendaVersion}
+              roomId={roomId}
             />
           </DocumentsProvider>
         </InsightsProvider>
