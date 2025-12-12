@@ -20,6 +20,11 @@ import {
 import { cn } from "@/lib/utils";
 import type { DraftAgendaItem } from "@/types/agenda";
 import { AGENDA_LIMITS } from "@/types/agenda";
+import {
+  getAgendaFieldErrors,
+  hasAgendaFieldErrors,
+  type AgendaItemFieldErrors,
+} from "@/lib/validation/agenda";
 
 // ============================================================================
 // Types
@@ -60,7 +65,7 @@ export function AgendaItem({
   const [editDescription, setEditDescription] = useState("");
   const [editDuration, setEditDuration] = useState("");
   const [editPresenter, setEditPresenter] = useState("");
-  const [titleError, setTitleError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<AgendaItemFieldErrors>({});
 
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -98,7 +103,7 @@ export function AgendaItem({
     setEditDuration(item.estimatedDuration?.toString() || "");
     setEditPresenter(item.presenter || "");
     setIsEditing(true);
-    setTitleError(null);
+    setErrors({});
   }, [disabled, item.title, item.description, item.estimatedDuration, item.presenter]);
 
   /**
@@ -110,47 +115,41 @@ export function AgendaItem({
     setEditDuration(item.estimatedDuration?.toString() || "");
     setEditPresenter(item.presenter || "");
     setIsEditing(false);
-    setTitleError(null);
+    setErrors({});
   }, [item]);
 
   /**
-   * Save changes
+   * Save changes - uses centralized validation
    */
   const handleSaveEdit = useCallback(() => {
-    const trimmedTitle = editTitle.trim();
+    // Validate all fields using centralized validation
+    const fieldErrors = getAgendaFieldErrors({
+      title: editTitle,
+      description: editDescription,
+      estimatedDuration: editDuration,
+      presenter: editPresenter,
+    });
 
-    // Validate title
-    if (trimmedTitle.length < AGENDA_LIMITS.MIN_TITLE_LENGTH) {
-      setTitleError("Title is required");
+    if (hasAgendaFieldErrors(fieldErrors)) {
+      setErrors(fieldErrors);
       return;
     }
-    if (trimmedTitle.length > AGENDA_LIMITS.MAX_TITLE_LENGTH) {
-      setTitleError(`Title must be ${AGENDA_LIMITS.MAX_TITLE_LENGTH} characters or less`);
-      return;
-    }
 
-    // Parse duration
+    // Parse duration (already validated)
     let duration: number | undefined;
     if (editDuration.trim()) {
-      const parsed = parseInt(editDuration, 10);
-      if (
-        !isNaN(parsed) &&
-        parsed >= AGENDA_LIMITS.MIN_DURATION_MINUTES &&
-        parsed <= AGENDA_LIMITS.MAX_DURATION_MINUTES
-      ) {
-        duration = parsed;
-      }
+      duration = parseInt(editDuration, 10);
     }
 
     onUpdate(item.id, {
-      title: trimmedTitle,
+      title: editTitle.trim(),
       description: editDescription.trim() || undefined,
       estimatedDuration: duration,
       presenter: editPresenter.trim() || undefined,
     });
 
     setIsEditing(false);
-    setTitleError(null);
+    setErrors({});
   }, [item.id, editTitle, editDescription, editDuration, editPresenter, onUpdate]);
 
   /**
@@ -228,56 +227,91 @@ export function AgendaItem({
                 value={editTitle}
                 onChange={(e) => {
                   setEditTitle(e.target.value);
-                  setTitleError(null);
+                  if (errors.title) {
+                    setErrors((prev) => ({ ...prev, title: undefined }));
+                  }
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder="Topic title"
                 maxLength={AGENDA_LIMITS.MAX_TITLE_LENGTH}
-                aria-invalid={!!titleError}
-                className={cn(titleError && "border-destructive")}
+                aria-invalid={!!errors.title}
+                className={cn(errors.title && "border-destructive")}
               />
-              {titleError && (
-                <p className="mt-1 text-xs text-destructive">{titleError}</p>
+              {errors.title && (
+                <p className="mt-1 text-xs text-destructive">{errors.title}</p>
               )}
             </div>
 
             {/* Optional fields */}
             <div className="grid gap-2 sm:grid-cols-2">
-              <div className="flex items-center gap-2">
-                <Clock className="size-4 text-muted-foreground shrink-0" />
-                <Input
-                  value={editDuration}
-                  onChange={(e) => setEditDuration(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Duration (min)"
-                  type="number"
-                  min={AGENDA_LIMITS.MIN_DURATION_MINUTES}
-                  max={AGENDA_LIMITS.MAX_DURATION_MINUTES}
-                  className="h-8"
-                />
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Clock className="size-4 text-muted-foreground shrink-0" />
+                  <Input
+                    value={editDuration}
+                    onChange={(e) => {
+                      setEditDuration(e.target.value);
+                      if (errors.estimatedDuration) {
+                        setErrors((prev) => ({ ...prev, estimatedDuration: undefined }));
+                      }
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Duration (min)"
+                    type="number"
+                    min={AGENDA_LIMITS.MIN_DURATION_MINUTES}
+                    max={AGENDA_LIMITS.MAX_DURATION_MINUTES}
+                    aria-invalid={!!errors.estimatedDuration}
+                    className={cn("h-8", errors.estimatedDuration && "border-destructive")}
+                  />
+                </div>
+                {errors.estimatedDuration && (
+                  <p className="text-xs text-destructive pl-6">{errors.estimatedDuration}</p>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <User className="size-4 text-muted-foreground shrink-0" />
-                <Input
-                  value={editPresenter}
-                  onChange={(e) => setEditPresenter(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Presenter"
-                  maxLength={AGENDA_LIMITS.MAX_PRESENTER_LENGTH}
-                  className="h-8"
-                />
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <User className="size-4 text-muted-foreground shrink-0" />
+                  <Input
+                    value={editPresenter}
+                    onChange={(e) => {
+                      setEditPresenter(e.target.value);
+                      if (errors.presenter) {
+                        setErrors((prev) => ({ ...prev, presenter: undefined }));
+                      }
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Presenter"
+                    maxLength={AGENDA_LIMITS.MAX_PRESENTER_LENGTH}
+                    aria-invalid={!!errors.presenter}
+                    className={cn("h-8", errors.presenter && "border-destructive")}
+                  />
+                </div>
+                {errors.presenter && (
+                  <p className="text-xs text-destructive pl-6">{errors.presenter}</p>
+                )}
               </div>
             </div>
 
             {/* Description */}
-            <Textarea
-              value={editDescription}
-              onChange={(e) => setEditDescription(e.target.value)}
-              placeholder="Description (optional)"
-              maxLength={AGENDA_LIMITS.MAX_DESCRIPTION_LENGTH}
-              rows={2}
-              className="resize-none"
-            />
+            <div>
+              <Textarea
+                value={editDescription}
+                onChange={(e) => {
+                  setEditDescription(e.target.value);
+                  if (errors.description) {
+                    setErrors((prev) => ({ ...prev, description: undefined }));
+                  }
+                }}
+                placeholder="Description (optional)"
+                maxLength={AGENDA_LIMITS.MAX_DESCRIPTION_LENGTH}
+                rows={2}
+                aria-invalid={!!errors.description}
+                className={cn("resize-none", errors.description && "border-destructive")}
+              />
+              {errors.description && (
+                <p className="mt-1 text-xs text-destructive">{errors.description}</p>
+              )}
+            </div>
 
             {/* Edit actions */}
             <div className="flex justify-end gap-2">

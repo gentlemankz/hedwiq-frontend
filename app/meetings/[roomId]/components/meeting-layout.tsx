@@ -23,13 +23,23 @@ import type { DocumentReference } from "@/types/document";
 
 interface MeetingLayoutProps {
   showTranscription?: boolean;
+  /** Agenda ID for progress tracking (Phase 3) */
+  agendaId?: string;
+  /** Agenda version for cache invalidation */
+  agendaVersion?: number;
 }
 
 type SidebarTab = "transcript" | "insights";
 
 export function MeetingLayout({
   showTranscription: initialShowTranscription = true,
+  agendaId,
+  agendaVersion,
 }: MeetingLayoutProps) {
+  // TODO (Phase 3): Use agendaId and agendaVersion to initialize AgendaProvider
+  // for real-time progress tracking via LiveKit hedwiq.agenda topic
+  void agendaId;
+  void agendaVersion;
   const room = useRoomContext();
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
   const [activeTab, setActiveTab] = useState<SidebarTab>("transcript");

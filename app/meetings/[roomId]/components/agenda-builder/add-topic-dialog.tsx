@@ -17,6 +17,11 @@ import { Label } from "@/components/ui/label";
 import { Plus, Clock, User } from "lucide-react";
 import type { DraftAgendaItem } from "@/types/agenda";
 import { AGENDA_LIMITS } from "@/types/agenda";
+import {
+  getAgendaFieldErrors,
+  hasAgendaFieldErrors,
+  type AgendaItemFieldErrors,
+} from "@/lib/validation/agenda";
 
 // ============================================================================
 // Types
@@ -31,12 +36,8 @@ interface AddTopicDialogProps {
   trigger?: React.ReactNode;
 }
 
-interface FormErrors {
-  title?: string;
-  description?: string;
-  estimatedDuration?: string;
-  presenter?: string;
-}
+// Use centralized error type
+type FormErrors = AgendaItemFieldErrors;
 
 // ============================================================================
 // Component
@@ -85,43 +86,15 @@ export function AddTopicDialog({
   }, []);
 
   /**
-   * Validate form inputs
+   * Validate form inputs - uses centralized validation
    */
   const validateForm = useCallback((): FormErrors => {
-    const newErrors: FormErrors = {};
-
-    // Title validation
-    const trimmedTitle = title.trim();
-    if (trimmedTitle.length < AGENDA_LIMITS.MIN_TITLE_LENGTH) {
-      newErrors.title = "Title is required";
-    } else if (trimmedTitle.length > AGENDA_LIMITS.MAX_TITLE_LENGTH) {
-      newErrors.title = `Title must be ${AGENDA_LIMITS.MAX_TITLE_LENGTH} characters or less`;
-    }
-
-    // Description validation (optional)
-    if (description.length > AGENDA_LIMITS.MAX_DESCRIPTION_LENGTH) {
-      newErrors.description = `Description must be ${AGENDA_LIMITS.MAX_DESCRIPTION_LENGTH} characters or less`;
-    }
-
-    // Duration validation (optional)
-    if (estimatedDuration.trim()) {
-      const duration = parseInt(estimatedDuration, 10);
-      if (isNaN(duration)) {
-        newErrors.estimatedDuration = "Duration must be a number";
-      } else if (
-        duration < AGENDA_LIMITS.MIN_DURATION_MINUTES ||
-        duration > AGENDA_LIMITS.MAX_DURATION_MINUTES
-      ) {
-        newErrors.estimatedDuration = `Duration must be between ${AGENDA_LIMITS.MIN_DURATION_MINUTES} and ${AGENDA_LIMITS.MAX_DURATION_MINUTES} minutes`;
-      }
-    }
-
-    // Presenter validation (optional)
-    if (presenter.length > AGENDA_LIMITS.MAX_PRESENTER_LENGTH) {
-      newErrors.presenter = `Presenter must be ${AGENDA_LIMITS.MAX_PRESENTER_LENGTH} characters or less`;
-    }
-
-    return newErrors;
+    return getAgendaFieldErrors({
+      title,
+      description,
+      estimatedDuration,
+      presenter,
+    });
   }, [title, description, estimatedDuration, presenter]);
 
   /**
@@ -132,7 +105,7 @@ export function AddTopicDialog({
       e.preventDefault();
 
       const formErrors = validateForm();
-      if (Object.keys(formErrors).length > 0) {
+      if (hasAgendaFieldErrors(formErrors)) {
         setErrors(formErrors);
         return;
       }

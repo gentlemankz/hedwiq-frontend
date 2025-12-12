@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import {
   DndContext,
   closestCenter,
@@ -107,8 +107,8 @@ export function SortableList({
   // Find the active item for the drag overlay
   const activeItem = activeId ? items.find((item) => item.id === activeId) : null;
 
-  // Get item IDs for SortableContext
-  const itemIds = items.map((item) => item.id);
+  // Memoize item IDs for SortableContext to prevent unnecessary re-renders
+  const itemIds = useMemo(() => items.map((item) => item.id), [items]);
 
   return (
     <DndContext

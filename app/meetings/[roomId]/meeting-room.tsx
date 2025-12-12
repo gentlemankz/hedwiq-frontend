@@ -9,7 +9,7 @@ import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
 import { DocumentsProvider } from "@/contexts/documents-context";
 import type { User } from "@/types/user";
-import type { AgendaItemInput } from "@/types/agenda";
+import type { AgendaItemInput, AgendaPublishResponse } from "@/types/agenda";
 
 interface MeetingRoomProps {
   roomId: string;
@@ -57,7 +57,15 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         // 4. Connect to LiveKit
         // This order ensures the agent can fetch the agenda when it joins.
 
+        // Track agenda metadata from server response
+        let agendaId: string | undefined;
+        let agendaVersion: number | undefined;
+
         // Step 1 & 2: Save and publish agenda if items exist
+        // Note: If user has no agenda items but room has an existing agenda,
+        // we leave it intact. The user can still join without modifying
+        // the existing agenda. This supports late joiners and users who
+        // intentionally skip agenda creation.
         if (choices.agendaItems && choices.agendaItems.length > 0) {
           // Convert DraftAgendaItem[] to AgendaItemInput[]
           const agendaItems: AgendaItemInput[] = choices.agendaItems.map((item) => ({
@@ -95,6 +103,11 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
             const data = await publishResponse.json();
             throw new Error(data.error || "Failed to publish agenda");
           }
+
+          // Capture agenda metadata for downstream consumers
+          const publishData: AgendaPublishResponse = await publishResponse.json();
+          agendaId = publishData.agenda.id;
+          agendaVersion = publishData.agenda.version;
         }
 
         // Step 3: Request token (POST /api/livekit/token)
@@ -120,6 +133,12 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         // Step 4: Only update state if this request wasn't aborted
         // (LiveKit connection happens via state update triggering LiveKitRoom)
         if (!abortController.signal.aborted) {
+          // Update choices with server-assigned agenda metadata
+          setUserChoices({
+            ...choices,
+            agendaId,
+            agendaVersion,
+          });
           setToken(data.token);
           setIsConnecting(false);
         }
@@ -222,7 +241,11 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
       >
         <InsightsProvider>
           <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
-            <MeetingLayout showTranscription={true} />
+            <MeetingLayout
+              showTranscription={true}
+              agendaId={userChoices.agendaId}
+              agendaVersion={userChoices.agendaVersion}
+            />
           </DocumentsProvider>
         </InsightsProvider>
       </LiveKitRoom>

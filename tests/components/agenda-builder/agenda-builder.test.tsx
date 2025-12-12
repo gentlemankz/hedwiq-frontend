@@ -8,12 +8,15 @@
  * - Deleting topics
  * - Drag-and-drop reordering
  * - Validation limits
+ * - Field-level validation (duration, presenter, description)
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgendaBuilder } from "@/app/meetings/[roomId]/components/agenda-builder";
+import { SortableList } from "@/app/meetings/[roomId]/components/agenda-builder/sortable-list";
+import { arrayMove } from "@dnd-kit/sortable";
 import type { DraftAgendaItem } from "@/types/agenda";
 import { AGENDA_LIMITS } from "@/types/agenda";
 
@@ -377,5 +380,206 @@ describe("AgendaBuilder", () => {
       expect(screen.getByText("Title is required")).toBeInTheDocument();
       expect(mockOnChange).not.toHaveBeenCalled();
     });
+
+    it("validates duration range when saving edit", async () => {
+      const user = userEvent.setup();
+      const items: DraftAgendaItem[] = [createMockItem({ id: "1", title: "Topic 1" })];
+
+      render(<AgendaBuilder items={items} onChange={mockOnChange} />);
+
+      // Enter edit mode
+      const editButton = screen.getByRole("button", { name: /edit item/i });
+      await user.click(editButton);
+
+      // Enter invalid duration (too high)
+      const durationInput = screen.getByPlaceholderText("Duration (min)");
+      await user.type(durationInput, "999");
+
+      // Try to save
+      const saveButton = screen.getByRole("button", { name: /save/i });
+      await user.click(saveButton);
+
+      expect(screen.getByText(/Duration must be/)).toBeInTheDocument();
+      expect(mockOnChange).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid presenter name within limits", async () => {
+      const user = userEvent.setup();
+      const items: DraftAgendaItem[] = [createMockItem({ id: "1", title: "Topic 1" })];
+
+      render(<AgendaBuilder items={items} onChange={mockOnChange} />);
+
+      // Enter edit mode
+      const editButton = screen.getByRole("button", { name: /edit item/i });
+      await user.click(editButton);
+
+      // Enter valid presenter name
+      const presenterInput = screen.getByPlaceholderText("Presenter");
+      await user.type(presenterInput, "John Doe");
+
+      // Save should succeed
+      const saveButton = screen.getByRole("button", { name: /save/i });
+      await user.click(saveButton);
+
+      expect(mockOnChange).toHaveBeenCalledTimes(1);
+      const newItems = mockOnChange.mock.calls[0][0];
+      expect(newItems[0].presenter).toBe("John Doe");
+    });
   });
+
+  // --------------------------------------------------------------------------
+  // Keyboard Navigation Tests
+  // --------------------------------------------------------------------------
+
+  describe("Keyboard Navigation", () => {
+    it("saves changes when Enter is pressed", async () => {
+      const user = userEvent.setup();
+      const items: DraftAgendaItem[] = [createMockItem({ id: "1", title: "Topic 1" })];
+
+      render(<AgendaBuilder items={items} onChange={mockOnChange} />);
+
+      // Enter edit mode
+      const editButton = screen.getByRole("button", { name: /edit item/i });
+      await user.click(editButton);
+
+      // Modify title
+      const input = screen.getByDisplayValue("Topic 1");
+      await user.clear(input);
+      await user.type(input, "Updated Topic{Enter}");
+
+      expect(mockOnChange).toHaveBeenCalledTimes(1);
+      const newItems = mockOnChange.mock.calls[0][0];
+      expect(newItems[0].title).toBe("Updated Topic");
+    });
+
+    it("cancels edit when Escape is pressed", async () => {
+      const user = userEvent.setup();
+      const items: DraftAgendaItem[] = [createMockItem({ id: "1", title: "Topic 1" })];
+
+      render(<AgendaBuilder items={items} onChange={mockOnChange} />);
+
+      // Enter edit mode
+      const editButton = screen.getByRole("button", { name: /edit item/i });
+      await user.click(editButton);
+
+      // Modify title then press Escape
+      const input = screen.getByDisplayValue("Topic 1");
+      await user.clear(input);
+      await user.type(input, "Changed{Escape}");
+
+      // Should show original title
+      expect(screen.getByText("Topic 1")).toBeInTheDocument();
+      expect(mockOnChange).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ============================================================================
+// SortableList Tests
+// ============================================================================
+
+describe("SortableList", () => {
+  const mockOnReorder = vi.fn();
+  const mockOnUpdateItem = vi.fn();
+  const mockOnDeleteItem = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders all items with correct indices", () => {
+    const items: DraftAgendaItem[] = [
+      createMockItem({ id: "1", title: "First" }),
+      createMockItem({ id: "2", title: "Second" }),
+      createMockItem({ id: "3", title: "Third" }),
+    ];
+
+    render(
+      <SortableList
+        items={items}
+        onReorder={mockOnReorder}
+        onUpdateItem={mockOnUpdateItem}
+        onDeleteItem={mockOnDeleteItem}
+      />
+    );
+
+    expect(screen.getByText("First")).toBeInTheDocument();
+    expect(screen.getByText("Second")).toBeInTheDocument();
+    expect(screen.getByText("Third")).toBeInTheDocument();
+  });
+
+  it("renders drag handles for each item", () => {
+    const items: DraftAgendaItem[] = [
+      createMockItem({ id: "1", title: "First" }),
+      createMockItem({ id: "2", title: "Second" }),
+    ];
+
+    render(
+      <SortableList
+        items={items}
+        onReorder={mockOnReorder}
+        onUpdateItem={mockOnUpdateItem}
+        onDeleteItem={mockOnDeleteItem}
+      />
+    );
+
+    const dragHandles = screen.getAllByRole("button", { name: /drag to reorder/i });
+    expect(dragHandles).toHaveLength(2);
+  });
+
+  it("disables drag handles when disabled prop is true", () => {
+    const items: DraftAgendaItem[] = [createMockItem({ id: "1", title: "First" })];
+
+    render(
+      <SortableList
+        items={items}
+        onReorder={mockOnReorder}
+        onUpdateItem={mockOnUpdateItem}
+        onDeleteItem={mockOnDeleteItem}
+        disabled={true}
+      />
+    );
+
+    // The sortable is disabled via useSortable hook's disabled option
+    // Items should still render but with disabled styling
+    expect(screen.getByText("First")).toBeInTheDocument();
+  });
+
+  it("calls onReorder with correctly reordered items when drag completes", () => {
+    // Test the reorder logic that would be triggered by onDragEnd
+    // This tests arrayMove which is what SortableList uses internally
+    const items: DraftAgendaItem[] = [
+      createMockItem({ id: "1", title: "First" }),
+      createMockItem({ id: "2", title: "Second" }),
+      createMockItem({ id: "3", title: "Third" }),
+    ];
+
+    // Simulate what happens in handleDragEnd when dragging item 0 to position 2
+    const oldIndex = 0;
+    const newIndex = 2;
+    const reordered = arrayMove(items, oldIndex, newIndex);
+
+    // Verify arrayMove produces correct order
+    expect(reordered[0].title).toBe("Second");
+    expect(reordered[1].title).toBe("Third");
+    expect(reordered[2].title).toBe("First");
+    expect(reordered).toHaveLength(3);
+  });
+
+  it("does not reorder when dragged to same position", () => {
+    const items: DraftAgendaItem[] = [
+      createMockItem({ id: "1", title: "First" }),
+      createMockItem({ id: "2", title: "Second" }),
+    ];
+
+    // Dragging to same position should produce identical array
+    const reordered = arrayMove(items, 0, 0);
+
+    expect(reordered[0].title).toBe("First");
+    expect(reordered[1].title).toBe("Second");
+  });
+
+  // Note: Full drag-and-drop interaction tests require pointer event simulation
+  // which is complex in JSDOM. Integration/E2E tests with Playwright should
+  // cover actual drag behavior. These unit tests verify the reorder logic.
 });

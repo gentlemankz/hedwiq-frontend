@@ -28,6 +28,10 @@ export interface UserChoices extends LocalUserChoices {
   uploadedDocuments?: UploadedDocument[];
   /** Agenda items created before joining */
   agendaItems?: DraftAgendaItem[];
+  /** Agenda ID returned from server after save/publish (set by meeting-room.tsx) */
+  agendaId?: string;
+  /** Agenda version for cache invalidation */
+  agendaVersion?: number;
 }
 
 interface PreJoinScreenProps {

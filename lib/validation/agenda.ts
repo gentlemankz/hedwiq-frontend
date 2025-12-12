@@ -2,7 +2,11 @@
  * Agenda Validation Utilities
  *
  * Centralized validation logic for agenda items.
- * Used by API routes to ensure consistent validation across endpoints.
+ * Used by API routes AND frontend components to ensure consistent validation.
+ *
+ * Usage:
+ * - API routes: validateAgendaItemInput(), validateAgendaItems()
+ * - Frontend components: validateAgendaField(), getAgendaFieldErrors()
  */
 
 import { AGENDA_LIMITS, type AgendaItemInput } from "@/types/agenda";
@@ -14,6 +18,16 @@ import { AGENDA_LIMITS, type AgendaItemInput } from "@/types/agenda";
 export interface ValidationResult {
   isValid: boolean;
   error?: string;
+}
+
+/**
+ * Field-level validation errors for form display.
+ */
+export interface AgendaItemFieldErrors {
+  title?: string;
+  description?: string;
+  estimatedDuration?: string;
+  presenter?: string;
 }
 
 // ============================================================================
@@ -211,4 +225,125 @@ export function validateReorderItemIds(itemIds: unknown): ValidationResult {
   }
 
   return { isValid: true };
+}
+
+// ============================================================================
+// Client-Side Field Validation (for React components)
+// ============================================================================
+
+/**
+ * Validates a single agenda item field.
+ * Returns error message or undefined if valid.
+ *
+ * @param field - The field name to validate
+ * @param value - The field value
+ * @returns Error message or undefined
+ */
+export function validateAgendaField(
+  field: keyof AgendaItemFieldErrors,
+  value: string | number | undefined | null
+): string | undefined {
+  switch (field) {
+    case "title": {
+      if (typeof value !== "string") return "Title is required";
+      const trimmed = value.trim();
+      if (trimmed.length < AGENDA_LIMITS.MIN_TITLE_LENGTH) {
+        return "Title is required";
+      }
+      if (trimmed.length > AGENDA_LIMITS.MAX_TITLE_LENGTH) {
+        return `Title must be ${AGENDA_LIMITS.MAX_TITLE_LENGTH} characters or less`;
+      }
+      return undefined;
+    }
+
+    case "description": {
+      if (value === undefined || value === null || value === "") {
+        return undefined; // Optional field
+      }
+      if (typeof value !== "string") {
+        return "Description must be text";
+      }
+      // Trim before checking length to match persistence behavior
+      const trimmedDesc = value.trim();
+      if (trimmedDesc.length > AGENDA_LIMITS.MAX_DESCRIPTION_LENGTH) {
+        return `Description must be ${AGENDA_LIMITS.MAX_DESCRIPTION_LENGTH} characters or less`;
+      }
+      return undefined;
+    }
+
+    case "estimatedDuration": {
+      if (value === undefined || value === null || value === "") {
+        return undefined; // Optional field
+      }
+      const numValue = typeof value === "string" ? parseInt(value, 10) : value;
+      if (typeof numValue !== "number" || isNaN(numValue)) {
+        return "Duration must be a number";
+      }
+      if (numValue < AGENDA_LIMITS.MIN_DURATION_MINUTES) {
+        return `Duration must be at least ${AGENDA_LIMITS.MIN_DURATION_MINUTES} minute`;
+      }
+      if (numValue > AGENDA_LIMITS.MAX_DURATION_MINUTES) {
+        return `Duration must be ${AGENDA_LIMITS.MAX_DURATION_MINUTES} minutes or less`;
+      }
+      return undefined;
+    }
+
+    case "presenter": {
+      if (value === undefined || value === null || value === "") {
+        return undefined; // Optional field
+      }
+      if (typeof value !== "string") {
+        return "Presenter must be text";
+      }
+      // Trim before checking length to match persistence behavior
+      const trimmedPresenter = value.trim();
+      if (trimmedPresenter.length > AGENDA_LIMITS.MAX_PRESENTER_LENGTH) {
+        return `Presenter must be ${AGENDA_LIMITS.MAX_PRESENTER_LENGTH} characters or less`;
+      }
+      return undefined;
+    }
+
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Validates all fields of an agenda item at once.
+ * Returns object with field-level errors for form display.
+ *
+ * @param item - The item fields to validate
+ * @returns Object with errors per field, empty object if all valid
+ */
+export function getAgendaFieldErrors(item: {
+  title?: string;
+  description?: string;
+  estimatedDuration?: string | number;
+  presenter?: string;
+}): AgendaItemFieldErrors {
+  const errors: AgendaItemFieldErrors = {};
+
+  const titleError = validateAgendaField("title", item.title);
+  if (titleError) errors.title = titleError;
+
+  const descError = validateAgendaField("description", item.description);
+  if (descError) errors.description = descError;
+
+  const durationError = validateAgendaField("estimatedDuration", item.estimatedDuration);
+  if (durationError) errors.estimatedDuration = durationError;
+
+  const presenterError = validateAgendaField("presenter", item.presenter);
+  if (presenterError) errors.presenter = presenterError;
+
+  return errors;
+}
+
+/**
+ * Check if there are any validation errors.
+ *
+ * @param errors - The errors object from getAgendaFieldErrors
+ * @returns true if there are errors, false otherwise
+ */
+export function hasAgendaFieldErrors(errors: AgendaItemFieldErrors): boolean {
+  return Object.keys(errors).length > 0;
 }

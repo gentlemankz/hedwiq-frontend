@@ -65,6 +65,12 @@ frontend/
 │   ├── meetings/
 │   │   └── [roomId]/                 # Dynamic room routes
 │   │       ├── components/           # Room-specific components
+│   │       │   ├── agenda-builder/   # Pre-join agenda creation (Phase 2)
+│   │       │   │   ├── add-topic-dialog.tsx   # Modal form with validation
+│   │       │   │   ├── agenda-builder.tsx     # Agenda list + stats + add button
+│   │       │   │   ├── agenda-item.tsx        # Inline edit/delete + drag handle
+│   │       │   │   ├── sortable-list.tsx      # dnd-kit wiring for reordering
+│   │       │   │   └── index.ts               # Barrel export
 │   │       │   ├── media-controls.tsx
 │   │       │   ├── meeting-layout.tsx  # Sidebar tabs + document viewer modal
 │   │       │   ├── username-form.tsx
@@ -122,7 +128,7 @@ frontend/
 │   │   └── server.ts                 # Server client + signed URLs, upload/download
 │   ├── utils.ts                      # Utility functions (cn helper, etc.)
 │   ├── validation.ts                 # Zod validation schemas
-│   └── validation/agenda.ts          # Agenda input validation helpers
+│   └── validation/agenda.ts          # Agenda input/field validation (shared UI + API)
 ├── types/                            # TypeScript type definitions
 │   ├── agenda.ts                     # Agenda + agenda item + LiveKit event types
 │   ├── document.ts                   # Document + DocumentReference + BoundingBox types
@@ -135,13 +141,16 @@ frontend/
 │   ├── DOCUMENT_REFERENCE_PLAN.md    # Document feature plan
 │   ├── PHASE2_INSIGHTS_PLAN.md       # AI insights implementation plan
 │   ├── better-auth-llm.txt           # Better Auth reference docs
-│   └── livekit-llm.txt               # LiveKit reference docs
+│   ├── livekit-llm.txt               # LiveKit reference docs
+│   └── AGENDA_PHASE2_CODE_REVIEW.md  # Code review for Phase 2 agenda builder
 ├── tests/                            # Vitest coverage for agenda flows
 │   ├── api/rooms/agenda.test.ts      # Agenda API route tests
 │   ├── lib/db/agenda.integration.test.ts # Agenda DB integration tests
 │   ├── lib/db/agenda.test.ts         # Agenda DB unit tests
 │   ├── lib/validation/agenda.test.ts # Agenda validation tests
 │   ├── types/agenda.test.ts          # Agenda types tests
+│   ├── components/agenda-builder/agenda-builder.test.tsx # Agenda builder UI tests
+│   └── components/meeting-room/join-sequencing.test.tsx  # Join order + agenda metadata
 │   └── setup.ts                      # Vitest setup
 ├── public/                           # Static assets
 │   ├── pdf.worker.min.mjs            # PDF.js worker for react-pdf
