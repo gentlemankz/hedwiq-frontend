@@ -7,13 +7,14 @@
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
-// Mock the database module
+// Mock the database module with transaction support
 vi.mock("@/lib/db", () => ({
   db: {
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    transaction: vi.fn(),
   },
 }));
 
@@ -119,36 +120,49 @@ const createMockAgendaItem = (overrides = {}) => ({
 
 describe("ID Generation", () => {
   describe("generateAgendaId", () => {
-    it("should generate ID with correct format", () => {
+    it("should generate ID with correct format (includes random suffix)", () => {
       const id = generateAgendaId("test-room");
-      expect(id).toMatch(/^agenda-test-room-\d+$/);
+      // Format: agenda-{roomId}-{timestamp}-{random}
+      expect(id).toMatch(/^agenda-test-room-\d+-[a-z0-9]+$/);
     });
 
-    it("should generate unique IDs", () => {
+    it("should generate unique IDs even when called rapidly", () => {
       const id1 = generateAgendaId("room");
       const id2 = generateAgendaId("room");
-      // IDs should be different (timestamp-based)
-      // Note: In very fast execution, they might be the same
+      // IDs should be different due to random suffix
+      expect(id1).not.toBe(id2);
       expect(id1).toContain("agenda-room-");
       expect(id2).toContain("agenda-room-");
     });
 
     it("should handle special characters in room ID", () => {
       const id = generateAgendaId("room-with-dashes");
-      expect(id).toMatch(/^agenda-room-with-dashes-\d+$/);
+      expect(id).toMatch(/^agenda-room-with-dashes-\d+-[a-z0-9]+$/);
     });
   });
 
   describe("generateAgendaItemId", () => {
-    it("should generate ID with correct format", () => {
+    it("should generate ID with timestamp and random component", () => {
       const id = generateAgendaItemId("agenda-123", 0);
-      expect(id).toBe("item-agenda-123-0");
+      // Format: item-{timestamp}-{random}-{index}
+      expect(id).toMatch(/^item-\d+-[a-z0-9]+-0$/);
     });
 
-    it("should handle different indices", () => {
-      expect(generateAgendaItemId("agenda-123", 0)).toBe("item-agenda-123-0");
-      expect(generateAgendaItemId("agenda-123", 5)).toBe("item-agenda-123-5");
-      expect(generateAgendaItemId("agenda-123", 99)).toBe("item-agenda-123-99");
+    it("should generate unique IDs even with same index", () => {
+      const id1 = generateAgendaItemId("agenda-123", 0);
+      const id2 = generateAgendaItemId("agenda-123", 0);
+      // IDs should be different due to timestamp + random
+      expect(id1).not.toBe(id2);
+    });
+
+    it("should include index in the ID", () => {
+      const id0 = generateAgendaItemId("agenda-123", 0);
+      const id5 = generateAgendaItemId("agenda-123", 5);
+      const id99 = generateAgendaItemId("agenda-123", 99);
+
+      expect(id0).toMatch(/-0$/);
+      expect(id5).toMatch(/-5$/);
+      expect(id99).toMatch(/-99$/);
     });
   });
 });
@@ -409,12 +423,15 @@ describe("Status Update Operations", () => {
   describe("startAgendaItem", () => {
     it("should call updateAgendaItemStatus with in_progress", async () => {
       const mockItem = createMockAgendaItem();
+      // Parent agenda must be active for status updates
+      const mockAgenda = createMockAgenda({ status: "active" });
       const selectChain = mockSelect();
       const updateChain = mockUpdate();
 
       selectChain.limit
-        .mockResolvedValueOnce([mockItem])
-        .mockResolvedValueOnce([{ ...mockItem, status: "in_progress" }]);
+        .mockResolvedValueOnce([mockItem])       // First: get item
+        .mockResolvedValueOnce([mockAgenda])     // Second: get parent agenda
+        .mockResolvedValueOnce([{ ...mockItem, status: "in_progress" }]); // Third: get updated item
       updateChain.where.mockResolvedValue([]);
 
       const result = await startAgendaItem("item-test", "transcript-ref-1");
@@ -430,12 +447,15 @@ describe("Status Update Operations", () => {
         status: "in_progress",
         startedAt: startTime,
       });
+      // Parent agenda must be active for status updates
+      const mockAgenda = createMockAgenda({ status: "active" });
       const selectChain = mockSelect();
       const updateChain = mockUpdate();
 
       selectChain.limit
-        .mockResolvedValueOnce([mockItem])
-        .mockResolvedValueOnce([{ ...mockItem, status: "completed" }]);
+        .mockResolvedValueOnce([mockItem])       // First: get item
+        .mockResolvedValueOnce([mockAgenda])     // Second: get parent agenda
+        .mockResolvedValueOnce([{ ...mockItem, status: "completed" }]); // Third: get updated item
       updateChain.where.mockResolvedValue([]);
 
       await completeAgendaItem("item-test", "transcript-ref-2");
@@ -455,11 +475,45 @@ describe("Status Update Operations", () => {
 describe("Edge Cases", () => {
   describe("Empty agenda items", () => {
     it("should handle creating agenda with no items", async () => {
-      const selectChain = mockSelect();
-      const insertChain = mockInsert();
+      const mockAgendaData = createMockAgenda({ itemCount: 0 });
 
-      selectChain.limit.mockResolvedValue([]); // No existing agenda
-      insertChain.values.mockResolvedValue([]);
+      // Track which select call we're on to return different results
+      let selectCallCount = 0;
+
+      // Create mock transaction context with properly chained methods
+      const mockTx = {
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue([]),
+        }),
+        select: vi.fn(() => {
+          selectCallCount++;
+          const currentCall = selectCallCount;
+
+          // Build a proper chain where each method returns the chain
+          // except the terminal methods which resolve to the data
+          const chain: Record<string, Mock> = {};
+
+          chain.from = vi.fn().mockReturnValue(chain);
+          chain.where = vi.fn().mockReturnValue(chain);
+
+          if (currentCall === 1) {
+            // First select: get created agenda with .limit(1)
+            chain.limit = vi.fn().mockResolvedValue([mockAgendaData]);
+            chain.orderBy = vi.fn().mockReturnValue(chain);
+          } else {
+            // Second select: get items with .orderBy()
+            chain.limit = vi.fn().mockReturnValue(chain);
+            chain.orderBy = vi.fn().mockResolvedValue([]); // Empty items array
+          }
+
+          return chain;
+        }),
+      };
+
+      // Mock transaction to execute callback with mock context
+      (db.transaction as Mock).mockImplementation(async (callback) => {
+        return callback(mockTx);
+      });
 
       // Should not throw
       await expect(

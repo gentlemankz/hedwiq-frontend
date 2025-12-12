@@ -3,11 +3,12 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { validateRoomAccess } from "@/lib/db/room-access";
 import { validateRoomId } from "@/lib/validation";
+import { validateAgendaItems } from "@/lib/validation/agenda";
 import {
   getAgendaWithItems,
   upsertAgenda,
 } from "@/lib/db/agenda";
-import { AGENDA_LIMITS, type AgendaItemInput } from "@/types/agenda";
+import { type AgendaItemInput } from "@/types/agenda";
 
 /**
  * GET /api/rooms/[roomId]/agenda
@@ -104,29 +105,10 @@ export async function PUT(
     );
   }
 
-  // Validate items array
-  if (!Array.isArray(body.items)) {
-    return NextResponse.json(
-      { error: "items must be an array" },
-      { status: 400 }
-    );
-  }
-
-  // Validate item count
-  if (body.items.length > AGENDA_LIMITS.MAX_ITEMS) {
-    return NextResponse.json(
-      { error: `Maximum ${AGENDA_LIMITS.MAX_ITEMS} items allowed` },
-      { status: 400 }
-    );
-  }
-
-  // Validate each item
-  for (let i = 0; i < body.items.length; i++) {
-    const item = body.items[i];
-    const validation = validateAgendaItem(item, i);
-    if (validation) {
-      return NextResponse.json({ error: validation }, { status: 400 });
-    }
+  // Validate items array using shared validation
+  const validation = validateAgendaItems(body.items);
+  if (!validation.isValid) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
   try {
@@ -150,59 +132,3 @@ export async function PUT(
   }
 }
 
-/**
- * Validates an agenda item input.
- * Returns error message or null if valid.
- */
-function validateAgendaItem(
-  item: AgendaItemInput,
-  index: number
-): string | null {
-  // Title validation
-  if (!item.title || typeof item.title !== "string") {
-    return `Item ${index + 1}: title is required`;
-  }
-
-  const title = item.title.trim();
-  if (title.length < AGENDA_LIMITS.MIN_TITLE_LENGTH) {
-    return `Item ${index + 1}: title is required`;
-  }
-  if (title.length > AGENDA_LIMITS.MAX_TITLE_LENGTH) {
-    return `Item ${index + 1}: title must be ${AGENDA_LIMITS.MAX_TITLE_LENGTH} characters or less`;
-  }
-
-  // Description validation (optional)
-  if (item.description !== undefined && item.description !== null) {
-    if (typeof item.description !== "string") {
-      return `Item ${index + 1}: description must be a string`;
-    }
-    if (item.description.length > AGENDA_LIMITS.MAX_DESCRIPTION_LENGTH) {
-      return `Item ${index + 1}: description must be ${AGENDA_LIMITS.MAX_DESCRIPTION_LENGTH} characters or less`;
-    }
-  }
-
-  // Estimated duration validation (optional)
-  if (item.estimatedDuration !== undefined && item.estimatedDuration !== null) {
-    if (typeof item.estimatedDuration !== "number") {
-      return `Item ${index + 1}: estimatedDuration must be a number`;
-    }
-    if (
-      item.estimatedDuration < AGENDA_LIMITS.MIN_DURATION_MINUTES ||
-      item.estimatedDuration > AGENDA_LIMITS.MAX_DURATION_MINUTES
-    ) {
-      return `Item ${index + 1}: estimatedDuration must be between ${AGENDA_LIMITS.MIN_DURATION_MINUTES} and ${AGENDA_LIMITS.MAX_DURATION_MINUTES} minutes`;
-    }
-  }
-
-  // Presenter validation (optional)
-  if (item.presenter !== undefined && item.presenter !== null) {
-    if (typeof item.presenter !== "string") {
-      return `Item ${index + 1}: presenter must be a string`;
-    }
-    if (item.presenter.length > AGENDA_LIMITS.MAX_PRESENTER_LENGTH) {
-      return `Item ${index + 1}: presenter must be ${AGENDA_LIMITS.MAX_PRESENTER_LENGTH} characters or less`;
-    }
-  }
-
-  return null;
-}

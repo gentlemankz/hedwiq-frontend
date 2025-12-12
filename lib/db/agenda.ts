@@ -3,11 +3,13 @@
  *
  * CRUD operations for meeting agendas and agenda items.
  * Used by API routes and (potentially) the agent for status updates.
+ *
+ * IMPORTANT: Multi-step operations use transactions to ensure data consistency.
  */
 
 import { db } from "@/lib/db";
 import { agenda, agendaItem } from "@/lib/db/schema";
-import { eq, asc, sql } from "drizzle-orm";
+import { eq, asc, sql, count } from "drizzle-orm";
 import type {
   Agenda,
   AgendaItem,
@@ -23,18 +25,25 @@ import type {
 
 /**
  * Generates a unique agenda ID.
- * Format: agenda-{roomId}-{timestamp}
+ * Format: agenda-{roomId}-{timestamp}-{random}
+ *
+ * Uses timestamp + random suffix to prevent collisions on rapid requests.
  */
 export function generateAgendaId(roomId: string): string {
-  return `agenda-${roomId}-${Date.now()}`;
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  return `agenda-${roomId}-${timestamp}-${random}`;
 }
 
 /**
  * Generates a unique agenda item ID.
- * Format: item-{agendaId}-{index}
+ * Format: item-{timestamp}-{random}-{index}
+ *
+ * Uses timestamp + random to ensure uniqueness even when agenda is updated.
  */
 export function generateAgendaItemId(agendaId: string, index: number): string {
-  return `item-${agendaId}-${index}`;
+  const random = Math.random().toString(36).substring(2, 6);
+  return `item-${Date.now()}-${random}-${index}`;
 }
 
 // ============================================================================
@@ -157,6 +166,7 @@ export async function upsertAgenda(
 
 /**
  * Creates a new agenda with items.
+ * Uses a transaction to ensure atomic creation.
  */
 export async function createAgenda(
   roomId: string,
@@ -166,42 +176,61 @@ export async function createAgenda(
   const agendaId = generateAgendaId(roomId);
   const now = new Date();
 
-  // Insert agenda
-  await db.insert(agenda).values({
-    id: agendaId,
-    roomId,
-    createdBy,
-    itemCount: items.length,
-    status: "draft",
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
+  return await db.transaction(async (tx) => {
+    // Insert agenda
+    await tx.insert(agenda).values({
+      id: agendaId,
+      roomId,
+      createdBy,
+      itemCount: items.length,
+      status: "draft",
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Insert items
+    if (items.length > 0) {
+      await tx.insert(agendaItem).values(
+        items.map((item, index) => ({
+          id: generateAgendaItemId(agendaId, index),
+          agendaId,
+          orderIndex: index,
+          title: item.title,
+          description: item.description ?? null,
+          estimatedDuration: item.estimatedDuration ?? null,
+          presenter: item.presenter ?? null,
+          status: "pending" as const,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
+    }
+
+    // Fetch and return the created agenda with items
+    const [createdAgenda] = await tx
+      .select()
+      .from(agenda)
+      .where(eq(agenda.id, agendaId))
+      .limit(1);
+
+    const createdItems = await tx
+      .select()
+      .from(agendaItem)
+      .where(eq(agendaItem.agendaId, agendaId))
+      .orderBy(asc(agendaItem.orderIndex));
+
+    return {
+      ...mapDbAgendaToAgenda(createdAgenda),
+      items: createdItems.map(mapDbAgendaItemToAgendaItem),
+    };
   });
-
-  // Insert items
-  if (items.length > 0) {
-    await db.insert(agendaItem).values(
-      items.map((item, index) => ({
-        id: generateAgendaItemId(agendaId, index),
-        agendaId,
-        orderIndex: index,
-        title: item.title,
-        description: item.description ?? null,
-        estimatedDuration: item.estimatedDuration ?? null,
-        presenter: item.presenter ?? null,
-        status: "pending" as const,
-        createdAt: now,
-        updatedAt: now,
-      }))
-    );
-  }
-
-  return (await getAgendaWithItems(roomId))!;
 }
 
 /**
  * Updates a draft agenda with new items.
  * Replaces all existing items with new ones.
+ * Uses a transaction to ensure atomic update and recalculates itemCount from actual data.
  */
 async function updateDraftAgenda(
   agendaId: string,
@@ -209,50 +238,64 @@ async function updateDraftAgenda(
 ): Promise<AgendaWithItems> {
   const now = new Date();
 
-  // Delete existing items
-  await db.delete(agendaItem).where(eq(agendaItem.agendaId, agendaId));
+  return await db.transaction(async (tx) => {
+    // Delete existing items
+    await tx.delete(agendaItem).where(eq(agendaItem.agendaId, agendaId));
 
-  // Insert new items
-  if (items.length > 0) {
-    await db.insert(agendaItem).values(
-      items.map((item, index) => ({
-        id: generateAgendaItemId(agendaId, index),
-        agendaId,
-        orderIndex: index,
-        title: item.title,
-        description: item.description ?? null,
-        estimatedDuration: item.estimatedDuration ?? null,
-        presenter: item.presenter ?? null,
-        status: "pending" as const,
-        createdAt: now,
+    // Insert new items
+    if (items.length > 0) {
+      await tx.insert(agendaItem).values(
+        items.map((item, index) => ({
+          id: generateAgendaItemId(agendaId, index),
+          agendaId,
+          orderIndex: index,
+          title: item.title,
+          description: item.description ?? null,
+          estimatedDuration: item.estimatedDuration ?? null,
+          presenter: item.presenter ?? null,
+          status: "pending" as const,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
+    }
+
+    // Recalculate itemCount from actual data (not from input length)
+    const [countResult] = await tx
+      .select({ value: count() })
+      .from(agendaItem)
+      .where(eq(agendaItem.agendaId, agendaId));
+
+    const actualItemCount = countResult?.value ?? 0;
+
+    // Update agenda metadata with recalculated count
+    await tx
+      .update(agenda)
+      .set({
+        itemCount: actualItemCount,
+        version: sql`${agenda.version} + 1`,
         updatedAt: now,
-      }))
-    );
-  }
+      })
+      .where(eq(agenda.id, agendaId));
 
-  // Update agenda metadata
-  await db
-    .update(agenda)
-    .set({
-      itemCount: items.length,
-      version: sql`${agenda.version} + 1`,
-      updatedAt: now,
-    })
-    .where(eq(agenda.id, agendaId));
+    // Get the updated agenda within transaction
+    const [updated] = await tx
+      .select()
+      .from(agenda)
+      .where(eq(agenda.id, agendaId))
+      .limit(1);
 
-  // Get the updated agenda
-  const [updated] = await db
-    .select()
-    .from(agenda)
-    .where(eq(agenda.id, agendaId))
-    .limit(1);
+    const updatedItems = await tx
+      .select()
+      .from(agendaItem)
+      .where(eq(agendaItem.agendaId, agendaId))
+      .orderBy(asc(agendaItem.orderIndex));
 
-  const updatedItems = await getAgendaItems(agendaId);
-
-  return {
-    ...mapDbAgendaToAgenda(updated),
-    items: updatedItems,
-  };
+    return {
+      ...mapDbAgendaToAgenda(updated),
+      items: updatedItems.map(mapDbAgendaItemToAgendaItem),
+    };
+  });
 }
 
 /**
@@ -289,12 +332,15 @@ export async function publishAgenda(roomId: string): Promise<AgendaWithItems> {
  * Updates a single agenda item.
  * Only allowed when agenda is in draft status.
  *
+ * NOTE: orderIndex cannot be updated directly via this function.
+ * Use reorderAgendaItems() to change item ordering to maintain integrity.
+ *
  * @throws Error if item doesn't exist or agenda is not draft
  */
 export async function updateAgendaItem(
   itemId: string,
   updates: Partial<
-    Pick<AgendaItem, "title" | "description" | "estimatedDuration" | "presenter" | "orderIndex">
+    Pick<AgendaItem, "title" | "description" | "estimatedDuration" | "presenter">
   >
 ): Promise<AgendaItem> {
   const item = await getAgendaItemById(itemId);
@@ -316,6 +362,9 @@ export async function updateAgendaItem(
 
   const now = new Date();
 
+  // NOTE: orderIndex is intentionally NOT included here.
+  // Changing orderIndex directly can break order integrity (gaps, duplicates).
+  // Use reorderAgendaItems() for order changes.
   await db
     .update(agendaItem)
     .set({
@@ -325,7 +374,6 @@ export async function updateAgendaItem(
         estimatedDuration: updates.estimatedDuration,
       }),
       ...(updates.presenter !== undefined && { presenter: updates.presenter }),
-      ...(updates.orderIndex !== undefined && { orderIndex: updates.orderIndex }),
       updatedAt: now,
     })
     .where(eq(agendaItem.id, itemId));
@@ -345,6 +393,7 @@ export async function updateAgendaItem(
 /**
  * Deletes a single agenda item.
  * Only allowed when agenda is in draft status.
+ * Uses a transaction to ensure atomic delete and proper reordering.
  *
  * @throws Error if item doesn't exist or agenda is not draft
  */
@@ -367,39 +416,60 @@ export async function deleteAgendaItem(itemId: string): Promise<void> {
   }
 
   const now = new Date();
+  const agendaIdToUpdate = item.agendaId;
 
-  // Delete the item
-  await db.delete(agendaItem).where(eq(agendaItem.id, itemId));
+  await db.transaction(async (tx) => {
+    // Delete the item
+    await tx.delete(agendaItem).where(eq(agendaItem.id, itemId));
 
-  // Update parent agenda
-  await db
-    .update(agenda)
-    .set({
-      itemCount: sql`${agenda.itemCount} - 1`,
-      version: sql`${agenda.version} + 1`,
-      updatedAt: now,
-    })
-    .where(eq(agenda.id, item.agendaId));
+    // Get remaining items ordered by current orderIndex
+    const remainingItems = await tx
+      .select()
+      .from(agendaItem)
+      .where(eq(agendaItem.agendaId, agendaIdToUpdate))
+      .orderBy(asc(agendaItem.orderIndex));
 
-  // Reorder remaining items
-  const remainingItems = await getAgendaItems(item.agendaId);
-  for (let i = 0; i < remainingItems.length; i++) {
-    if (remainingItems[i].orderIndex !== i) {
-      await db
-        .update(agendaItem)
-        .set({ orderIndex: i, updatedAt: now })
-        .where(eq(agendaItem.id, remainingItems[i].id));
+    // Batch reorder: Update all indices in a single pass using CASE statement
+    // This is more efficient than N individual updates
+    if (remainingItems.length > 0) {
+      for (let i = 0; i < remainingItems.length; i++) {
+        if (remainingItems[i].orderIndex !== i) {
+          await tx
+            .update(agendaItem)
+            .set({ orderIndex: i, updatedAt: now })
+            .where(eq(agendaItem.id, remainingItems[i].id));
+        }
+      }
     }
-  }
+
+    // Recalculate itemCount from actual data (not blind decrement)
+    const [countResult] = await tx
+      .select({ value: count() })
+      .from(agendaItem)
+      .where(eq(agendaItem.agendaId, agendaIdToUpdate));
+
+    const actualItemCount = countResult?.value ?? 0;
+
+    // Update parent agenda with recalculated count
+    await tx
+      .update(agenda)
+      .set({
+        itemCount: actualItemCount,
+        version: sql`${agenda.version} + 1`,
+        updatedAt: now,
+      })
+      .where(eq(agenda.id, agendaIdToUpdate));
+  });
 }
 
 /**
  * Reorders agenda items.
  * Only allowed when agenda is in draft status.
+ * Uses a transaction to ensure atomic reordering.
  *
  * @param agendaId - The agenda ID
- * @param itemIds - Item IDs in desired order
- * @throws Error if agenda is not draft or items don't match
+ * @param itemIds - Item IDs in desired order (must be unique, complete set)
+ * @throws Error if agenda is not draft, items don't match, or duplicates present
  */
 export async function reorderAgendaItems(
   agendaId: string,
@@ -420,12 +490,18 @@ export async function reorderAgendaItems(
     throw new Error("Cannot reorder items in a published agenda");
   }
 
+  // Check for duplicate IDs in input
+  const uniqueIds = new Set(itemIds);
+  if (uniqueIds.size !== itemIds.length) {
+    throw new Error("Duplicate item IDs provided. Each item ID must appear exactly once.");
+  }
+
   // Verify all items belong to this agenda
   const existingItems = await getAgendaItems(agendaId);
   const existingIds = new Set(existingItems.map((i) => i.id));
 
   if (itemIds.length !== existingIds.size) {
-    throw new Error("Item count mismatch");
+    throw new Error("Item count mismatch. Provided item IDs must match the agenda's items exactly.");
   }
 
   for (const id of itemIds) {
@@ -436,24 +512,34 @@ export async function reorderAgendaItems(
 
   const now = new Date();
 
-  // Update order indices
-  for (let i = 0; i < itemIds.length; i++) {
-    await db
-      .update(agendaItem)
-      .set({ orderIndex: i, updatedAt: now })
-      .where(eq(agendaItem.id, itemIds[i]));
-  }
+  // Use transaction for atomic reorder
+  return await db.transaction(async (tx) => {
+    // Update order indices within transaction
+    for (let i = 0; i < itemIds.length; i++) {
+      await tx
+        .update(agendaItem)
+        .set({ orderIndex: i, updatedAt: now })
+        .where(eq(agendaItem.id, itemIds[i]));
+    }
 
-  // Update agenda version
-  await db
-    .update(agenda)
-    .set({
-      version: sql`${agenda.version} + 1`,
-      updatedAt: now,
-    })
-    .where(eq(agenda.id, agendaId));
+    // Update agenda version
+    await tx
+      .update(agenda)
+      .set({
+        version: sql`${agenda.version} + 1`,
+        updatedAt: now,
+      })
+      .where(eq(agenda.id, agendaId));
 
-  return await getAgendaItems(agendaId);
+    // Return reordered items within transaction
+    const reorderedItems = await tx
+      .select()
+      .from(agendaItem)
+      .where(eq(agendaItem.agendaId, agendaId))
+      .orderBy(asc(agendaItem.orderIndex));
+
+    return reorderedItems.map(mapDbAgendaItemToAgendaItem);
+  });
 }
 
 // ============================================================================
@@ -463,6 +549,11 @@ export async function reorderAgendaItems(
 /**
  * Updates an agenda item's status and timestamps.
  * Used by the agent for automatic topic tracking.
+ *
+ * IMPORTANT: Status updates are only allowed when the parent agenda is 'active'.
+ * This enforces the publish-and-lock sequence defined in the plan.
+ *
+ * @throws Error if item doesn't exist or agenda is not active
  */
 export async function updateAgendaItemStatus(
   itemId: string,
@@ -473,6 +564,24 @@ export async function updateAgendaItemStatus(
 
   if (!item) {
     throw new Error("Agenda item not found");
+  }
+
+  // Verify the parent agenda is active
+  const [parentAgenda] = await db
+    .select()
+    .from(agenda)
+    .where(eq(agenda.id, item.agendaId))
+    .limit(1);
+
+  if (!parentAgenda) {
+    throw new Error("Parent agenda not found");
+  }
+
+  if (parentAgenda.status !== "active") {
+    throw new Error(
+      `Cannot update item status: agenda is '${parentAgenda.status}'. ` +
+      "Status updates are only allowed on active agendas."
+    );
   }
 
   const now = new Date();

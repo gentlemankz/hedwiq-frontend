@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { validateRoomAccess } from "@/lib/db/room-access";
 import { validateRoomId } from "@/lib/validation";
+import { validateReorderItemIds } from "@/lib/validation/agenda";
 import { getAgendaByRoomId, reorderAgendaItems } from "@/lib/db/agenda";
 
 /**
@@ -51,28 +52,10 @@ export async function POST(
     );
   }
 
-  // Validate itemIds
-  if (!Array.isArray(body.itemIds)) {
-    return NextResponse.json(
-      { error: "itemIds must be an array" },
-      { status: 400 }
-    );
-  }
-
-  if (body.itemIds.length === 0) {
-    return NextResponse.json(
-      { error: "itemIds cannot be empty" },
-      { status: 400 }
-    );
-  }
-
-  for (const id of body.itemIds) {
-    if (typeof id !== "string") {
-      return NextResponse.json(
-        { error: "itemIds must be an array of strings" },
-        { status: 400 }
-      );
-    }
+  // Validate itemIds using shared validation (includes duplicate check)
+  const validation = validateReorderItemIds(body.itemIds);
+  if (!validation.isValid) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
   try {
