@@ -29,6 +29,8 @@ This is a Next.js 16 application using the App Router with React 19 and TypeScri
 
 ```
 frontend/
+├── AGENTS.md                         # Agent-specific instructions
+├── README.md                         # Project README
 ├── app/                              # Next.js App Router
 │   ├── (auth)/                       # Auth route group
 │   │   ├── layout.tsx                # Auth pages layout
@@ -42,14 +44,21 @@ frontend/
 │   │   │   │   ├── route.ts          # Get/delete document endpoint
 │   │   │   │   └── pdf/
 │   │   │   │       └── route.ts      # Serve PDF via Supabase signed URL
+│   │   │   ├── route.ts              # List documents for a room
 │   │   │   └── upload/
 │   │   │       └── route.ts          # Document upload to Supabase Storage
 │   │   ├── livekit/token/
 │   │   │   └── route.ts              # LiveKit token generation endpoint
 │   │   └── rooms/
 │   │       └── [roomId]/
-│   │           └── access/
-│   │               └── route.ts      # Room participation recording endpoint
+│   │           ├── access/
+│   │           │   └── route.ts      # Room participation recording endpoint
+│   │           └── agenda/           # Meeting agenda lifecycle
+│   │               ├── publish/
+│   │               │   └── route.ts  # Publish draft agenda (locks items)
+│   │               ├── reorder/
+│   │               │   └── route.ts  # Reorder draft agenda items
+│   │               └── route.ts      # Get/upsert agenda with items
 │   ├── dashboard/
 │   │   ├── dashboard-client.tsx      # Dashboard client component
 │   │   └── page.tsx                  # Dashboard page
@@ -62,7 +71,7 @@ frontend/
 │   │       │   └── video-preview.tsx
 │   │       ├── meeting-room.tsx      # LiveKit room wrapper with providers
 │   │       ├── page.tsx
-│   │       └── pre-join-screen.tsx
+│   │       └── pre-join-screen.tsx   # Pre-join flow + agenda builder
 │   ├── globals.css                   # Global styles with LiveKit theme integration
 │   ├── layout.tsx                    # Root layout
 │   └── page.tsx                      # Landing page
@@ -95,32 +104,45 @@ frontend/
 │   ├── auth.ts                       # Better Auth server configuration
 │   ├── auth-client.ts                # Better Auth client configuration
 │   ├── db/                           # Drizzle ORM setup
+│   │   ├── agenda.ts                 # Agenda CRUD + publish/reorder helpers
 │   │   ├── index.ts                  # Database connection
 │   │   ├── schema.ts                 # Schema: user, session, account, verification,
-│   │   │                             #         roomParticipant, document
+│   │   │                             #         roomParticipant, document, agenda
 │   │   ├── room-access.ts            # Room participation CRUD utilities
 │   │   └── migrations/               # SQL migrations
 │   │       ├── 0000_shallow_freak.sql
 │   │       ├── 0001_right_professor_monster.sql  # roomParticipant table
 │   │       ├── 0002_sleepy_redwing.sql           # document table
+│   │       ├── 0003_flat_black_bolt.sql          # agenda + agenda_item tables
+│   │       ├── 0004_rls_agenda_tables.sql        # RLS policies for agenda tables
 │   │       └── meta/                 # Migration metadata
 │   ├── supabase/                     # Supabase Storage integration
 │   │   ├── index.ts                  # Barrel export + STORAGE_BUCKETS/PATHS
 │   │   ├── client.ts                 # Browser client (anon key)
 │   │   └── server.ts                 # Server client + signed URLs, upload/download
 │   ├── utils.ts                      # Utility functions (cn helper, etc.)
-│   └── validation.ts                 # Zod validation schemas
+│   ├── validation.ts                 # Zod validation schemas
+│   └── validation/agenda.ts          # Agenda input validation helpers
 ├── types/                            # TypeScript type definitions
+│   ├── agenda.ts                     # Agenda + agenda item + LiveKit event types
 │   ├── document.ts                   # Document + DocumentReference + BoundingBox types
 │   ├── insight.ts                    # AI insight types
 │   └── user.ts                       # User-related types
 ├── docs/                             # Project documentation
+│   ├── AGENDA_FEATURE_PLAN.md        # Agenda UX + agent integration plan
 │   ├── PRD.md                        # Product Requirements Document
 │   ├── startup-info.md               # Startup context
 │   ├── DOCUMENT_REFERENCE_PLAN.md    # Document feature plan
 │   ├── PHASE2_INSIGHTS_PLAN.md       # AI insights implementation plan
 │   ├── better-auth-llm.txt           # Better Auth reference docs
 │   └── livekit-llm.txt               # LiveKit reference docs
+├── tests/                            # Vitest coverage for agenda flows
+│   ├── api/rooms/agenda.test.ts      # Agenda API route tests
+│   ├── lib/db/agenda.integration.test.ts # Agenda DB integration tests
+│   ├── lib/db/agenda.test.ts         # Agenda DB unit tests
+│   ├── lib/validation/agenda.test.ts # Agenda validation tests
+│   ├── types/agenda.test.ts          # Agenda types tests
+│   └── setup.ts                      # Vitest setup
 ├── public/                           # Static assets
 │   ├── pdf.worker.min.mjs            # PDF.js worker for react-pdf
 │   ├── file.svg

@@ -9,6 +9,7 @@ import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
 import { DocumentsProvider } from "@/contexts/documents-context";
 import type { User } from "@/types/user";
+import type { AgendaItemInput } from "@/types/agenda";
 
 interface MeetingRoomProps {
   roomId: string;
@@ -49,7 +50,54 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
       setUserChoices(choices);
 
       try {
-        // Use POST request to avoid sensitive data in URL
+        // Join Sequencing (Critical - see AGENDA_FEATURE_PLAN.md):
+        // 1. Save agenda (if items exist)
+        // 2. Publish agenda (lock it in)
+        // 3. Request token (only after agenda is published)
+        // 4. Connect to LiveKit
+        // This order ensures the agent can fetch the agenda when it joins.
+
+        // Step 1 & 2: Save and publish agenda if items exist
+        if (choices.agendaItems && choices.agendaItems.length > 0) {
+          // Convert DraftAgendaItem[] to AgendaItemInput[]
+          const agendaItems: AgendaItemInput[] = choices.agendaItems.map((item) => ({
+            title: item.title,
+            description: item.description,
+            estimatedDuration: item.estimatedDuration,
+            presenter: item.presenter,
+          }));
+
+          // Step 1: Save agenda (PUT /api/rooms/[roomId]/agenda)
+          const saveResponse = await fetch(`/api/rooms/${roomId}/agenda`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ items: agendaItems }),
+            signal: abortController.signal,
+          });
+
+          if (!saveResponse.ok) {
+            const data = await saveResponse.json();
+            throw new Error(data.error || "Failed to save agenda");
+          }
+
+          // Step 2: Publish agenda (POST /api/rooms/[roomId]/agenda/publish)
+          const publishResponse = await fetch(`/api/rooms/${roomId}/agenda/publish`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            signal: abortController.signal,
+          });
+
+          if (!publishResponse.ok) {
+            const data = await publishResponse.json();
+            throw new Error(data.error || "Failed to publish agenda");
+          }
+        }
+
+        // Step 3: Request token (POST /api/livekit/token)
         const response = await fetch("/api/livekit/token", {
           method: "POST",
           headers: {
@@ -69,7 +117,8 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
 
         const data = await response.json();
 
-        // Only update state if this request wasn't aborted
+        // Step 4: Only update state if this request wasn't aborted
+        // (LiveKit connection happens via state update triggering LiveKitRoom)
         if (!abortController.signal.aborted) {
           setToken(data.token);
           setIsConnecting(false);
