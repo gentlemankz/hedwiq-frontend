@@ -10,20 +10,28 @@ import {
   InsightsSummaryPanel,
   InsightsIndicator,
 } from "@/components/insights";
+import { AgendaProgress } from "@/components/agenda";
 import { DocumentViewerModal } from "@/components/documents/document-viewer-modal";
 import { useDocumentsContext } from "@/contexts/documents-context";
+import { AgendaProvider } from "@/contexts/agenda-context";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { FileText, Sparkles, X, PanelRightClose } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useInsights } from "@/hooks/use-insights";
+import { useAgenda } from "@/hooks/use-agenda";
 import type { Insight } from "@/types/insight";
 import type { DocumentReference } from "@/types/document";
 
 interface MeetingLayoutProps {
   showTranscription?: boolean;
-  /** Agenda ID for progress tracking (Phase 3) */
+  /** Agenda ID for progress tracking */
   agendaId?: string;
   /** Agenda version for cache invalidation */
   agendaVersion?: number;
@@ -36,34 +44,52 @@ export function MeetingLayout({
   agendaId,
   agendaVersion,
 }: MeetingLayoutProps) {
-  // TODO (Phase 3): Use agendaId and agendaVersion to initialize AgendaProvider
-  // for real-time progress tracking via LiveKit hedwiq.agenda topic
-  void agendaId;
-  void agendaVersion;
   const room = useRoomContext();
+  const roomId = room?.name || "";
+
+  return (
+    <AgendaProvider
+      roomId={roomId}
+      agendaId={agendaId}
+      agendaVersion={agendaVersion}
+    >
+      <MeetingLayoutInner
+        initialShowTranscription={initialShowTranscription}
+        roomId={roomId}
+      />
+    </AgendaProvider>
+  );
+}
+
+interface MeetingLayoutInnerProps {
+  initialShowTranscription: boolean;
+  roomId: string;
+}
+
+function MeetingLayoutInner({
+  initialShowTranscription,
+  roomId,
+}: MeetingLayoutInnerProps) {
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
   const [activeTab, setActiveTab] = useState<SidebarTab>("transcript");
   const { insightCount } = useInsights();
-  const { getDocument, isHydrating, isDocumentLoading, documentCount } = useDocumentsContext();
+  const { hasAgenda } = useAgenda();
+  const { getDocument, isHydrating, isDocumentLoading, documentCount } =
+    useDocumentsContext();
 
   // Document reference viewer state
   const [selectedReference, setSelectedReference] =
     useState<DocumentReference | null>(null);
 
-  // Get room ID from LiveKit room name
-  const roomId = room?.name || "";
-
   // Handle insight click - switch to insights tab
   const handleInsightClick = useCallback((insight: Insight) => {
     setActiveTab("insights");
-    // Could also scroll to the insight or highlight it
     console.log("Insight clicked:", insight);
   }, []);
 
   // Handle document reference click - open viewer modal
   const handleDocumentReferenceClick = useCallback(
     (reference: DocumentReference) => {
-      // Debug logging to help track document reference issues
       const doc = getDocument(reference.documentId);
       console.log("[DocumentViewer] Reference clicked:", {
         documentId: reference.documentId,
@@ -74,7 +100,7 @@ export function MeetingLayout({
       if (!doc) {
         console.warn(
           `[DocumentViewer] Document not found for ID: ${reference.documentId}. ` +
-          `Available docs: ${documentCount}. Still hydrating: ${isHydrating}`
+            `Available docs: ${documentCount}. Still hydrating: ${isHydrating}`
         );
       }
       setSelectedReference(reference);
@@ -87,16 +113,29 @@ export function MeetingLayout({
     setSelectedReference(null);
   }, []);
 
+  // Sidebar width: wider when agenda is shown (520px), normal otherwise (384px = w-96)
+  const sidebarWidth = hasAgenda ? "w-[520px]" : "w-96";
+
   return (
     <div className="flex h-full">
       {/* Main video area */}
-      <div className={cn("flex-1 transition-all", showSidebar && "mr-96")}>
+      <div
+        className={cn(
+          "flex-1 transition-all",
+          showSidebar && (hasAgenda ? "mr-[520px]" : "mr-96")
+        )}
+      >
         <VideoConference />
       </div>
 
       {/* Combined sidebar with tabs */}
       {showSidebar && (
-        <div className="fixed right-0 top-0 bottom-0 w-96 z-50 flex flex-col bg-background border-l">
+        <div
+          className={cn(
+            "fixed right-0 top-0 bottom-0 z-50 flex flex-col bg-background border-l",
+            sidebarWidth
+          )}
+        >
           {/* Sidebar header with tabs */}
           <div className="border-b">
             <div className="flex items-center justify-between px-4 py-2">
@@ -135,33 +174,21 @@ export function MeetingLayout({
             </div>
           </div>
 
-          {/* Tab content - both components always mounted, visibility controlled by CSS */}
-          <div className="flex-1 min-h-0 overflow-hidden relative">
-            <div
-              className={cn(
-                "absolute inset-0",
-                activeTab !== "transcript" && "invisible"
-              )}
-            >
-              <TranscriptionErrorBoundary>
-                <TranscriptionSidebar
-                  className="border-l-0 h-full"
-                  onInsightClick={handleInsightClick}
-                  onDocumentReferenceClick={handleDocumentReferenceClick}
-                />
-              </TranscriptionErrorBoundary>
-            </div>
-            <div
-              className={cn(
-                "absolute inset-0",
-                activeTab !== "insights" && "invisible"
-              )}
-            >
-              <InsightsSummaryPanel
-                className="border-l-0 h-full"
+          {/* Main content area - split view when agenda exists */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {hasAgenda ? (
+              <SplitSidebarContent
+                activeTab={activeTab}
                 onInsightClick={handleInsightClick}
+                onDocumentReferenceClick={handleDocumentReferenceClick}
               />
-            </div>
+            ) : (
+              <SinglePanelContent
+                activeTab={activeTab}
+                onInsightClick={handleInsightClick}
+                onDocumentReferenceClick={handleDocumentReferenceClick}
+              />
+            )}
           </div>
         </div>
       )}
@@ -194,7 +221,9 @@ export function MeetingLayout({
       <DocumentViewerModal
         reference={selectedReference}
         document={
-          selectedReference ? getDocument(selectedReference.documentId) ?? null : null
+          selectedReference
+            ? getDocument(selectedReference.documentId) ?? null
+            : null
         }
         roomId={roomId}
         open={!!selectedReference}
@@ -205,6 +234,121 @@ export function MeetingLayout({
           (isHydrating || isDocumentLoading(selectedReference.documentId))
         }
       />
+    </div>
+  );
+}
+
+// ============================================================================
+// Split Sidebar Content (with Agenda)
+// ============================================================================
+
+interface SplitSidebarContentProps {
+  activeTab: SidebarTab;
+  onInsightClick: (insight: Insight) => void;
+  onDocumentReferenceClick: (reference: DocumentReference) => void;
+}
+
+function SplitSidebarContent({
+  activeTab,
+  onInsightClick,
+  onDocumentReferenceClick,
+}: SplitSidebarContentProps) {
+  // Note: getDocument intentionally removed - SplitSidebarContent delegates to
+  // TranscriptionSidebar/InsightsSummaryPanel which handle document references
+
+  return (
+    <ResizablePanelGroup direction="horizontal" className="h-full">
+      {/* Agenda Panel (left side) */}
+      <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
+        <div className="h-full border-r">
+          <AgendaProgress className="h-full" />
+        </div>
+      </ResizablePanel>
+
+      <ResizableHandle withHandle />
+
+      {/* Transcript/Insights Panel (right side) */}
+      <ResizablePanel defaultSize={65} minSize={50}>
+        <div className="h-full relative">
+          {/* Transcript tab content */}
+          <div
+            className={cn(
+              "absolute inset-0",
+              activeTab !== "transcript" && "invisible"
+            )}
+          >
+            <TranscriptionErrorBoundary>
+              <TranscriptionSidebar
+                className="border-l-0 h-full"
+                onInsightClick={onInsightClick}
+                onDocumentReferenceClick={onDocumentReferenceClick}
+              />
+            </TranscriptionErrorBoundary>
+          </div>
+
+          {/* Insights tab content */}
+          <div
+            className={cn(
+              "absolute inset-0",
+              activeTab !== "insights" && "invisible"
+            )}
+          >
+            <InsightsSummaryPanel
+              className="border-l-0 h-full"
+              onInsightClick={onInsightClick}
+            />
+          </div>
+        </div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  );
+}
+
+// ============================================================================
+// Single Panel Content (no Agenda)
+// ============================================================================
+
+interface SinglePanelContentProps {
+  activeTab: SidebarTab;
+  onInsightClick: (insight: Insight) => void;
+  onDocumentReferenceClick: (reference: DocumentReference) => void;
+}
+
+function SinglePanelContent({
+  activeTab,
+  onInsightClick,
+  onDocumentReferenceClick,
+}: SinglePanelContentProps) {
+  return (
+    <div className="h-full relative">
+      {/* Transcript tab content */}
+      <div
+        className={cn(
+          "absolute inset-0",
+          activeTab !== "transcript" && "invisible"
+        )}
+      >
+        <TranscriptionErrorBoundary>
+          <TranscriptionSidebar
+            className="border-l-0 h-full"
+            onInsightClick={onInsightClick}
+            onDocumentReferenceClick={onDocumentReferenceClick}
+          />
+        </TranscriptionErrorBoundary>
+      </div>
+
+      {/* Insights tab content */}
+      <div
+        className={cn(
+          "absolute inset-0",
+          activeTab !== "insights" && "invisible"
+        )}
+      >
+        <InsightsSummaryPanel
+          className="border-l-0 h-full"
+          onInsightClick={onInsightClick}
+        />
+      </div>
     </div>
   );
 }
