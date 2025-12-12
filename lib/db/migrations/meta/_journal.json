@@ -22,6 +22,13 @@
       "when": 1765201126068,
       "tag": "0002_sleepy_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1765537671618,
+      "tag": "0003_flat_black_bolt",
+      "breakpoints": true
     }
   ]
 }

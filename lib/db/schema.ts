@@ -5,6 +5,7 @@ import {
   boolean,
   integer,
   jsonb,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
@@ -112,3 +113,83 @@ export const document = pgTable("document", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/**
+ * Meeting Agendas - One per room, created by the meeting organizer.
+ * Used for automatic topic tracking during meetings.
+ */
+export const agenda = pgTable(
+  "agenda",
+  {
+    /** Unique agenda identifier (e.g., agenda-{roomId}-{timestamp}) */
+    id: text("id").primaryKey(),
+    /** LiveKit room ID - unique constraint ensures one agenda per room */
+    roomId: text("room_id").notNull().unique(),
+    /** User who created the agenda */
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Total number of items (denormalized for quick access) */
+    itemCount: integer("item_count").notNull().default(0),
+    /** Overall status: draft, active, completed */
+    status: text("status").notNull().default("draft"),
+    /** Current active item index (0-based, null if not started) */
+    currentItemIndex: integer("current_item_index"),
+    /**
+     * Version number - incremented on definition edits.
+     * Used for cache invalidation and conflict detection.
+     */
+    version: integer("version").notNull().default(1),
+    /** Meeting start time (when first item started) */
+    meetingStartedAt: timestamp("meeting_started_at"),
+    /** Meeting end time (when last item completed) */
+    meetingEndedAt: timestamp("meeting_ended_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_agenda_room").on(table.roomId)]
+);
+
+/**
+ * Agenda Items - Individual topics within an agenda.
+ * Tracks status, timing, and links to transcript segments.
+ */
+export const agendaItem = pgTable(
+  "agenda_item",
+  {
+    /** Unique item identifier (e.g., item-{agendaId}-{index}) */
+    id: text("id").primaryKey(),
+    /** Parent agenda */
+    agendaId: text("agenda_id")
+      .notNull()
+      .references(() => agenda.id, { onDelete: "cascade" }),
+    /** Display order (0-based) */
+    orderIndex: integer("order_index").notNull(),
+    /** Topic title (required) */
+    title: text("title").notNull(),
+    /** Topic description (optional) */
+    description: text("description"),
+    /** Estimated duration in minutes (optional) */
+    estimatedDuration: integer("estimated_duration"),
+    /** Assigned presenter/leader (optional) */
+    presenter: text("presenter"),
+    /** Item status: pending, in_progress, completed, skipped */
+    status: text("status").notNull().default("pending"),
+    /** Actual start time */
+    startedAt: timestamp("started_at"),
+    /** Actual end time */
+    completedAt: timestamp("completed_at"),
+    /** Actual duration in seconds (calculated) */
+    actualDuration: integer("actual_duration"),
+    /** Transcript segment ID when topic started (for linking) */
+    startTranscriptRef: text("start_transcript_ref"),
+    /** Transcript segment ID when topic ended */
+    endTranscriptRef: text("end_transcript_ref"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_agenda_item_agenda").on(table.agendaId),
+    index("idx_agenda_item_order").on(table.agendaId, table.orderIndex),
+  ]
+);
