@@ -130,6 +130,12 @@ interface ConnectorLineProps {
 
 /**
  * Vertical connector line between agenda items.
+ *
+ * Positioning explanation:
+ * - Circle is size-5 (20px) positioned at top-0.5 (2px from top)
+ * - Circle center is at left: 10px (half of 20px)
+ * - Line should start below circle: top = 2px + 20px + 2px gap = 24px (top-6)
+ * - Line width is 2px (w-0.5), so left = 10px - 1px = 9px
  */
 export function ConnectorLine({ status, isLast, className }: ConnectorLineProps) {
   if (isLast) return null;
@@ -137,7 +143,11 @@ export function ConnectorLine({ status, isLast, className }: ConnectorLineProps)
   return (
     <div
       className={cn(
-        "absolute left-[9px] top-5 w-0.5 h-full -bottom-2",
+        // Position line below the circle with a small gap
+        // left-[9px] centers the 2px line under the 20px circle
+        // top-6 (24px) starts below circle (2px offset + 20px circle + 2px gap)
+        // bottom-0 extends to the bottom of the container
+        "absolute left-[9px] top-6 bottom-0 w-0.5",
         status === "completed" || status === "skipped"
           ? "bg-green-500/40"
           : "bg-muted-foreground/20",

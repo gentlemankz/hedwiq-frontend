@@ -3,7 +3,7 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 import { Clock, User } from "lucide-react";
-import { ProgressIndicator, ConnectorLine } from "./progress-indicator";
+import { ProgressIndicator } from "./progress-indicator";
 import { formatDuration, formatActualDuration } from "@/hooks/use-agenda";
 import type { AgendaItem } from "@/types/agenda";
 
@@ -58,27 +58,44 @@ export const AgendaProgressItem = React.memo(function AgendaProgressItem({
   return (
     <div
       className={cn(
-        "relative pl-8 pb-4",
-        // Current item highlight
-        isCurrent && "bg-primary/5 -mx-3 px-3 pl-11 rounded-md",
+        "flex gap-3 pb-4",
         className
       )}
       aria-current={isCurrent ? "step" : undefined}
     >
-      {/* Status indicator */}
-      <div className="absolute left-0 top-0.5">
-        <ProgressIndicator
-          status={item.status}
-          isCurrent={isCurrent}
-          size="md"
-        />
+      {/* Left column: Status indicator + connector line */}
+      <div className="relative flex flex-col items-center shrink-0 w-5">
+        {/* Status indicator - fixed size */}
+        <div className="relative z-10">
+          <ProgressIndicator
+            status={item.status}
+            isCurrent={isCurrent}
+            size="md"
+          />
+        </div>
+
+        {/* Connector line - extends from below circle to bottom */}
+        {!isLast && (
+          <div
+            className={cn(
+              "flex-1 w-0.5 mt-1",
+              (item.status === "completed" || item.status === "skipped")
+                ? "bg-green-500/40"
+                : "bg-muted-foreground/20"
+            )}
+          />
+        )}
       </div>
 
-      {/* Connector line */}
-      <ConnectorLine status={item.status} isLast={isLast} />
-
-      {/* Content */}
-      <div className="space-y-1">
+      {/* Right column: Content */}
+      <div
+        className={cn(
+          "flex-1 min-w-0 rounded-md",
+          // Current item highlight - only on content, not affecting circle column
+          isCurrent && "bg-primary/5 px-3 py-1 -my-1"
+        )}
+      >
+        <div className="space-y-1">
         {/* Title row */}
         <div className="flex items-start gap-2">
           <span
@@ -124,6 +141,7 @@ export const AgendaProgressItem = React.memo(function AgendaProgressItem({
             {item.description}
           </p>
         )}
+        </div>
       </div>
     </div>
   );
