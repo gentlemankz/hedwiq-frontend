@@ -238,3 +238,139 @@
 .dark [data-lk-theme="default"] .lk-button:focus-visible {
   outline: 2px solid hsl(0 0% 45%);
 }
+
+/* ============================================================================
+   Participant Tile Styling
+   Comprehensive theming for participant tiles in both light and dark modes.
+   ============================================================================ */
+
+/* --- Participant Tile Background --- */
+
+/* Light mode: subtle warm gray background */
+[data-lk-theme="default"] .lk-participant-tile {
+  background-color: hsl(0 0% 94%);
+  border-radius: var(--lk-border-radius);
+}
+
+.dark [data-lk-theme="default"] .lk-participant-tile {
+  background-color: var(--lk-bg2);
+}
+
+/* --- Participant Placeholder (Avatar Container) --- */
+
+/* Light mode: slightly darker for avatar contrast */
+[data-lk-theme="default"] .lk-participant-placeholder {
+  background-color: hsl(0 0% 90%);
+}
+
+.dark [data-lk-theme="default"] .lk-participant-placeholder {
+  background-color: var(--lk-bg2);
+}
+
+/* Hide the default LiveKit SVG placeholder icon since we use shadcn Avatar */
+[data-lk-theme="default"] .lk-participant-placeholder > svg {
+  display: none;
+}
+
+/* --- Participant Metadata (Name + Mic Icon Bar) --- */
+
+/* Light mode: use card-like styling instead of dark overlay */
+[data-lk-theme="default"] .lk-participant-metadata-item {
+  background-color: hsl(0 0% 100% / 90%);
+  color: hsl(0 0% 15%);
+  border: 1px solid hsl(0 0% 0% / 8%);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 3px hsl(0 0% 0% / 8%);
+}
+
+/* Dark mode: keep original dark overlay but enhance it */
+.dark [data-lk-theme="default"] .lk-participant-metadata-item {
+  background-color: hsl(0 0% 0% / 60%);
+  color: hsl(0 0% 98%);
+  border: 1px solid hsl(0 0% 100% / 10%);
+  backdrop-filter: blur(8px);
+  box-shadow: none;
+}
+
+/* Ensure icons in metadata inherit proper color */
+[data-lk-theme="default"] .lk-participant-metadata-item svg {
+  color: inherit;
+}
+
+/* --- Focus Toggle Button (Top Right Corner) --- */
+
+/* Light mode: light background with shadow */
+[data-lk-theme="default"] .lk-focus-toggle-button {
+  background-color: hsl(0 0% 100% / 90%);
+  color: hsl(0 0% 20%);
+  border: 1px solid hsl(0 0% 0% / 10%);
+  box-shadow: 0 1px 3px hsl(0 0% 0% / 10%);
+}
+
+[data-lk-theme="default"] .lk-focus-toggle-button:hover {
+  background-color: hsl(0 0% 100%);
+}
+
+/* Dark mode: dark translucent background */
+.dark [data-lk-theme="default"] .lk-focus-toggle-button {
+  background-color: hsl(0 0% 0% / 60%);
+  color: hsl(0 0% 98%);
+  border: 1px solid hsl(0 0% 100% / 10%);
+  box-shadow: none;
+}
+
+.dark [data-lk-theme="default"] .lk-focus-toggle-button:hover {
+  background-color: hsl(0 0% 0% / 70%);
+}
+
+/* --- Connection Quality Indicator --- */
+
+/* Light mode styling */
+[data-lk-theme="default"] .lk-connection-quality {
+  background-color: hsl(0 0% 100% / 90%);
+  border: 1px solid hsl(0 0% 0% / 8%);
+  border-radius: calc(var(--lk-border-radius) / 2);
+  box-shadow: 0 1px 3px hsl(0 0% 0% / 8%);
+}
+
+.dark [data-lk-theme="default"] .lk-connection-quality {
+  background-color: hsl(0 0% 0% / 60%);
+  border: 1px solid hsl(0 0% 100% / 10%);
+  box-shadow: none;
+}
+
+/* --- Track Muted Indicator (Mic Icon) --- */
+
+/* Light mode: ensure proper contrast */
+[data-lk-theme="default"] .lk-participant-metadata-item .lk-track-muted-indicator-muted svg {
+  color: hsl(0 70% 45%);
+}
+
+.dark [data-lk-theme="default"] .lk-participant-metadata-item .lk-track-muted-indicator-muted svg {
+  color: hsl(0 70% 60%);
+}
+
+/* --- Speaking Indicator Border --- */
+
+/* Light mode: use primary accent color */
+[data-lk-theme="default"] .lk-participant-tile[data-lk-speaking="true"]::after {
+  border-color: hsl(0 0% 20%);
+}
+
+.dark [data-lk-theme="default"] .lk-participant-tile[data-lk-speaking="true"]::after {
+  border-color: var(--lk-accent-bg);
+}
+
+/* --- Focused Layout (Custom Participant Tile in Focus Mode) --- */
+
+/* Ensure focused layout takes proper space */
+[data-lk-theme="default"] .lk-focused-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+[data-lk-theme="default"] .lk-focused-layout .lk-participant-tile {
+  width: 100%;
+  height: 100%;
+}

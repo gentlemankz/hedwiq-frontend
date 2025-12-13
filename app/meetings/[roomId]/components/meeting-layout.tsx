@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { VideoConference } from "@livekit/components-react";
+import { CustomVideoConference } from "@/components/participant";
 import {
   TranscriptionSidebar,
   TranscriptionErrorBoundary,
@@ -148,7 +148,7 @@ function MeetingLayoutInner({
           showSidebar && (hasAgenda ? "mr-[520px]" : "mr-96")
         )}
       >
-        <VideoConference />
+        <CustomVideoConference />
       </div>
 
       {/* Combined sidebar with tabs */}
