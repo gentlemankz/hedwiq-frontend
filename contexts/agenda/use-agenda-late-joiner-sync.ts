@@ -89,27 +89,30 @@ export function useAgendaLateJoinerSync({
         lastAttributeStateRef.current = agendaStateJson;
         lastVersionRef.current = state.v;
 
-        // Update current item
-        if (state.c) {
-          setCurrentItemId(state.c);
-        }
-
         // Update completed items and current item status
         if ((state.d && state.d.length > 0) || state.c) {
           setItemStatuses((prev) => {
             const updated = new Map(prev);
-            // Mark completed items
+            // Mark completed items first
             if (state.d) {
               state.d.forEach((id) => {
                 updated.set(id, "completed");
               });
             }
-            // Set current as in_progress
-            if (state.c) {
+            // Set current as in_progress ONLY if not already in completed list
+            // This prevents the bug where a stale "current" value overwrites
+            // a completed status (defense in depth - agent should also filter this)
+            if (state.c && !state.d?.includes(state.c)) {
               updated.set(state.c, "in_progress");
             }
             return updated;
           });
+        }
+
+        // Update current item ONLY if not already in completed list
+        // This prevents setting a completed item as "current"
+        if (state.c && !state.d?.includes(state.c)) {
+          setCurrentItemId(state.c);
         }
 
         // Update meeting started
