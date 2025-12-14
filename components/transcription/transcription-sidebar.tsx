@@ -9,9 +9,9 @@ import React, {
 } from "react";
 import { useRoomContext } from "@livekit/components-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { cn, getInitials, getHashedColor } from "@/lib/utils";
+import { cn, getInitials, getHashedAvatar } from "@/lib/utils";
 import { FileText, ChevronDown } from "lucide-react";
 import { useInsights } from "@/hooks/use-insights";
 import { InsightBadge } from "@/components/insights/insight-badge";
@@ -354,12 +354,11 @@ const TranscriptionMessage = React.memo(function TranscriptionMessage({
   return (
     <div className={cn("flex gap-3", isInterim && "opacity-60")}>
       <Avatar className="size-8 shrink-0">
-        <AvatarFallback
-          className={cn(
-            "text-xs text-white",
-            getHashedColor(entry.participantIdentity)
-          )}
-        >
+        <AvatarImage
+          src={getHashedAvatar(entry.participantIdentity)}
+          alt={entry.participantName}
+        />
+        <AvatarFallback className="text-xs">
           {getInitials(entry.participantName)}
         </AvatarFallback>
       </Avatar>

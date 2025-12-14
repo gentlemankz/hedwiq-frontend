@@ -1,7 +1,7 @@
 "use client";
 
-import { cn, getInitials, getHashedColor } from "@/lib/utils";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { cn, getInitials, getHashedAvatar, getHashedColor } from "@/lib/utils";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Lightbulb,
@@ -131,6 +131,10 @@ export function InsightCard({
               {insight.speaker && (
                 <div className="flex items-center gap-1">
                   <Avatar className="size-4">
+                    <AvatarImage
+                      src={getHashedAvatar(insight.speaker)}
+                      alt={insight.speakerName || insight.speaker}
+                    />
                     <AvatarFallback
                       className={cn(
                         "text-[8px] text-white",

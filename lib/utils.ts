@@ -22,26 +22,56 @@ export function getInitials(name: string): string {
 }
 
 /**
- * Generates a consistent color class for a given identifier.
- * Uses a hash function to ensure the same identifier always gets the same color.
- * @param identifier - A unique string identifier (e.g., user ID, participant identity)
- * @returns A Tailwind background color class
+ * Generates a deterministic hash number from a string identifier.
+ * Uses djb2 algorithm for consistent distribution.
+ * @param identifier - A unique string identifier
+ * @returns A positive integer hash value
  */
-export function getHashedColor(identifier: string): string {
-  const colors = [
-    "bg-blue-500",
-    "bg-green-500",
-    "bg-purple-500",
-    "bg-orange-500",
-    "bg-pink-500",
-    "bg-cyan-500",
-    "bg-yellow-500",
-    "bg-red-500",
-  ];
-  if (!identifier || typeof identifier !== "string") return colors[0];
+function hashString(identifier: string): number {
+  if (!identifier || typeof identifier !== "string") return 0;
   let hash = 0;
   for (let i = 0; i < identifier.length; i++) {
     hash = identifier.charCodeAt(i) + ((hash << 5) - hash);
   }
-  return colors[Math.abs(hash) % colors.length];
+  return Math.abs(hash);
+}
+
+/** Available avatar images with matching color names */
+const AVATAR_IMAGES = [
+  "/blue_avatar.webp",
+  "/green_avatar.webp",
+  "/orange_avatar.webp",
+  "/purple_avatar.webp",
+  "/red_avatar.webp",
+] as const;
+
+/** Tailwind background colors matching avatar images for fallback consistency */
+const AVATAR_COLORS = [
+  "bg-blue-500",
+  "bg-green-500",
+  "bg-orange-500",
+  "bg-purple-500",
+  "bg-red-500",
+] as const;
+
+/**
+ * Generates a consistent avatar image path for a given identifier.
+ * Uses a hash function to ensure the same identifier always gets the same avatar.
+ * @param identifier - A unique string identifier (e.g., user ID, participant identity)
+ * @returns A path to one of the avatar images
+ */
+export function getHashedAvatar(identifier: string): string {
+  const hash = hashString(identifier);
+  return AVATAR_IMAGES[hash % AVATAR_IMAGES.length];
+}
+
+/**
+ * Generates a consistent color class for a given identifier.
+ * Colors are synchronized with avatar images for visual consistency.
+ * @param identifier - A unique string identifier (e.g., user ID, participant identity)
+ * @returns A Tailwind background color class
+ */
+export function getHashedColor(identifier: string): string {
+  const hash = hashString(identifier);
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
