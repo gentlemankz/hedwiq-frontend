@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useSyncExternalStore } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Users, Plus, Loader2, AlertCircle } from "lucide-react";
+import { Users, Plus, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { validateRoomId, sanitizeRoomId } from "@/lib/validation";
 import { getInitials } from "@/lib/utils";
 import {
@@ -32,19 +32,24 @@ import {
   ScheduleMeetingDialog,
   MeetingList,
 } from "@/components/meetings";
+import { CalendarStatusCard } from "@/components/calendar";
 import type { User } from "@/types/user";
 import type { Meeting } from "@/types/meeting";
+import type { CalendarStatusResponse } from "@/types/calendar";
 
 interface DashboardClientProps {
   user: User;
   initialMeetings?: Meeting[];
+  initialCalendarStatus?: CalendarStatusResponse;
 }
 
 export function DashboardClient({
   user,
   initialMeetings = [],
+  initialCalendarStatus,
 }: DashboardClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [joinRoomId, setJoinRoomId] = useState("");
   const [roomIdError, setRoomIdError] = useState<string | null>(null);
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
@@ -53,6 +58,52 @@ export function DashboardClient({
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
   const [instantMeetingError, setInstantMeetingError] = useState<string | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
+
+  // Calendar OAuth feedback from URL params
+  const [calendarMessage, setCalendarMessage] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  // Handle calendar OAuth callback params
+  useEffect(() => {
+    const calendarConnected = searchParams.get("calendar_connected");
+    const calendarError = searchParams.get("calendar_error");
+
+    if (calendarConnected === "true") {
+      setCalendarMessage({
+        type: "success",
+        message: "Google Calendar connected successfully!",
+      });
+      // Clean up URL params
+      router.replace("/dashboard", { scroll: false });
+    } else if (calendarError) {
+      setCalendarMessage({
+        type: "error",
+        message: calendarError,
+      });
+      // Clean up URL params
+      router.replace("/dashboard", { scroll: false });
+    }
+  }, [searchParams, router]);
+
+  // Auto-dismiss calendar message after 5 seconds
+  useEffect(() => {
+    if (!calendarMessage) {
+      return;
+    }
+
+    // Store the current message for comparison in cleanup
+    const currentMessage = calendarMessage;
+    const timer = setTimeout(() => {
+      // Only clear if the message hasn't changed
+      setCalendarMessage((prev) =>
+        prev === currentMessage ? null : prev
+      );
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [calendarMessage]);
 
   // Mounted state for hydration safety with Radix UI Dialog
   const isMounted = useSyncExternalStore(
@@ -178,6 +229,25 @@ export function DashboardClient({
             Sign Out
           </Button>
         </div>
+
+        {/* Calendar OAuth Feedback */}
+        {calendarMessage && (
+          <Alert
+            variant={calendarMessage.type === "error" ? "destructive" : "default"}
+            className={
+              calendarMessage.type === "success"
+                ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
+                : undefined
+            }
+          >
+            {calendarMessage.type === "success" ? (
+              <CheckCircle2 className="size-4" />
+            ) : (
+              <AlertCircle className="size-4" />
+            )}
+            <AlertDescription>{calendarMessage.message}</AlertDescription>
+          </Alert>
+        )}
 
         {/* Welcome Card */}
         <Card>
@@ -337,6 +407,12 @@ export function DashboardClient({
             )}
           </CardContent>
         </Card>
+
+        {/* Calendar Integration */}
+        <CalendarStatusCard
+          initialConnected={initialCalendarStatus?.connected}
+          initialIntegration={initialCalendarStatus?.integration}
+        />
 
         {/* Upcoming Meetings */}
         <Card>

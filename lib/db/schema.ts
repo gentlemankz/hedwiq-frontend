@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
@@ -195,6 +196,54 @@ export const agendaItem = pgTable(
   (table) => [
     index("idx_agenda_item_agenda").on(table.agendaId),
     index("idx_agenda_item_order").on(table.agendaId, table.orderIndex),
+  ]
+);
+
+// ============================================================================
+// Calendar Integration Tables
+// ============================================================================
+
+/**
+ * Calendar Integration - Stores OAuth tokens for external calendar providers.
+ * One integration per user per provider (e.g., Google Calendar).
+ */
+export const calendarIntegration = pgTable(
+  "calendar_integration",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** User who connected the calendar */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Calendar provider (e.g., "google") */
+    provider: text("provider").notNull().default("google"),
+    /** OAuth access token */
+    accessToken: text("access_token").notNull(),
+    /** OAuth refresh token */
+    refreshToken: text("refresh_token"),
+    /** Token expiry timestamp */
+    tokenExpiresAt: timestamp("token_expires_at"),
+    /** OAuth scopes granted */
+    scope: text("scope"),
+    /** Email associated with the calendar account */
+    calendarEmail: text("calendar_email"),
+    /** Connection status: connected, disconnected, error */
+    status: text("status").notNull().default("connected"),
+    /** Last sync timestamp */
+    lastSyncedAt: timestamp("last_synced_at"),
+    /** Error message if status is 'error' */
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_calendar_integration_user").on(table.userId),
+    // Unique constraint: one provider per user (matches migration)
+    uniqueIndex("idx_calendar_integration_user_provider").on(
+      table.userId,
+      table.provider
+    ),
   ]
 );
 
