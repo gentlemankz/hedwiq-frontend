@@ -129,6 +129,10 @@ export const agenda = pgTable(
     createdBy: text("created_by")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    /** Meeting name/title (e.g., "Marketing Team. Production") */
+    meetingName: text("meeting_name"),
+    /** Scheduled meeting time (for display in header) */
+    scheduledAt: timestamp("scheduled_at"),
     /** Total number of items (denormalized for quick access) */
     itemCount: integer("item_count").notNull().default(0),
     /** Overall status: draft, active, completed */

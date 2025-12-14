@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import { LocalUserChoices } from "@livekit/components-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar } from "lucide-react";
 import Link from "next/link";
 import { useMediaDevices } from "@/hooks/use-media-devices";
 import { sanitizeUsername } from "@/lib/validation";
@@ -16,6 +18,34 @@ import { MediaControls } from "./components/media-controls";
 import { UsernameForm } from "./components/username-form";
 import { DocumentUpload } from "@/components/documents";
 import { AgendaBuilder } from "./components/agenda-builder";
+
+/** Maximum length for meeting name */
+const MAX_MEETING_NAME_LENGTH = 100;
+
+/**
+ * Formats a Date for datetime-local input (YYYY-MM-DDTHH:mm).
+ * Returns empty string if date is invalid.
+ */
+function formatDateForInput(date: Date | null): string {
+  if (!date || isNaN(date.getTime())) return "";
+  // Use local time components to avoid timezone issues
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+/**
+ * Parses a datetime-local input value to Date.
+ * Returns null if invalid.
+ */
+function parseDateFromInput(value: string): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? null : date;
+}
 
 // ============================================================================
 // Types
@@ -30,6 +60,10 @@ export interface UserChoices extends LocalUserChoices {
   agendaItems?: DraftAgendaItem[];
   /** Agenda version for cache invalidation (set by meeting-room.tsx after publish) */
   agendaVersion?: number;
+  /** Meeting name/title */
+  meetingName?: string;
+  /** Scheduled meeting time */
+  scheduledAt?: Date;
 }
 
 interface PreJoinScreenProps {
@@ -76,6 +110,30 @@ export function PreJoinScreen({
     isTogglingAudio,
     stopAllStreams,
   } = useMediaDevices();
+
+  // Meeting info state
+  const [meetingName, setMeetingName] = useState("");
+  // Initialize with current date, but store as stable reference
+  const [scheduledAt, setScheduledAt] = useState<Date | null>(() => new Date());
+
+  // Memoize formatted date for input to prevent unnecessary re-renders
+  const formattedScheduledAt = useMemo(
+    () => formatDateForInput(scheduledAt),
+    [scheduledAt]
+  );
+
+  // Handle date input change with validation
+  const handleScheduledAtChange = useCallback((value: string) => {
+    const parsed = parseDateFromInput(value);
+    setScheduledAt(parsed);
+  }, []);
+
+  // Handle meeting name change with length validation
+  const handleMeetingNameChange = useCallback((value: string) => {
+    if (value.length <= MAX_MEETING_NAME_LENGTH) {
+      setMeetingName(value);
+    }
+  }, []);
 
   // Document upload state
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
@@ -126,6 +184,8 @@ export function PreJoinScreen({
         userImage: user.image,
         uploadedDocuments,
         agendaItems: agendaItems.length > 0 ? agendaItems : undefined,
+        meetingName: meetingName.trim() || undefined,
+        scheduledAt: scheduledAt ?? undefined,
       });
     },
     [
@@ -139,6 +199,8 @@ export function PreJoinScreen({
       onSubmit,
       uploadedDocuments,
       agendaItems,
+      meetingName,
+      scheduledAt,
     ]
   );
 
@@ -189,6 +251,44 @@ export function PreJoinScreen({
             onToggleAudio={toggleAudio}
             onAudioDeviceChange={setSelectedAudioDevice}
           />
+
+          {/* Meeting Info Section */}
+          <div className="space-y-4 border rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar className="size-5 text-muted-foreground" />
+              <span className="font-medium">Meeting Details</span>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="meeting-name">Meeting Name</Label>
+                <Input
+                  id="meeting-name"
+                  placeholder="e.g., Marketing Team Standup"
+                  value={meetingName}
+                  onChange={(e) => handleMeetingNameChange(e.target.value)}
+                  disabled={isConnecting}
+                  maxLength={MAX_MEETING_NAME_LENGTH}
+                />
+                {meetingName.length > 0 && (
+                  <p className="text-xs text-muted-foreground text-right">
+                    {meetingName.length}/{MAX_MEETING_NAME_LENGTH}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="scheduled-time">Scheduled Time</Label>
+                <Input
+                  id="scheduled-time"
+                  type="datetime-local"
+                  value={formattedScheduledAt}
+                  onChange={(e) => handleScheduledAtChange(e.target.value)}
+                  disabled={isConnecting}
+                />
+              </div>
+            </div>
+          </div>
 
           {/* Meeting Agenda Section (Collapsible) */}
           <div className="border rounded-lg">

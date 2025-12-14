@@ -347,3 +347,76 @@ export function getAgendaFieldErrors(item: {
 export function hasAgendaFieldErrors(errors: AgendaItemFieldErrors): boolean {
   return Object.keys(errors).length > 0;
 }
+
+// ============================================================================
+// Meeting Info Validation
+// ============================================================================
+
+/**
+ * Result of meeting info validation.
+ */
+export interface MeetingInfoValidationResult {
+  isValid: boolean;
+  error?: string;
+  /** Sanitized meeting name (trimmed, truncated) */
+  sanitizedName?: string;
+  /** Parsed and validated date */
+  parsedDate?: Date;
+}
+
+/**
+ * Validates meeting info (name and scheduled time).
+ * Performs sanitization and returns cleaned values.
+ *
+ * @param info - The meeting info to validate
+ * @returns Validation result with sanitized values
+ */
+export function validateMeetingInfo(info: {
+  meetingName?: string;
+  scheduledAt?: string;
+}): MeetingInfoValidationResult {
+  let sanitizedName: string | undefined;
+  let parsedDate: Date | undefined;
+
+  // Validate meeting name (optional but has constraints)
+  if (info.meetingName !== undefined && info.meetingName !== null) {
+    if (typeof info.meetingName !== "string") {
+      return { isValid: false, error: "meetingName must be a string" };
+    }
+
+    // Trim and check length
+    sanitizedName = info.meetingName.trim();
+    if (sanitizedName.length > AGENDA_LIMITS.MAX_MEETING_NAME_LENGTH) {
+      return {
+        isValid: false,
+        error: `meetingName must be ${AGENDA_LIMITS.MAX_MEETING_NAME_LENGTH} characters or less`,
+      };
+    }
+
+    // Empty string after trim means no name
+    if (sanitizedName.length === 0) {
+      sanitizedName = undefined;
+    }
+  }
+
+  // Validate scheduled time (optional but must be valid ISO string)
+  if (info.scheduledAt !== undefined && info.scheduledAt !== null) {
+    if (typeof info.scheduledAt !== "string") {
+      return { isValid: false, error: "scheduledAt must be an ISO date string" };
+    }
+
+    // Try to parse as ISO date
+    const date = new Date(info.scheduledAt);
+    if (isNaN(date.getTime())) {
+      return { isValid: false, error: "scheduledAt must be a valid ISO date string" };
+    }
+
+    parsedDate = date;
+  }
+
+  return {
+    isValid: true,
+    sanitizedName,
+    parsedDate,
+  };
+}

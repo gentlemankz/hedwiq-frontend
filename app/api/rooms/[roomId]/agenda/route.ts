@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { validateRoomAccess } from "@/lib/db/room-access";
 import { validateRoomId } from "@/lib/validation";
-import { validateAgendaItems } from "@/lib/validation/agenda";
+import { validateAgendaItems, validateMeetingInfo } from "@/lib/validation/agenda";
 import {
   getAgendaWithItems,
   upsertAgenda,
@@ -95,7 +95,7 @@ export async function PUT(
   }
 
   // Parse and validate request body
-  let body: { items: AgendaItemInput[] };
+  let body: { items: AgendaItemInput[]; meetingName?: string; scheduledAt?: string };
   try {
     body = await request.json();
   } catch {
@@ -111,8 +111,20 @@ export async function PUT(
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
+  // Validate meeting info (name and scheduled time)
+  const meetingInfoValidation = validateMeetingInfo({
+    meetingName: body.meetingName,
+    scheduledAt: body.scheduledAt,
+  });
+  if (!meetingInfoValidation.isValid) {
+    return NextResponse.json({ error: meetingInfoValidation.error }, { status: 400 });
+  }
+
   try {
-    const agenda = await upsertAgenda(roomId, session.user.id, body.items);
+    const agenda = await upsertAgenda(roomId, session.user.id, body.items, {
+      meetingName: meetingInfoValidation.sanitizedName,
+      scheduledAt: meetingInfoValidation.parsedDate,
+    });
     return NextResponse.json({ agenda });
   } catch (error) {
     console.error("Upsert agenda error:", error);

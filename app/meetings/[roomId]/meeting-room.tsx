@@ -80,7 +80,11 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ items: agendaItems }),
+            body: JSON.stringify({
+              items: agendaItems,
+              meetingName: choices.meetingName,
+              scheduledAt: choices.scheduledAt?.toISOString(),
+            }),
             signal: abortController.signal,
           });
 
@@ -242,6 +246,8 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
               showTranscription={true}
               agendaVersion={userChoices.agendaVersion}
               roomId={roomId}
+              meetingName={userChoices.meetingName}
+              meetingScheduledAt={userChoices.scheduledAt}
             />
           </DocumentsProvider>
         </InsightsProvider>

@@ -6,25 +6,19 @@ import {
   TranscriptionSidebar,
   TranscriptionErrorBoundary,
 } from "@/components/transcription";
-import {
-  InsightsSummaryPanel,
-  InsightsIndicator,
-} from "@/components/insights";
 import { AgendaProgress } from "@/components/agenda";
+import { MeetingInfoHeader } from "@/components/meeting/meeting-info-header";
 import { DocumentViewerModal } from "@/components/documents/document-viewer-modal";
 import { useDocumentsContext } from "@/contexts/documents-context";
 import { AgendaProvider } from "@/contexts/agenda";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { FileText, Sparkles, X, PanelRightClose } from "lucide-react";
+import { PanelRightClose, PanelLeftClose } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useInsights } from "@/hooks/use-insights";
 import { useAgenda } from "@/hooks/use-agenda";
 import type { Insight } from "@/types/insight";
 import type { DocumentReference } from "@/types/document";
@@ -38,20 +32,26 @@ interface MeetingLayoutProps {
   agendaVersion?: number;
   /** Room ID (passed from parent to avoid race condition with room context) */
   roomId: string;
+  /** Meeting name for display */
+  meetingName?: string;
+  /** Meeting scheduled time */
+  meetingScheduledAt?: Date;
 }
-
-type SidebarTab = "transcript" | "insights";
 
 export function MeetingLayout({
   showTranscription: initialShowTranscription = true,
   agendaVersion,
   roomId,
+  meetingName,
+  meetingScheduledAt,
 }: MeetingLayoutProps) {
   // Debug logging for room context
   if (DEBUG) {
     console.log("[MeetingLayout] Props:", {
       roomId,
       agendaVersion,
+      meetingName,
+      meetingScheduledAt,
     });
   }
 
@@ -63,6 +63,8 @@ export function MeetingLayout({
       <MeetingLayoutInner
         initialShowTranscription={initialShowTranscription}
         roomId={roomId}
+        meetingName={meetingName}
+        meetingScheduledAt={meetingScheduledAt}
       />
     </AgendaProvider>
   );
@@ -71,15 +73,17 @@ export function MeetingLayout({
 interface MeetingLayoutInnerProps {
   initialShowTranscription: boolean;
   roomId: string;
+  meetingName?: string;
+  meetingScheduledAt?: Date;
 }
 
 function MeetingLayoutInner({
   initialShowTranscription,
   roomId,
+  meetingName,
+  meetingScheduledAt,
 }: MeetingLayoutInnerProps) {
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
-  const [activeTab, setActiveTab] = useState<SidebarTab>("transcript");
-  const { insightCount } = useInsights();
   const { hasAgenda, agenda, isLoading, error } = useAgenda();
   const { getDocument, isHydrating, isDocumentLoading, documentCount } =
     useDocumentsContext();
@@ -100,9 +104,8 @@ function MeetingLayoutInner({
   const [selectedReference, setSelectedReference] =
     useState<DocumentReference | null>(null);
 
-  // Handle insight click - switch to insights tab
+  // Handle insight click - just log in debug mode (insights shown inline in transcript)
   const handleInsightClick = useCallback((insight: Insight) => {
-    setActiveTab("insights");
     if (DEBUG) {
       console.log("Insight clicked:", insight);
     }
@@ -151,7 +154,7 @@ function MeetingLayoutInner({
         <CustomVideoConference />
       </div>
 
-      {/* Combined sidebar with tabs */}
+      {/* Sidebar with meeting info header and transcript */}
       {showSidebar && (
         <div
           className={cn(
@@ -159,57 +162,33 @@ function MeetingLayoutInner({
             sidebarWidth
           )}
         >
-          {/* Sidebar header with tabs */}
-          <div className="border-b">
-            <div className="flex items-center justify-between px-4 py-2">
-              <Tabs
-                value={activeTab}
-                onValueChange={(v) => setActiveTab(v as SidebarTab)}
-                className="flex-1"
-              >
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="transcript" className="gap-2">
-                    <FileText className="size-4" />
-                    Transcript
-                  </TabsTrigger>
-                  <TabsTrigger value="insights" className="gap-2">
-                    <Sparkles className="size-4" />
-                    Insights
-                    {insightCount > 0 && (
-                      <Badge
-                        variant="secondary"
-                        className="ml-1 size-5 p-0 justify-center text-xs"
-                      >
-                        {insightCount}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 ml-2"
-                onClick={() => setShowSidebar(false)}
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
+          {/* Sidebar header with collapse button on left */}
+          <div className="flex items-center justify-start px-1 py-1 border-b">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={() => setShowSidebar(false)}
+            >
+              <PanelLeftClose className="size-4" />
+            </Button>
           </div>
 
           {/* Main content area - split view when agenda exists */}
           <div className="flex-1 min-h-0 overflow-hidden">
             {hasAgenda ? (
               <SplitSidebarContent
-                activeTab={activeTab}
                 onInsightClick={handleInsightClick}
                 onDocumentReferenceClick={handleDocumentReferenceClick}
+                meetingName={meetingName}
+                meetingScheduledAt={meetingScheduledAt}
               />
             ) : (
-              <SinglePanelContent
-                activeTab={activeTab}
+              <TranscriptPanel
                 onInsightClick={handleInsightClick}
                 onDocumentReferenceClick={handleDocumentReferenceClick}
+                meetingName={meetingName}
+                meetingScheduledAt={meetingScheduledAt}
               />
             )}
           </div>
@@ -219,15 +198,6 @@ function MeetingLayoutInner({
       {/* Toggle button when sidebar is hidden */}
       {!showSidebar && (
         <div className="fixed right-4 top-4 z-50 flex gap-2">
-          {/* Show insights indicator if there are insights */}
-          <InsightsIndicator
-            onClick={() => {
-              setShowSidebar(true);
-              setActiveTab("insights");
-            }}
-          />
-
-          {/* Main toggle button */}
           <Button
             variant="secondary"
             size="sm"
@@ -262,33 +232,36 @@ function MeetingLayoutInner({
 }
 
 // ============================================================================
-// Shared Tab Content (extracted to reduce duplication)
+// Transcript Panel with Meeting Info Header
 // ============================================================================
 
-interface TabContentProps {
-  activeTab: SidebarTab;
+interface TranscriptPanelProps {
   onInsightClick: (insight: Insight) => void;
   onDocumentReferenceClick: (reference: DocumentReference) => void;
+  meetingName?: string;
+  meetingScheduledAt?: Date;
 }
 
 /**
- * Shared content panel for transcript and insights tabs.
- * Extracted from Split/Single panel variants to eliminate duplication.
+ * Transcript panel with meeting info header.
+ * Shows meeting image, name, and date/time above the transcript.
  */
-function TabContent({
-  activeTab,
+function TranscriptPanel({
   onInsightClick,
   onDocumentReferenceClick,
-}: TabContentProps) {
+  meetingName,
+  meetingScheduledAt,
+}: TranscriptPanelProps) {
   return (
-    <div className="h-full relative">
-      {/* Transcript tab content */}
-      <div
-        className={cn(
-          "absolute inset-0",
-          activeTab !== "transcript" && "invisible"
-        )}
-      >
+    <div className="h-full flex flex-col">
+      {/* Meeting Info Header */}
+      <MeetingInfoHeader
+        meetingName={meetingName}
+        scheduledAt={meetingScheduledAt}
+      />
+
+      {/* Transcript */}
+      <div className="flex-1 min-h-0">
         <TranscriptionErrorBoundary>
           <TranscriptionSidebar
             className="border-l-0 h-full"
@@ -296,19 +269,6 @@ function TabContent({
             onDocumentReferenceClick={onDocumentReferenceClick}
           />
         </TranscriptionErrorBoundary>
-      </div>
-
-      {/* Insights tab content */}
-      <div
-        className={cn(
-          "absolute inset-0",
-          activeTab !== "insights" && "invisible"
-        )}
-      >
-        <InsightsSummaryPanel
-          className="border-l-0 h-full"
-          onInsightClick={onInsightClick}
-        />
       </div>
     </div>
   );
@@ -319,15 +279,17 @@ function TabContent({
 // ============================================================================
 
 interface SplitSidebarContentProps {
-  activeTab: SidebarTab;
   onInsightClick: (insight: Insight) => void;
   onDocumentReferenceClick: (reference: DocumentReference) => void;
+  meetingName?: string;
+  meetingScheduledAt?: Date;
 }
 
 function SplitSidebarContent({
-  activeTab,
   onInsightClick,
   onDocumentReferenceClick,
+  meetingName,
+  meetingScheduledAt,
 }: SplitSidebarContentProps) {
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full">
@@ -340,38 +302,15 @@ function SplitSidebarContent({
 
       <ResizableHandle withHandle />
 
-      {/* Transcript/Insights Panel (right side) */}
+      {/* Transcript Panel (right side) */}
       <ResizablePanel defaultSize={65} minSize={50}>
-        <TabContent
-          activeTab={activeTab}
+        <TranscriptPanel
           onInsightClick={onInsightClick}
           onDocumentReferenceClick={onDocumentReferenceClick}
+          meetingName={meetingName}
+          meetingScheduledAt={meetingScheduledAt}
         />
       </ResizablePanel>
     </ResizablePanelGroup>
-  );
-}
-
-// ============================================================================
-// Single Panel Content (no Agenda)
-// ============================================================================
-
-interface SinglePanelContentProps {
-  activeTab: SidebarTab;
-  onInsightClick: (insight: Insight) => void;
-  onDocumentReferenceClick: (reference: DocumentReference) => void;
-}
-
-function SinglePanelContent({
-  activeTab,
-  onInsightClick,
-  onDocumentReferenceClick,
-}: SinglePanelContentProps) {
-  return (
-    <TabContent
-      activeTab={activeTab}
-      onInsightClick={onInsightClick}
-      onDocumentReferenceClick={onDocumentReferenceClick}
-    />
   );
 }

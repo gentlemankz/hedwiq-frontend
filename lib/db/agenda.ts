@@ -132,6 +132,28 @@ export async function getAgendaItems(agendaId: string): Promise<AgendaItem[]> {
 // ============================================================================
 
 /**
+ * Options for creating/updating an agenda.
+ */
+interface UpsertAgendaOptions {
+  /** Meeting name/title (optional) */
+  meetingName?: string;
+  /** Scheduled meeting time (optional, Date or ISO string) */
+  scheduledAt?: Date | string;
+}
+
+/**
+ * Parses a scheduledAt value from Date or ISO string.
+ * Returns null if value is undefined/null.
+ *
+ * @param value - Date object or ISO string
+ * @returns Parsed Date or null
+ */
+function parseScheduledAt(value: Date | string | undefined | null): Date | null {
+  if (!value) return null;
+  return typeof value === "string" ? new Date(value) : value;
+}
+
+/**
  * Creates or updates an agenda for a room.
  *
  * - If no agenda exists: creates new agenda with draft status
@@ -143,7 +165,8 @@ export async function getAgendaItems(agendaId: string): Promise<AgendaItem[]> {
 export async function upsertAgenda(
   roomId: string,
   createdBy: string,
-  items: AgendaItemInput[]
+  items: AgendaItemInput[],
+  options?: UpsertAgendaOptions
 ): Promise<AgendaWithItems> {
   // Check for existing agenda
   const existing = await getAgendaByRoomId(roomId);
@@ -157,11 +180,11 @@ export async function upsertAgenda(
     }
 
     // Update existing draft agenda
-    return await updateDraftAgenda(existing.id, items);
+    return await updateDraftAgenda(existing.id, items, options);
   }
 
   // Create new agenda
-  return await createAgenda(roomId, createdBy, items);
+  return await createAgenda(roomId, createdBy, items, options);
 }
 
 /**
@@ -171,10 +194,12 @@ export async function upsertAgenda(
 export async function createAgenda(
   roomId: string,
   createdBy: string,
-  items: AgendaItemInput[]
+  items: AgendaItemInput[],
+  options?: UpsertAgendaOptions
 ): Promise<AgendaWithItems> {
   const agendaId = generateAgendaId(roomId);
   const now = new Date();
+  const scheduledAt = parseScheduledAt(options?.scheduledAt);
 
   return await db.transaction(async (tx) => {
     // Insert agenda
@@ -182,6 +207,8 @@ export async function createAgenda(
       id: agendaId,
       roomId,
       createdBy,
+      meetingName: options?.meetingName ?? null,
+      scheduledAt,
       itemCount: items.length,
       status: "draft",
       version: 1,
@@ -234,9 +261,11 @@ export async function createAgenda(
  */
 async function updateDraftAgenda(
   agendaId: string,
-  items: AgendaItemInput[]
+  items: AgendaItemInput[],
+  options?: UpsertAgendaOptions
 ): Promise<AgendaWithItems> {
   const now = new Date();
+  const scheduledAt = parseScheduledAt(options?.scheduledAt);
 
   return await db.transaction(async (tx) => {
     // Delete existing items
@@ -268,13 +297,16 @@ async function updateDraftAgenda(
 
     const actualItemCount = countResult?.value ?? 0;
 
-    // Update agenda metadata with recalculated count
+    // Update agenda metadata with recalculated count and meeting info
+    // Note: scheduledAt is null when not provided, so check the original option
     await tx
       .update(agenda)
       .set({
         itemCount: actualItemCount,
         version: sql`${agenda.version} + 1`,
         updatedAt: now,
+        ...(options?.meetingName !== undefined && { meetingName: options.meetingName || null }),
+        ...(options?.scheduledAt !== undefined && { scheduledAt }),
       })
       .where(eq(agenda.id, agendaId));
 
@@ -710,6 +742,8 @@ function mapDbAgendaToAgenda(row: typeof agenda.$inferSelect): Agenda {
     id: row.id,
     roomId: row.roomId,
     createdBy: row.createdBy,
+    meetingName: row.meetingName ?? null,
+    scheduledAt: row.scheduledAt?.toISOString() ?? null,
     itemCount: row.itemCount,
     status: row.status as AgendaStatus,
     currentItemIndex: row.currentItemIndex,

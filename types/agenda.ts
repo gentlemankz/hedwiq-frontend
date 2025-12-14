@@ -84,6 +84,10 @@ export interface Agenda {
   roomId: string;
   /** User ID who created the agenda */
   createdBy: string;
+  /** Meeting name/title (e.g., "Marketing Team. Production") */
+  meetingName?: string | null;
+  /** Scheduled meeting time (ISO string or Date) */
+  scheduledAt?: string | Date | null;
   /** Total number of items */
   itemCount: number;
   /** Overall status */
@@ -269,6 +273,10 @@ export interface AgendaStateAttribute {
  */
 export interface AgendaUpsertRequest {
   items: AgendaItemInput[];
+  /** Meeting name/title (optional) */
+  meetingName?: string;
+  /** Scheduled meeting time (ISO string, optional) */
+  scheduledAt?: string;
 }
 
 /**
@@ -361,6 +369,8 @@ export const AGENDA_LIMITS = {
   MIN_DURATION_MINUTES: 1,
   /** Maximum presenter name length */
   MAX_PRESENTER_LENGTH: 50,
+  /** Maximum meeting name length */
+  MAX_MEETING_NAME_LENGTH: 100,
 } as const;
 
 /**
