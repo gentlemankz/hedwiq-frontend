@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { DashboardClient } from "./dashboard-client";
+import { listMeetingsByHost } from "@/lib/db/meeting";
 
 export default async function DashboardPage() {
   const session = await auth.api.getSession({
@@ -12,5 +13,16 @@ export default async function DashboardPage() {
     redirect("/sign-in");
   }
 
-  return <DashboardClient user={session.user} />;
+  // Fetch upcoming meetings for the user
+  const upcomingMeetings = await listMeetingsByHost(session.user.id, {
+    status: "upcoming",
+    limit: 10,
+  });
+
+  return (
+    <DashboardClient
+      user={session.user}
+      initialMeetings={upcomingMeetings}
+    />
+  );
 }

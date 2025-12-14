@@ -23,40 +23,42 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Video, Users } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Users, Plus, Loader2, AlertCircle } from "lucide-react";
 import { validateRoomId, sanitizeRoomId } from "@/lib/validation";
 import { getInitials } from "@/lib/utils";
+import {
+  MeetingTypeSelector,
+  ScheduleMeetingDialog,
+  MeetingList,
+} from "@/components/meetings";
 import type { User } from "@/types/user";
+import type { Meeting } from "@/types/meeting";
 
-/**
- * Generates a random room ID in the format "abc-defg-hij"
- * These generated IDs are always lowercase.
- */
-function generateRoomId(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz";
-  const segments = [3, 4, 3];
-  return segments
-    .map((len) =>
-      Array.from({ length: len }, () =>
-        chars.charAt(Math.floor(Math.random() * chars.length))
-      ).join("")
-    )
-    .join("-");
+interface DashboardClientProps {
+  user: User;
+  initialMeetings?: Meeting[];
 }
 
-export function DashboardClient({ user }: { user: User }) {
+export function DashboardClient({
+  user,
+  initialMeetings = [],
+}: DashboardClientProps) {
   const router = useRouter();
   const [joinRoomId, setJoinRoomId] = useState("");
   const [roomIdError, setRoomIdError] = useState<string | null>(null);
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
+  const [isNewMeetingDialogOpen, setIsNewMeetingDialogOpen] = useState(false);
+  const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
+  const [isCreatingInstant, setIsCreatingInstant] = useState(false);
+  const [instantMeetingError, setInstantMeetingError] = useState<string | null>(null);
+  const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
 
   // Mounted state for hydration safety with Radix UI Dialog
-  // Using useSyncExternalStore to avoid lint warnings about setState in effect
-  // This prevents hydration mismatch by returning false on server, true on client
   const isMounted = useSyncExternalStore(
-    () => () => {}, // subscribe - no-op since we never update
-    () => true,     // getSnapshot - client always returns true
-    () => false     // getServerSnapshot - server returns false
+    () => () => {},
+    () => true,
+    () => false
   );
 
   const handleSignOut = async () => {
@@ -69,14 +71,53 @@ export function DashboardClient({ user }: { user: User }) {
     });
   };
 
-  const handleNewMeeting = () => {
-    const roomId = generateRoomId();
-    router.push(`/meetings/${roomId}`);
+  const handleInstantMeeting = async () => {
+    // Prevent double-clicks
+    if (isCreatingInstant) return;
+
+    setIsCreatingInstant(true);
+    setInstantMeetingError(null);
+
+    try {
+      // Create meeting via API
+      const response = await fetch("/api/meetings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Instant Meeting",
+          type: "instant",
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to create meeting");
+      }
+
+      const data = await response.json();
+      const meeting = data.meeting as Meeting;
+
+      // Navigate to the meeting room
+      setIsNewMeetingDialogOpen(false);
+      router.push(`/meetings/${meeting.roomId}`);
+    } catch (error) {
+      console.error("Failed to create instant meeting:", error);
+      // Show error to user instead of creating orphan room
+      setInstantMeetingError(
+        error instanceof Error ? error.message : "Failed to create meeting. Please try again."
+      );
+    } finally {
+      setIsCreatingInstant(false);
+    }
+  };
+
+  const handleScheduleMeeting = () => {
+    setIsNewMeetingDialogOpen(false);
+    setIsScheduleDialogOpen(true);
   };
 
   const handleRoomIdChange = (value: string) => {
     setJoinRoomId(value);
-    // Clear error when user starts typing
     if (roomIdError) {
       setRoomIdError(null);
     }
@@ -89,15 +130,12 @@ export function DashboardClient({ user }: { user: User }) {
       return;
     }
 
-    // Validate room ID format
     const validation = validateRoomId(trimmedId);
     if (!validation.isValid) {
       setRoomIdError(validation.error || "Invalid room ID");
       return;
     }
 
-    // Sanitize but DON'T lowercase - preserve user's original case
-    // LiveKit treats room names as arbitrary unique strings
     const sanitizedId = sanitizeRoomId(trimmedId, false);
     router.push(`/meetings/${sanitizedId}`);
     setIsJoinDialogOpen(false);
@@ -105,19 +143,35 @@ export function DashboardClient({ user }: { user: User }) {
     setRoomIdError(null);
   };
 
-  // Handle dialog open/close - clear state when closing
   const handleDialogOpenChange = (open: boolean) => {
     setIsJoinDialogOpen(open);
     if (!open) {
-      // Clear form state when dialog closes
       setJoinRoomId("");
       setRoomIdError(null);
+    }
+  };
+
+  const handleMeetingDeleted = () => {
+    // Refresh meetings list
+    fetchMeetings();
+  };
+
+  const fetchMeetings = async () => {
+    try {
+      const response = await fetch("/api/meetings?status=upcoming&limit=10");
+      if (response.ok) {
+        const data = await response.json();
+        setMeetings(data.meetings);
+      }
+    } catch (error) {
+      console.error("Failed to fetch meetings:", error);
     }
   };
 
   return (
     <div className="min-h-screen bg-background p-8">
       <div className="mx-auto max-w-4xl space-y-8">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <Button variant="outline" onClick={handleSignOut}>
@@ -125,6 +179,7 @@ export function DashboardClient({ user }: { user: User }) {
           </Button>
         </div>
 
+        {/* Welcome Card */}
         <Card>
           <CardHeader>
             <CardTitle>Welcome back!</CardTitle>
@@ -148,6 +203,7 @@ export function DashboardClient({ user }: { user: User }) {
           </CardContent>
         </Card>
 
+        {/* Quick Actions */}
         <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
@@ -156,78 +212,162 @@ export function DashboardClient({ user }: { user: User }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex gap-4">
-            <Button onClick={handleNewMeeting} className="gap-2">
-              <Video className="size-4" />
-              New Meeting
-            </Button>
-
             {isMounted ? (
-              <Dialog
-                open={isJoinDialogOpen}
-                onOpenChange={handleDialogOpenChange}
-              >
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    <Users className="size-4" />
-                    Join Meeting
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Join a Meeting</DialogTitle>
-                    <DialogDescription>
-                      Enter the meeting room ID to join an existing meeting.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="roomId">Room ID</Label>
-                      <Input
-                        id="roomId"
-                        placeholder="e.g., abc-defg-hij"
-                        value={joinRoomId}
-                        onChange={(e) => handleRoomIdChange(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            handleJoinMeeting();
-                          }
-                        }}
-                        aria-invalid={!!roomIdError}
-                        aria-describedby={
-                          roomIdError ? "roomId-error" : undefined
-                        }
-                      />
-                      {roomIdError && (
-                        <p id="roomId-error" className="text-sm text-destructive">
-                          {roomIdError}
-                        </p>
+              <>
+                {/* New Meeting Button */}
+                <Dialog
+                  open={isNewMeetingDialogOpen}
+                  onOpenChange={(open) => {
+                    setIsNewMeetingDialogOpen(open);
+                    if (!open) {
+                      setInstantMeetingError(null);
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button className="gap-2">
+                      <Plus className="size-4" />
+                      New Meeting
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                      <DialogTitle>New Meeting</DialogTitle>
+                      <DialogDescription>
+                        Choose how you want to start your meeting
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4">
+                      {instantMeetingError && (
+                        <Alert variant="destructive" className="mb-4">
+                          <AlertCircle className="size-4" />
+                          <AlertDescription>{instantMeetingError}</AlertDescription>
+                        </Alert>
                       )}
+                      <MeetingTypeSelector
+                        onSelectInstant={handleInstantMeeting}
+                        onSelectScheduled={handleScheduleMeeting}
+                      />
                     </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleDialogOpenChange(false)}
-                    >
-                      Cancel
+                    {isCreatingInstant && (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        <span className="text-sm text-muted-foreground">
+                          Creating meeting...
+                        </span>
+                      </div>
+                    )}
+                  </DialogContent>
+                </Dialog>
+
+                {/* Join Meeting Button */}
+                <Dialog
+                  open={isJoinDialogOpen}
+                  onOpenChange={handleDialogOpenChange}
+                >
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="gap-2">
+                      <Users className="size-4" />
+                      Join Meeting
                     </Button>
-                    <Button
-                      onClick={handleJoinMeeting}
-                      disabled={!joinRoomId.trim()}
-                    >
-                      Join
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Join a Meeting</DialogTitle>
+                      <DialogDescription>
+                        Enter the meeting room ID to join an existing meeting.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="roomId">Room ID</Label>
+                        <Input
+                          id="roomId"
+                          placeholder="e.g., abc-defg-hij"
+                          value={joinRoomId}
+                          onChange={(e) => handleRoomIdChange(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              handleJoinMeeting();
+                            }
+                          }}
+                          aria-invalid={!!roomIdError}
+                          aria-describedby={
+                            roomIdError ? "roomId-error" : undefined
+                          }
+                        />
+                        {roomIdError && (
+                          <p
+                            id="roomId-error"
+                            className="text-sm text-destructive"
+                          >
+                            {roomIdError}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleDialogOpenChange(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleJoinMeeting}
+                        disabled={!joinRoomId.trim()}
+                      >
+                        Join
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </>
             ) : (
-              <Button variant="outline" className="gap-2" disabled>
-                <Users className="size-4" />
-                Join Meeting
-              </Button>
+              <>
+                <Button className="gap-2" disabled>
+                  <Plus className="size-4" />
+                  New Meeting
+                </Button>
+                <Button variant="outline" className="gap-2" disabled>
+                  <Users className="size-4" />
+                  Join Meeting
+                </Button>
+              </>
             )}
           </CardContent>
         </Card>
+
+        {/* Upcoming Meetings */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Upcoming Meetings</CardTitle>
+            <CardDescription>
+              Your scheduled and live meetings
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MeetingList
+              meetings={meetings}
+              onDeleted={handleMeetingDeleted}
+              emptyMessage="No upcoming meetings. Click 'New Meeting' to create one."
+            />
+          </CardContent>
+        </Card>
+
+        {/* Schedule Meeting Dialog */}
+        {isMounted && (
+          <ScheduleMeetingDialog
+            open={isScheduleDialogOpen}
+            onOpenChange={(open) => {
+              setIsScheduleDialogOpen(open);
+              if (!open) {
+                // Refresh meetings when dialog closes
+                fetchMeetings();
+              }
+            }}
+          />
+        )}
       </div>
     </div>
   );

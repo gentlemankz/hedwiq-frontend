@@ -49,6 +49,10 @@ frontend/
 │   │   │       └── route.ts          # Document upload to Supabase Storage
 │   │   ├── livekit/token/
 │   │   │   └── route.ts              # LiveKit token generation endpoint
+│   │   ├── meetings/                 # Meeting CRUD API (Phase 1 Scheduling)
+│   │   │   ├── route.ts              # GET (list), POST (create) meetings
+│   │   │   └── [meetingId]/
+│   │   │       └── route.ts          # GET, PATCH, DELETE single meeting
 │   │   └── rooms/
 │   │       └── [roomId]/
 │   │           ├── access/
@@ -60,8 +64,8 @@ frontend/
 │   │               │   └── route.ts  # Reorder draft agenda items
 │   │               └── route.ts      # Get/upsert agenda with items
 │   ├── dashboard/
-│   │   ├── dashboard-client.tsx      # Dashboard client component
-│   │   └── page.tsx                  # Dashboard page
+│   │   ├── dashboard-client.tsx      # Dashboard client with meeting list
+│   │   └── page.tsx                  # Dashboard page (fetches meetings)
 │   ├── meetings/
 │   │   └── [roomId]/                 # Dynamic room routes
 │   │       ├── components/           # Room-specific components
@@ -93,6 +97,12 @@ frontend/
 │   │   ├── insight-badge.tsx         # Badge for insight types
 │   │   ├── insight-card.tsx          # Individual insight display card
 │   │   └── insights-summary-panel.tsx # Collapsible insights panel
+│   ├── meetings/                     # Meeting scheduling components (Phase 1)
+│   │   ├── index.ts                  # Barrel export
+│   │   ├── meeting-type-selector.tsx # Instant vs Scheduled picker
+│   │   ├── schedule-meeting-dialog.tsx # Full scheduling dialog
+│   │   ├── meeting-card.tsx          # Meeting in list view with actions
+│   │   └── meeting-list.tsx          # List of meetings (upcoming/past)
 │   ├── transcription/                # Real-time transcription components
 │   │   ├── index.ts                  # Barrel export
 │   │   ├── transcription-error-boundary.tsx
@@ -123,9 +133,10 @@ frontend/
 │   ├── auth-client.ts                # Better Auth client configuration
 │   ├── db/                           # Drizzle ORM setup
 │   │   ├── agenda.ts                 # Agenda CRUD + publish/reorder helpers
+│   │   ├── meeting.ts                # Meeting CRUD (Phase 1 scheduling)
 │   │   ├── index.ts                  # Database connection
 │   │   ├── schema.ts                 # Schema: user, session, account, verification,
-│   │   │                             #         roomParticipant, document, agenda
+│   │   │                             #         roomParticipant, document, agenda, meeting
 │   │   ├── room-access.ts            # Room participation CRUD utilities
 │   │   └── migrations/               # SQL migrations
 │   │       ├── 0000_shallow_freak.sql
@@ -133,6 +144,7 @@ frontend/
 │   │       ├── 0002_sleepy_redwing.sql           # document table
 │   │       ├── 0003_flat_black_bolt.sql          # agenda + agenda_item tables
 │   │       ├── 0004_rls_agenda_tables.sql        # RLS policies for agenda tables
+│   │       ├── 0006_add_meeting_table.sql        # meeting table (Phase 1)
 │   │       └── meta/                 # Migration metadata
 │   ├── supabase/                     # Supabase Storage integration
 │   │   ├── index.ts                  # Barrel export + STORAGE_BUCKETS/PATHS
@@ -140,11 +152,14 @@ frontend/
 │   │   └── server.ts                 # Server client + signed URLs, upload/download
 │   ├── utils.ts                      # Utility functions (cn helper, etc.)
 │   ├── validation.ts                 # Zod validation schemas
-│   └── validation/agenda.ts          # Agenda input/field validation (shared UI + API)
+│   └── validation/                   # Validation utilities
+│       ├── agenda.ts                 # Agenda input/field validation (shared UI + API)
+│       └── meeting.ts                # Meeting input/field validation (Phase 1)
 ├── types/                            # TypeScript type definitions
 │   ├── agenda.ts                     # Agenda + agenda item + LiveKit event types
 │   ├── document.ts                   # Document + DocumentReference + BoundingBox types
 │   ├── insight.ts                    # AI insight types
+│   ├── meeting.ts                    # Meeting types + constants (Phase 1 scheduling)
 │   └── user.ts                       # User-related types
 ├── docs/                             # Project documentation
 │   ├── AGENDA_FEATURE_PLAN.md        # Agenda UX + agent integration plan

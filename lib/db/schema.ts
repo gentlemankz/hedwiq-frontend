@@ -197,3 +197,69 @@ export const agendaItem = pgTable(
     index("idx_agenda_item_order").on(table.agendaId, table.orderIndex),
   ]
 );
+
+// ============================================================================
+// Meeting Scheduling Tables
+// ============================================================================
+
+// Import MeetingSettings from types to avoid duplication
+// Re-export for backward compatibility if needed elsewhere
+import type { MeetingSettings } from "@/types/meeting";
+export type { MeetingSettings } from "@/types/meeting";
+
+/**
+ * Meetings table - both instant and scheduled meetings.
+ * Links to roomId for LiveKit integration.
+ */
+export const meeting = pgTable(
+  "meeting",
+  {
+    /** Unique meeting identifier (e.g., mtg-{timestamp}-{random}) */
+    id: text("id").primaryKey(),
+    /** LiveKit room ID (abc-defg-hij format) */
+    roomId: text("room_id").notNull().unique(),
+    /** User who created/hosts the meeting */
+    hostId: text("host_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+
+    // Meeting details
+    /** Meeting title/name */
+    title: text("title").notNull(),
+    /** Meeting description (optional) */
+    description: text("description"),
+    /** Meeting type: instant or scheduled */
+    type: text("type").notNull().default("instant"),
+    /** Meeting status: scheduled, live, ended, cancelled */
+    status: text("status").notNull().default("scheduled"),
+
+    // Scheduling
+    /** Scheduled start time (null for instant meetings) */
+    scheduledAt: timestamp("scheduled_at"),
+    /** Expected duration in minutes */
+    durationMinutes: integer("duration_minutes").default(60),
+    /** User's timezone for display */
+    timezone: text("timezone").default("UTC"),
+
+    // Tracking
+    /** Actual start time */
+    startedAt: timestamp("started_at"),
+    /** Actual end time */
+    endedAt: timestamp("ended_at"),
+
+    // Settings
+    /** Meeting settings (transcription, insights, recording) */
+    settings: jsonb("settings").$type<MeetingSettings>().default({}),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_meeting_host").on(table.hostId),
+    index("idx_meeting_scheduled").on(table.scheduledAt),
+    index("idx_meeting_status").on(table.status),
+    // Note: room_id unique index is auto-created by .unique() constraint
+    // Composite index for listing meetings by host with status filter
+    index("idx_meeting_host_status").on(table.hostId, table.status),
+  ]
+);
