@@ -21,13 +21,14 @@ import {
   LayoutContextProvider,
   RoomAudioRenderer,
   Chat,
-  ControlBar,
   useCreateLayoutContext,
   usePinnedTracks,
   useTracks,
 } from "@livekit/components-react";
+import { CustomControlBar } from "@/components/meeting/custom-control-bar";
 import type { MessageFormatter } from "@livekit/components-react";
 import { CustomParticipantTile } from "./custom-participant-tile";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
  * Props for the CustomVideoConference component.
@@ -179,9 +180,21 @@ export function CustomVideoConference({
                 </FocusLayoutContainer>
               </div>
             )}
-            <ControlBar
-              controls={{ chat: true, settings: !!SettingsComponent }}
-            />
+            {/* Control Bar */}
+            <div className="lk-control-bar flex items-center justify-center p-4">
+              <TooltipProvider delayDuration={0}>
+                <CustomControlBar
+                  controls={{
+                    microphone: true,
+                    camera: true,
+                    screenShare: true,
+                    chat: true,
+                    leave: true,
+                  }}
+                  widgetState={widgetState}
+                />
+              </TooltipProvider>
+            </div>
           </div>
           <Chat
             style={{ display: widgetState.showChat ? "grid" : "none" }}
