@@ -75,3 +75,35 @@ export function getHashedColor(identifier: string): string {
   const hash = hashString(identifier);
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
+
+// ============================================================================
+// ID Generation Utilities
+// ============================================================================
+
+/**
+ * Generates a cryptographically secure random string.
+ * Uses Web Crypto API for secure randomness.
+ * @param length - Length of the random string
+ * @param charset - Characters to use for the string
+ * @returns A random string of the specified length
+ */
+export function secureRandomString(length: number, charset: string): string {
+  const array = new Uint32Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array, (num) => charset[num % charset.length]).join("");
+}
+
+/** Default charset for alphanumeric IDs */
+const ALPHANUMERIC_CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * Generates a unique ID with a prefix and timestamp.
+ * Format: {prefix}-{timestamp_base36}-{random_8_chars}
+ * @param prefix - Prefix for the ID (e.g., "cal", "cevt", "mtg")
+ * @returns A unique ID string
+ */
+export function generatePrefixedId(prefix: string): string {
+  const timestamp = Date.now().toString(36);
+  const random = secureRandomString(8, ALPHANUMERIC_CHARSET);
+  return `${prefix}-${timestamp}-${random}`;
+}

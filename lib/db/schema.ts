@@ -312,3 +312,53 @@ export const meeting = pgTable(
     index("idx_meeting_host_status").on(table.hostId, table.status),
   ]
 );
+
+// ============================================================================
+// Calendar Event Sync Tables
+// ============================================================================
+
+/**
+ * Calendar Event - Maps Hedwiq meetings to external calendar events.
+ * Tracks sync status for each meeting-calendar pair.
+ */
+export const calendarEvent = pgTable(
+  "calendar_event",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** Meeting this event is synced to */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** Calendar integration this event belongs to */
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => calendarIntegration.id, { onDelete: "cascade" }),
+
+    // External calendar event details
+    /** External provider's event ID (e.g., Google Calendar event ID) */
+    providerEventId: text("provider_event_id").notNull(),
+    /** Link to view the event in the external calendar */
+    providerEventLink: text("provider_event_link"),
+
+    // Sync tracking
+    /** Sync status: synced, pending, failed, deleted */
+    syncStatus: text("sync_status").notNull().default("synced"),
+    /** Last successful sync timestamp */
+    lastSyncedAt: timestamp("last_synced_at"),
+    /** Error message if sync failed */
+    syncError: text("sync_error"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_calendar_event_meeting").on(table.meetingId),
+    index("idx_calendar_event_integration").on(table.integrationId),
+    index("idx_calendar_event_sync_status").on(table.syncStatus),
+    uniqueIndex("idx_calendar_event_meeting_integration").on(
+      table.meetingId,
+      table.integrationId
+    ),
+  ]
+);

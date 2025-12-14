@@ -35,7 +35,7 @@ import {
 import { CalendarStatusCard } from "@/components/calendar";
 import type { User } from "@/types/user";
 import type { Meeting } from "@/types/meeting";
-import type { CalendarStatusResponse } from "@/types/calendar";
+import type { CalendarStatusResponse, CalendarEventPublic } from "@/types/calendar";
 
 interface DashboardClientProps {
   user: User;
@@ -58,6 +58,7 @@ export function DashboardClient({
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
   const [instantMeetingError, setInstantMeetingError] = useState<string | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
+  const [calendarEvents, setCalendarEvents] = useState<Record<string, CalendarEventPublic>>({});
 
   // Calendar OAuth feedback from URL params
   const [calendarMessage, setCalendarMessage] = useState<{
@@ -213,11 +214,58 @@ export function DashboardClient({
       if (response.ok) {
         const data = await response.json();
         setMeetings(data.meetings);
+
+        // Fetch calendar events for these meetings
+        if (data.meetings.length > 0) {
+          const meetingIds = data.meetings.map((m: Meeting) => m.id).join(",");
+          const eventsResponse = await fetch(`/api/calendar/events?meetingIds=${meetingIds}`);
+          if (eventsResponse.ok) {
+            const eventsData = await eventsResponse.json();
+            setCalendarEvents(eventsData.events || {});
+          }
+        } else {
+          setCalendarEvents({});
+        }
       }
     } catch (error) {
       console.error("Failed to fetch meetings:", error);
     }
   };
+
+  // Fetch calendar events on initial load with proper cleanup
+  useEffect(() => {
+    if (initialMeetings.length === 0) return;
+
+    let isCancelled = false;
+    const controller = new AbortController();
+
+    const fetchCalendarEvents = async () => {
+      try {
+        const meetingIds = initialMeetings.map((m) => m.id).join(",");
+        const response = await fetch(
+          `/api/calendar/events?meetingIds=${meetingIds}`,
+          { signal: controller.signal }
+        );
+        if (!isCancelled && response.ok) {
+          const data = await response.json();
+          if (data.events) {
+            setCalendarEvents(data.events);
+          }
+        }
+      } catch (err) {
+        // Ignore abort errors
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Failed to fetch calendar events:", err);
+      }
+    };
+
+    fetchCalendarEvents();
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+    };
+  }, [initialMeetings]);
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -425,6 +473,7 @@ export function DashboardClient({
           <CardContent>
             <MeetingList
               meetings={meetings}
+              calendarEvents={calendarEvents}
               onDeleted={handleMeetingDeleted}
               emptyMessage="No upcoming meetings. Click 'New Meeting' to create one."
             />

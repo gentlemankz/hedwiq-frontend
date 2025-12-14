@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { createMeeting, listMeetingsByHost } from "@/lib/db/meeting";
 import { validateCreateMeetingRequest } from "@/lib/validation/meeting";
+import { syncMeetingToCalendar } from "@/lib/calendar-sync";
 import type { MeetingType, MeetingSettings } from "@/types/meeting";
 
 /**
@@ -98,6 +99,7 @@ export async function GET(request: NextRequest) {
  * - durationMinutes: number (optional, default: 60)
  * - timezone: string (optional, default: "UTC")
  * - settings: MeetingSettings (optional)
+ * - addToCalendar: boolean (optional, default: false)
  */
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({
@@ -117,6 +119,7 @@ export async function POST(request: NextRequest) {
     durationMinutes?: number;
     timezone?: string;
     settings?: MeetingSettings;
+    addToCalendar?: boolean;
   };
 
   try {
@@ -143,7 +146,31 @@ export async function POST(request: NextRequest) {
       settings: body.settings,
     });
 
-    return NextResponse.json({ meeting }, { status: 201 });
+    // Sync to Google Calendar if requested
+    // NOTE: Calendar sync is only supported for scheduled meetings, not instant meetings
+    // (instant meetings don't have a scheduled time to add to the calendar)
+    let calendarSync: { success: boolean; eventLink?: string | null; error?: string } | null = null;
+    if (body.addToCalendar && body.type === "scheduled") {
+      calendarSync = await syncMeetingToCalendar(meeting, session.user.id);
+      if (!calendarSync.success) {
+        console.warn("Calendar sync failed:", calendarSync.error);
+        // Don't fail the meeting creation, just log the warning
+      }
+    }
+
+    return NextResponse.json(
+      {
+        meeting,
+        calendarSync: calendarSync
+          ? {
+              synced: calendarSync.success,
+              eventLink: calendarSync.eventLink,
+              error: calendarSync.error,
+            }
+          : null,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Create meeting error:", error);
     return NextResponse.json(

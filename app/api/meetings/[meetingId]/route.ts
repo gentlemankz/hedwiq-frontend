@@ -8,6 +8,11 @@ import {
   isMeetingHost,
 } from "@/lib/db/meeting";
 import { validateUpdateMeetingRequest } from "@/lib/validation/meeting";
+import {
+  updateMeetingCalendarEvent,
+  deleteMeetingCalendarEvent,
+  removeCalendarEventForDeletedMeeting,
+} from "@/lib/calendar-sync";
 import type { MeetingStatus, MeetingSettings } from "@/types/meeting";
 
 /**
@@ -133,7 +138,31 @@ export async function PATCH(
       return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ meeting });
+    // Sync changes to Google Calendar
+    let calendarSync: { success: boolean; eventLink?: string | null; error?: string } | null = null;
+
+    // If meeting was cancelled, delete the calendar event
+    if (body.status === "cancelled") {
+      calendarSync = await deleteMeetingCalendarEvent(meetingId, session.user.id);
+    } else {
+      // Otherwise, update the calendar event (if one exists)
+      calendarSync = await updateMeetingCalendarEvent(meeting, session.user.id);
+    }
+
+    if (calendarSync && !calendarSync.success) {
+      console.warn("Calendar sync failed:", calendarSync.error);
+    }
+
+    return NextResponse.json({
+      meeting,
+      calendarSync: calendarSync
+        ? {
+            synced: calendarSync.success,
+            eventLink: calendarSync.eventLink,
+            error: calendarSync.error,
+          }
+        : null,
+    });
   } catch (error) {
     console.error("Update meeting error:", error);
     return NextResponse.json(
@@ -147,6 +176,7 @@ export async function PATCH(
  * DELETE /api/meetings/[meetingId]
  *
  * Delete a meeting.
+ * Also removes any associated Google Calendar events.
  */
 export async function DELETE(
   request: NextRequest,
@@ -167,6 +197,11 @@ export async function DELETE(
   }
 
   try {
+    // First, try to delete the calendar event (before meeting is deleted)
+    // This needs the meeting to exist to get its info
+    await removeCalendarEventForDeletedMeeting(meetingId, session.user.id);
+
+    // Now delete the meeting
     const deleted = await deleteMeeting(meetingId, session.user.id);
 
     if (!deleted) {

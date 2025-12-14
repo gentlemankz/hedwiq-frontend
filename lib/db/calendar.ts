@@ -8,6 +8,7 @@
 import { db } from "@/lib/db";
 import { calendarIntegration } from "@/lib/db/schema";
 import { eq, and, lt } from "drizzle-orm";
+import { generatePrefixedId } from "@/lib/utils";
 import type {
   CalendarIntegration,
   CalendarIntegrationPublic,
@@ -20,21 +21,10 @@ import type {
 // ============================================================================
 
 /**
- * Generates a cryptographically secure random string.
- */
-function secureRandomString(length: number, charset: string): string {
-  const array = new Uint32Array(length);
-  crypto.getRandomValues(array);
-  return Array.from(array, (num) => charset[num % charset.length]).join("");
-}
-
-/**
  * Generates a unique calendar integration ID.
  */
 export function generateCalendarIntegrationId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = secureRandomString(8, "abcdefghijklmnopqrstuvwxyz0123456789");
-  return `cal-${timestamp}-${random}`;
+  return generatePrefixedId("cal");
 }
 
 // ============================================================================

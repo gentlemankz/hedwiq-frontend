@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { format, addDays } from "date-fns";
-import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Dialog,
@@ -35,10 +36,16 @@ import {
   getMeetingFieldErrors,
   hasMeetingFieldErrors,
 } from "@/lib/validation/meeting";
+import type { CalendarIntegrationPublic } from "@/types/calendar";
 
 interface ScheduleMeetingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Pre-fetched calendar status (optional, will fetch if not provided) */
+  calendarStatus?: {
+    connected: boolean;
+    integration: CalendarIntegrationPublic | null;
+  } | null;
 }
 
 // Generate time options (30 min intervals)
@@ -59,10 +66,24 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
 export function ScheduleMeetingDialog({
   open,
   onOpenChange,
+  calendarStatus: initialCalendarStatus,
 }: ScheduleMeetingDialogProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // Calendar state
+  const [calendarStatus, setCalendarStatus] = useState(initialCalendarStatus);
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(!initialCalendarStatus);
+  const [addToCalendar, setAddToCalendar] = useState(false);
+  const [calendarSyncResult, setCalendarSyncResult] = useState<{
+    synced: boolean;
+    eventLink?: string | null;
+    error?: string;
+  } | null>(null);
+
+  // Success state - shows meeting created confirmation
+  const [isSuccess, setIsSuccess] = useState(false);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -73,6 +94,31 @@ export function ScheduleMeetingDialog({
 
   // Validation state
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // Fetch calendar status when dialog opens
+  useEffect(() => {
+    if (open && !initialCalendarStatus) {
+      setIsLoadingCalendar(true);
+      fetch("/api/calendar/status")
+        .then((res) => res.json())
+        .then((data) => {
+          setCalendarStatus(data);
+          // Auto-enable "Add to Calendar" if calendar is connected
+          if (data.connected) {
+            setAddToCalendar(true);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to fetch calendar status:", err);
+          setCalendarStatus({ connected: false, integration: null });
+        })
+        .finally(() => {
+          setIsLoadingCalendar(false);
+        });
+    } else if (initialCalendarStatus?.connected) {
+      setAddToCalendar(true);
+    }
+  }, [open, initialCalendarStatus]);
 
   // Get field errors
   const fieldErrors = getMeetingFieldErrors({
@@ -105,6 +151,7 @@ export function ScheduleMeetingDialog({
 
     setIsSubmitting(true);
     setApiError(null);
+    setCalendarSyncResult(null);
 
     try {
       // Parse time and create scheduledAt
@@ -122,6 +169,7 @@ export function ScheduleMeetingDialog({
           type: "scheduled",
           scheduledAt: scheduledAt.toISOString(),
           durationMinutes: duration,
+          addToCalendar: addToCalendar && calendarStatus?.connected,
         }),
       });
 
@@ -130,10 +178,32 @@ export function ScheduleMeetingDialog({
         throw new Error(data.error || "Failed to create meeting");
       }
 
-      // Close dialog and refresh
-      resetForm();
-      onOpenChange(false);
-      router.refresh();
+      const data = await response.json();
+
+      // Check calendar sync result
+      if (data.calendarSync) {
+        setCalendarSyncResult(data.calendarSync);
+        if (!data.calendarSync.synced && data.calendarSync.error) {
+          // Show calendar sync warning but don't prevent closing
+          console.warn("Calendar sync failed:", data.calendarSync.error);
+        }
+      }
+
+      // Show success state briefly if calendar was synced with a link
+      if (data.calendarSync?.synced && data.calendarSync?.eventLink) {
+        setIsSuccess(true);
+        // Auto-close after 2 seconds to show the calendar link
+        setTimeout(() => {
+          resetForm();
+          onOpenChange(false);
+          router.refresh();
+        }, 2000);
+      } else {
+        // Close dialog and refresh immediately
+        resetForm();
+        onOpenChange(false);
+        router.refresh();
+      }
     } catch (error) {
       console.error("Failed to schedule meeting:", error);
       setApiError(
@@ -152,6 +222,12 @@ export function ScheduleMeetingDialog({
     setDuration(30);
     setTouched({});
     setApiError(null);
+    setCalendarSyncResult(null);
+    setIsSuccess(false);
+    // Keep addToCalendar if calendar is connected
+    if (!calendarStatus?.connected) {
+      setAddToCalendar(false);
+    }
   };
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -167,20 +243,53 @@ export function ScheduleMeetingDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Schedule a Meeting</DialogTitle>
-          <DialogDescription>
-            Set up a meeting for a future date and time.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-4">
-          {/* API Error */}
-          {apiError && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {apiError}
+        {/* Success State */}
+        {isSuccess ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Meeting Scheduled!</DialogTitle>
+              <DialogDescription>
+                Your meeting has been created successfully.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-4 py-6">
+              <div className="flex size-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
+                <CalendarIcon className="size-6 text-green-600 dark:text-green-400" />
+              </div>
+              <p className="text-center text-sm text-muted-foreground">
+                {calendarSyncResult?.synced
+                  ? "Event added to your Google Calendar"
+                  : "Meeting created"}
+              </p>
+              {calendarSyncResult?.synced && calendarSyncResult?.eventLink && (
+                <a
+                  href={calendarSyncResult.eventLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                >
+                  View in Google Calendar
+                  <ExternalLink className="size-3" />
+                </a>
+              )}
             </div>
-          )}
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Schedule a Meeting</DialogTitle>
+              <DialogDescription>
+                Set up a meeting for a future date and time.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-4">
+              {/* API Error */}
+              {apiError && (
+                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {apiError}
+                </div>
+              )}
 
           {/* Title */}
           <div className="grid gap-2">
@@ -303,20 +412,99 @@ export function ScheduleMeetingDialog({
               characters
             </p>
           </div>
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!isFormValid || isSubmitting}
-          >
-            {isSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-            Schedule Meeting
-          </Button>
-        </DialogFooter>
+          {/* Google Calendar Integration */}
+          <div className="rounded-lg border p-4">
+            {isLoadingCalendar ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Checking calendar connection...
+              </div>
+            ) : calendarStatus?.connected ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="add-to-calendar"
+                    checked={addToCalendar}
+                    onCheckedChange={(checked) => setAddToCalendar(!!checked)}
+                  />
+                  <div className="grid gap-1 leading-none">
+                    <Label
+                      htmlFor="add-to-calendar"
+                      className="text-sm font-medium cursor-pointer"
+                    >
+                      Add to Google Calendar
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Creates an event in{" "}
+                      {calendarStatus.integration?.calendarEmail || "your calendar"}
+                    </p>
+                  </div>
+                </div>
+                {calendarSyncResult?.synced && calendarSyncResult.eventLink && (
+                  <a
+                    href={calendarSyncResult.eventLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                  >
+                    View in Google Calendar
+                    <ExternalLink className="size-3" />
+                  </a>
+                )}
+                {calendarSyncResult && !calendarSyncResult.synced && (
+                  <p className="text-sm text-amber-600">
+                    Calendar sync failed: {calendarSyncResult.error}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Google Calendar</p>
+                  <p className="text-sm text-muted-foreground">
+                    Connect to add events automatically
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/calendar/connect");
+                      const data = await res.json();
+                      if (data.authUrl) {
+                        window.location.href = data.authUrl;
+                      } else if (data.error) {
+                        setApiError(data.error);
+                      }
+                    } catch (err) {
+                      console.error("Failed to connect calendar:", err);
+                      setApiError("Failed to connect calendar");
+                    }
+                  }}
+                >
+                  Connect
+                </Button>
+              </div>
+            )}
+          </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={!isFormValid || isSubmitting}
+              >
+                {isSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+                Schedule Meeting
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

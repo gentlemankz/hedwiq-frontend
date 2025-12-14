@@ -22,6 +22,15 @@ export type CalendarProvider = "google";
  */
 export type CalendarIntegrationStatus = "connected" | "disconnected" | "error";
 
+/**
+ * Calendar event sync status.
+ * - synced: Event is in sync with external calendar
+ * - pending: Event creation/update pending
+ * - failed: Sync failed (check syncError for details)
+ * - deleted: Event was deleted from external calendar
+ */
+export type CalendarEventSyncStatus = "synced" | "pending" | "failed" | "deleted";
+
 // ============================================================================
 // Core Types
 // ============================================================================
@@ -77,6 +86,44 @@ export interface CalendarIntegrationPublic {
   errorMessage: string | null;
   /** Creation timestamp */
   createdAt: string;
+}
+
+/**
+ * A calendar event record that maps a meeting to an external calendar event.
+ */
+export interface CalendarEvent {
+  /** Unique identifier */
+  id: string;
+  /** Meeting ID this event is linked to */
+  meetingId: string;
+  /** Calendar integration ID */
+  integrationId: string;
+  /** External calendar event ID */
+  providerEventId: string;
+  /** Link to the event in the external calendar */
+  providerEventLink: string | null;
+  /** Sync status */
+  syncStatus: CalendarEventSyncStatus;
+  /** Last sync timestamp (ISO string) */
+  lastSyncedAt: string | null;
+  /** Error message if sync failed */
+  syncError: string | null;
+  /** Creation timestamp */
+  createdAt: string;
+  /** Last update timestamp */
+  updatedAt: string;
+}
+
+/**
+ * Public calendar event info (for client display).
+ */
+export interface CalendarEventPublic {
+  /** External calendar event link */
+  providerEventLink: string | null;
+  /** Sync status */
+  syncStatus: CalendarEventSyncStatus;
+  /** Sync error message if any */
+  syncError: string | null;
 }
 
 // ============================================================================

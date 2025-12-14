@@ -3,9 +3,12 @@
 import { Calendar } from "lucide-react";
 import { MeetingCard } from "./meeting-card";
 import type { Meeting } from "@/types/meeting";
+import type { CalendarEventPublic } from "@/types/calendar";
 
 interface MeetingListProps {
   meetings: Meeting[];
+  /** Map of meeting ID to calendar event info */
+  calendarEvents?: Record<string, CalendarEventPublic>;
   onEdit?: (meeting: Meeting) => void;
   onDeleted?: () => void;
   emptyMessage?: string;
@@ -13,6 +16,7 @@ interface MeetingListProps {
 
 export function MeetingList({
   meetings,
+  calendarEvents,
   onEdit,
   onDeleted,
   emptyMessage = "No meetings scheduled",
@@ -34,6 +38,7 @@ export function MeetingList({
         <MeetingCard
           key={meeting.id}
           meeting={meeting}
+          calendarEvent={calendarEvents?.[meeting.id]}
           onEdit={onEdit}
           onDeleted={onDeleted}
         />

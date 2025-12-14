@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { format, isPast, isToday, isTomorrow } from "date-fns";
 import {
   Calendar,
+  CalendarCheck,
+  CalendarX,
   Clock,
   Copy,
   MoreHorizontal,
@@ -12,6 +14,7 @@ import {
   Trash2,
   Video,
   ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,17 +41,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Meeting } from "@/types/meeting";
+import type { CalendarEventPublic } from "@/types/calendar";
 
 interface MeetingCardProps {
   meeting: Meeting;
+  /** Calendar event info if synced */
+  calendarEvent?: CalendarEventPublic | null;
   onEdit?: (meeting: Meeting) => void;
   onDeleted?: () => void;
 }
 
-export function MeetingCard({ meeting, onEdit, onDeleted }: MeetingCardProps) {
+export function MeetingCard({ meeting, calendarEvent, onEdit, onDeleted }: MeetingCardProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -142,6 +154,42 @@ export function MeetingCard({ meeting, onEdit, onDeleted }: MeetingCardProps) {
   const statusBadge = getStatusBadge();
   const canJoin = meeting.status === "scheduled" || meeting.status === "live";
 
+  // Get calendar sync indicator
+  const getCalendarIndicator = () => {
+    if (!calendarEvent) return null;
+
+    switch (calendarEvent.syncStatus) {
+      case "synced":
+        return {
+          icon: CalendarCheck,
+          className: "text-green-600",
+          tooltip: "Synced to Google Calendar",
+        };
+      case "pending":
+        return {
+          icon: Calendar,
+          className: "text-amber-500",
+          tooltip: "Sync pending...",
+        };
+      case "failed":
+        return {
+          icon: AlertCircle,
+          className: "text-red-500",
+          tooltip: `Sync failed: ${calendarEvent.syncError || "Unknown error"}`,
+        };
+      case "deleted":
+        return {
+          icon: CalendarX,
+          className: "text-muted-foreground",
+          tooltip: "Calendar event deleted",
+        };
+      default:
+        return null;
+    }
+  };
+
+  const calendarIndicator = getCalendarIndicator();
+
   return (
     <>
       <Card className="transition-shadow hover:shadow-md">
@@ -167,6 +215,23 @@ export function MeetingCard({ meeting, onEdit, onDeleted }: MeetingCardProps) {
                     <span>{meeting.durationMinutes} min</span>
                   </>
                 )}
+                {calendarIndicator && (
+                  <>
+                    <span className="text-muted-foreground">•</span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <calendarIndicator.icon
+                            className={cn("size-3.5 cursor-help", calendarIndicator.className)}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{calendarIndicator.tooltip}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </>
+                )}
               </CardDescription>
             </div>
 
@@ -186,6 +251,14 @@ export function MeetingCard({ meeting, onEdit, onDeleted }: MeetingCardProps) {
                   <ExternalLink className="mr-2 size-4" />
                   Open in new tab
                 </DropdownMenuItem>
+                {calendarEvent?.syncStatus === "synced" && calendarEvent.providerEventLink && (
+                  <DropdownMenuItem
+                    onClick={() => window.open(calendarEvent.providerEventLink!, "_blank")}
+                  >
+                    <CalendarCheck className="mr-2 size-4" />
+                    View in Calendar
+                  </DropdownMenuItem>
+                )}
                 {onEdit && meeting.status === "scheduled" && (
                   <DropdownMenuItem onClick={() => onEdit(meeting)}>
                     <Pencil className="mr-2 size-4" />
