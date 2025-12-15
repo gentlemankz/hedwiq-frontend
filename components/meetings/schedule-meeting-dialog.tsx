@@ -322,7 +322,7 @@ export function ScheduleMeetingDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
         {/* Success State */}
         {isSuccess ? (
           <>
@@ -376,14 +376,14 @@ export function ScheduleMeetingDialog({
           </>
         ) : (
           <>
-            <DialogHeader>
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>Schedule a Meeting</DialogTitle>
               <DialogDescription>
                 Set up a meeting for a future date and time.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-2">
               {/* API Error */}
               {apiError && (
                 <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -695,7 +695,7 @@ export function ScheduleMeetingDialog({
           </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="flex-shrink-0">
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancel
               </Button>

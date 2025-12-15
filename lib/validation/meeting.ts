@@ -389,14 +389,15 @@ export function hasMeetingFieldErrors(errors: MeetingFieldErrors): boolean {
 
 /**
  * Meeting ID validation regex.
- * Format: mtg-{13-digit timestamp}-{8 alphanumeric chars}
+ * Format: mtg-{base36 timestamp (8-10 chars)}-{8 alphanumeric chars}
+ * The timestamp is Date.now().toString(36) which produces 8-10 alphanumeric chars.
  */
-export const MEETING_ID_REGEX = /^mtg-\d{13}-[a-z0-9]{8}$/;
+export const MEETING_ID_REGEX = /^mtg-[a-z0-9]{8,10}-[a-z0-9]{8}$/;
 
 /**
  * Maximum meeting ID length to prevent regex DoS.
  */
-export const MAX_MEETING_ID_LENGTH = 30;
+export const MAX_MEETING_ID_LENGTH = 28;
 
 /**
  * Validate meeting ID format.
