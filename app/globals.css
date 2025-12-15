@@ -375,3 +375,67 @@
   height: 100%;
 }
 
+/* ============================================================================
+   Video Conference Layout with Notes Panel
+   Ensures the video grid can shrink when notes panel is expanded.
+   ============================================================================ */
+
+/* Ensure video conference root takes full height */
+[data-lk-theme="default"] .lk-video-conference {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Make the video conference inner container a proper flex column */
+[data-lk-theme="default"] .lk-video-conference-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Video grid container (the flex-1 div) */
+[data-lk-theme="default"] .lk-video-conference-inner > div:first-child {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Make grid layout wrapper fill available space */
+[data-lk-theme="default"] .lk-grid-layout-wrapper {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ensure the grid layout fills its container completely */
+[data-lk-theme="default"] .lk-grid-layout {
+  flex: 1 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  padding: 0.5rem;
+  gap: 0.5rem;
+}
+
+/* Focus layout wrapper should also be flexible */
+[data-lk-theme="default"] .lk-focus-layout-wrapper {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Focus layout container fills height */
+[data-lk-theme="default"] .lk-focus-layout {
+  height: 100%;
+}
+
+/* Control bar should not shrink */
+[data-lk-theme="default"] .lk-control-bar {
+  flex-shrink: 0;
+}
+

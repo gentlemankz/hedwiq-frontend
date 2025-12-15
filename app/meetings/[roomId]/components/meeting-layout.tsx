@@ -151,7 +151,10 @@ function MeetingLayoutInner({
           showSidebar && (hasAgenda ? "mr-[520px]" : "mr-96")
         )}
       >
-        <CustomVideoConference />
+        <CustomVideoConference
+          meetingTitle={meetingName || "Meeting Notes"}
+          roomId={roomId}
+        />
       </div>
 
       {/* Sidebar with meeting info header and transcript */}

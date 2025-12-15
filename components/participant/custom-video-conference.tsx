@@ -26,6 +26,8 @@ import {
   useTracks,
 } from "@livekit/components-react";
 import { CustomControlBar } from "@/components/meeting/custom-control-bar";
+import { MeetingNotesPanel } from "@/components/meeting/meeting-notes-panel";
+import { useNotesPanel } from "@/hooks/use-notes-panel";
 import type { MessageFormatter } from "@livekit/components-react";
 import { CustomParticipantTile } from "./custom-participant-tile";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -43,6 +45,12 @@ export interface CustomVideoConferenceProps
   chatMessageDecoder?: MessageDecoder;
   /** Custom settings component to show in modal. */
   SettingsComponent?: React.ComponentType;
+  /** Meeting title for notes panel header */
+  meetingTitle?: string;
+  /** Whether to show the notes panel */
+  showNotesPanel?: boolean;
+  /** Room ID for notes persistence (required when showNotesPanel is true) */
+  roomId?: string;
 }
 
 /**
@@ -67,12 +75,30 @@ export function CustomVideoConference({
   chatMessageDecoder,
   chatMessageEncoder,
   SettingsComponent,
+  meetingTitle = "Meeting Notes",
+  showNotesPanel = true,
+  roomId,
   ...props
 }: CustomVideoConferenceProps) {
   const [widgetState, setWidgetState] = React.useState<WidgetState>({
     showChat: false,
     unreadMessages: 0,
     showSettings: false,
+  });
+
+  // Notes panel state with localStorage persistence
+  // Use roomId if provided, otherwise fall back to a stable session-based key
+  const fallbackId = React.useId();
+  const notesStorageKey = roomId || `session-${fallbackId}`;
+
+  const {
+    notes: notesContent,
+    setNotes: setNotesContent,
+    isExpanded: notesExpanded,
+    setExpanded: setNotesExpanded,
+  } = useNotesPanel({
+    storageKey: notesStorageKey,
+    debounceMs: 1000,
   });
 
   const lastAutoFocusedScreenShareTrack =
@@ -156,32 +182,36 @@ export function CustomVideoConference({
           value={layoutContext}
           onWidgetChange={widgetUpdate}
         >
-          <div className="lk-video-conference-inner">
-            {!focusTrack ? (
-              <div className="lk-grid-layout-wrapper">
-                <GridLayout tracks={tracks}>
-                  {/* Use our custom ParticipantTile with Avatar */}
-                  <CustomParticipantTile />
-                </GridLayout>
-              </div>
-            ) : (
-              <div className="lk-focus-layout-wrapper">
-                <FocusLayoutContainer>
-                  <CarouselLayout tracks={carouselTracks}>
+          <div className="lk-video-conference-inner flex flex-col">
+            {/* Video Grid - flexible height that shrinks when notes expand */}
+            <div className="flex-1 min-h-0 relative">
+              {!focusTrack ? (
+                <div className="lk-grid-layout-wrapper h-full">
+                  <GridLayout tracks={tracks}>
                     {/* Use our custom ParticipantTile with Avatar */}
                     <CustomParticipantTile />
-                  </CarouselLayout>
-                  {/* Use CustomParticipantTile for focused track to maintain avatar consistency */}
-                  {focusTrack && (
-                    <div className="lk-focused-layout">
-                      <CustomParticipantTile trackRef={focusTrack} />
-                    </div>
-                  )}
-                </FocusLayoutContainer>
-              </div>
-            )}
+                  </GridLayout>
+                </div>
+              ) : (
+                <div className="lk-focus-layout-wrapper h-full">
+                  <FocusLayoutContainer>
+                    <CarouselLayout tracks={carouselTracks}>
+                      {/* Use our custom ParticipantTile with Avatar */}
+                      <CustomParticipantTile />
+                    </CarouselLayout>
+                    {/* Use CustomParticipantTile for focused track to maintain avatar consistency */}
+                    {focusTrack && (
+                      <div className="lk-focused-layout">
+                        <CustomParticipantTile trackRef={focusTrack} />
+                      </div>
+                    )}
+                  </FocusLayoutContainer>
+                </div>
+              )}
+            </div>
+
             {/* Control Bar */}
-            <div className="lk-control-bar flex items-center justify-center p-4">
+            <div className="lk-control-bar flex items-center justify-center py-2 px-4 shrink-0">
               <TooltipProvider delayDuration={0}>
                 <CustomControlBar
                   controls={{
@@ -195,6 +225,18 @@ export function CustomVideoConference({
                 />
               </TooltipProvider>
             </div>
+
+            {/* Notes Panel - bottom sheet */}
+            {showNotesPanel && (
+              <MeetingNotesPanel
+                meetingTitle={meetingTitle}
+                isExpanded={notesExpanded}
+                onExpandedChange={setNotesExpanded}
+                notes={notesContent}
+                onNotesChange={setNotesContent}
+                className="shrink-0"
+              />
+            )}
           </div>
           <Chat
             style={{ display: widgetState.showChat ? "grid" : "none" }}
