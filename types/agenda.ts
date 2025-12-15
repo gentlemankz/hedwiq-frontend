@@ -84,6 +84,11 @@ export interface Agenda {
   roomId: string;
   /** User ID who created the agenda */
   createdBy: string;
+  /**
+   * Meeting ID - links agenda to a scheduled meeting (optional).
+   * When set, this agenda was created during meeting scheduling.
+   */
+  meetingId?: string | null;
   /** Meeting name/title (e.g., "Marketing Team. Production") */
   meetingName?: string | null;
   /** Scheduled meeting time (ISO string or Date) */

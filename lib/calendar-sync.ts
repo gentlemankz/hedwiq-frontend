@@ -12,6 +12,7 @@ import {
   deleteGoogleCalendarEvent,
   canSyncToCalendar,
 } from "@/lib/google-calendar";
+import type { CalendarAgendaItem } from "@/lib/google-calendar";
 import {
   createCalendarEvent,
   getCalendarEventByMeetingId,
@@ -20,6 +21,7 @@ import {
   markCalendarEventDeleted,
   deleteCalendarEvent,
 } from "@/lib/db/calendar-event";
+import { getAgendaByMeetingId } from "@/lib/db/agenda";
 import type { Meeting } from "@/types/meeting";
 
 // ============================================================================
@@ -76,6 +78,21 @@ export async function syncMeetingToCalendar(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const meetingLink = `${appUrl}/meetings/${meeting.roomId}`;
 
+  // Fetch agenda items if meeting has an agenda
+  let agendaItems: CalendarAgendaItem[] | undefined;
+  try {
+    const agenda = await getAgendaByMeetingId(meeting.id);
+    if (agenda && agenda.items && agenda.items.length > 0) {
+      agendaItems = agenda.items.map((item) => ({
+        title: item.title,
+        estimatedDuration: item.estimatedDuration,
+      }));
+    }
+  } catch (agendaError) {
+    // Log but don't fail calendar sync if agenda fetch fails
+    console.warn("Failed to fetch agenda for calendar sync:", agendaError);
+  }
+
   try {
     // Create Google Calendar event
     const result = await createGoogleCalendarEvent(userId, {
@@ -86,6 +103,7 @@ export async function syncMeetingToCalendar(
       timezone: meeting.timezone || "UTC",
       meetingLink,
       roomId: meeting.roomId,
+      agendaItems,
     });
 
     if (!result) {

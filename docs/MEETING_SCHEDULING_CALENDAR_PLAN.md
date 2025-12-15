@@ -1820,61 +1820,502 @@ describe("Schedule Meeting Flow", () => {
 
 ## 12. Implementation Phases
 
-### Phase 1: Meeting Persistence (Week 1-2)
+### Phase 1: Meeting Persistence ✅ COMPLETED
 
 **Goal**: Persist meetings to database, update dashboard UI
 
-- [ ] Create `meeting` table and migrations
-- [ ] Update dashboard to show meeting type selector
-- [ ] Implement instant meeting with persistence
-- [ ] Implement schedule meeting dialog (without calendar)
-- [ ] Show upcoming meetings in dashboard
-- [ ] Meeting CRUD API routes
-- [ ] Update existing meeting flow to create records
+- [x] Create `meeting` table and migrations
+- [x] Update dashboard to show meeting type selector
+- [x] Implement instant meeting with persistence
+- [x] Implement schedule meeting dialog (without calendar)
+- [x] Show upcoming meetings in dashboard
+- [x] Meeting CRUD API routes
+- [x] Update existing meeting flow to create records
 
 **Deliverables**:
-- Users can create scheduled meetings
-- Meetings persist in database
-- Dashboard shows upcoming meetings
-- Instant meetings work as before
+- ✅ Users can create scheduled meetings
+- ✅ Meetings persist in database
+- ✅ Dashboard shows upcoming meetings
+- ✅ Instant meetings work as before
 
-### Phase 2: Google Calendar OAuth (Week 3)
+### Phase 2: Google Calendar OAuth ✅ COMPLETED
 
 **Goal**: Implement calendar connection flow
 
-- [ ] Create `calendar_integration` table
-- [ ] Implement OAuth connect flow
-- [ ] Implement OAuth callback handler
-- [ ] Add calendar status to dashboard
-- [ ] Implement disconnect functionality
-- [ ] Token refresh logic
-- [ ] Calendar connect button component
+- [x] Create `calendar_integration` table
+- [x] Implement OAuth connect flow
+- [x] Implement OAuth callback handler
+- [x] Add calendar status to dashboard
+- [x] Implement disconnect functionality
+- [x] Token refresh logic
+- [x] Calendar connect button component
 
 **Deliverables**:
-- Users can connect Google Calendar
-- OAuth flow works end-to-end
-- Tokens are stored securely
-- Users can disconnect calendar
+- ✅ Users can connect Google Calendar
+- ✅ OAuth flow works end-to-end
+- ✅ Tokens are stored securely
+- ✅ Users can disconnect calendar
 
-### Phase 3: Calendar Sync (Week 4)
+### Phase 3: Calendar Sync ✅ COMPLETED
 
 **Goal**: Sync meetings to Google Calendar
 
-- [ ] Create `calendar_event` table
-- [ ] Implement Google Calendar API client
-- [ ] Create events when scheduling meetings
-- [ ] Update events when meetings change
-- [ ] Delete events when meetings cancelled
-- [ ] Add "Add to Calendar" checkbox
-- [ ] Sync status indicators
+- [x] Create `calendar_event` table
+- [x] Implement Google Calendar API client
+- [x] Create events when scheduling meetings
+- [x] Update events when meetings change
+- [x] Delete events when meetings cancelled
+- [x] Add "Add to Calendar" checkbox
+- [x] Sync status indicators
 
 **Deliverables**:
-- Scheduled meetings create calendar events
-- Meeting changes sync to calendar
-- Cancellations delete calendar events
-- Users see sync status
+- ✅ Scheduled meetings create calendar events
+- ✅ Meeting changes sync to calendar
+- ✅ Cancellations delete calendar events
+- ✅ Users see sync status
 
-### Phase 4: Polish & Advanced Features (Week 5)
+### Phase 4: Agenda for Scheduled Meetings ✅ COMPLETED
+
+**Goal**: Enable agenda creation during meeting scheduling
+
+**Problem Statement**:
+Currently, agenda building is only available in the pre-join screen for instant meetings. When scheduling a meeting for later, users cannot create an agenda, which means:
+1. Invitees don't know what will be discussed
+2. No agenda is included in calendar events or invitation emails
+3. The host must remember to add agenda when they join the meeting
+
+**Solution**:
+
+#### 4.1 Database Changes
+
+Link agenda items directly to the meeting during scheduling:
+
+```typescript
+// Option A: Store agenda items as JSON in meeting table
+// Pros: Simple, no additional tables
+// Cons: Less flexible for querying individual items
+
+// Option B: Link existing agenda table to meeting (PREFERRED)
+// Add meetingId to agenda table, create agenda when scheduling
+// Pros: Reuses existing agenda infrastructure
+// Cons: Slightly more complex
+
+// We'll go with Option B - extend existing agenda system
+```
+
+Migration needed:
+```sql
+-- Add meetingId to agenda table for linking scheduled meeting agendas
+ALTER TABLE agenda ADD COLUMN meeting_id TEXT REFERENCES meeting(id) ON DELETE CASCADE;
+CREATE INDEX idx_agenda_meeting ON agenda(meeting_id);
+
+-- Note: existing agendas use room_id, new scheduled agendas use meeting_id
+-- Both can coexist - room_id for instant meetings, meeting_id for scheduled
+```
+
+#### 4.2 UI Changes
+
+**Schedule Meeting Dialog Enhancement**:
+- Add collapsible "Agenda" section (similar to pre-join screen)
+- Reuse `AgendaBuilder` component
+- Store draft agenda items in dialog state
+- Create agenda record when meeting is created
+
+```
+┌─────────────────────────────────────────┐
+│         Schedule a Meeting              │
+│  ┌───────────────────────────────────┐  │
+│  │  Meeting Title *                  │  │
+│  │  ┌─────────────────────────────┐  │  │
+│  │  │ Weekly Team Standup         │  │  │
+│  │  └─────────────────────────────┘  │  │
+│  │                                    │  │
+│  │  Date & Time                       │  │
+│  │  [Dec 20, 2025] [10:00 AM]        │  │
+│  │                                    │  │
+│  │  Duration: [30 minutes ▼]          │  │
+│  │                                    │  │
+│  │  ▼ Meeting Agenda (3 topics)       │  │ ◄── NEW: Collapsible
+│  │  ┌─────────────────────────────┐  │  │
+│  │  │ 1. Project updates (10 min) │  │  │
+│  │  │ 2. Blockers discussion      │  │  │
+│  │  │ 3. Action items             │  │  │
+│  │  │ [+ Add Topic]               │  │  │
+│  │  └─────────────────────────────┘  │  │
+│  │                                    │  │
+│  │  ☑ Add to Google Calendar          │  │
+│  │                                    │  │
+│  │  [Cancel] [Schedule Meeting]       │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+```
+
+#### 4.3 API Changes
+
+Update `POST /api/meetings` to accept agenda items:
+
+```typescript
+interface CreateMeetingRequest {
+  // ... existing fields
+  agendaItems?: AgendaItemInput[];  // NEW
+}
+
+// When creating scheduled meeting with agenda:
+// 1. Create meeting record
+// 2. Create agenda record linked to meetingId
+// 3. Create agenda_item records
+// 4. Include agenda in calendar event description
+```
+
+#### 4.4 Calendar Event Enhancement
+
+Include agenda in Google Calendar event description:
+
+```
+📅 Weekly Team Standup
+
+📝 Agenda:
+1. Project updates (10 min)
+2. Blockers discussion (5 min)
+3. Action items (5 min)
+
+🔗 Join Meeting: https://hedwiq.com/meetings/abc-defg-hij
+```
+
+**Tasks**:
+- [x] Add `meetingId` column to agenda table (migration)
+- [x] Update `AgendaBuilder` to be reusable outside pre-join
+- [x] Add agenda section to `ScheduleMeetingDialog`
+- [x] Update `POST /api/meetings` to handle agenda items
+- [x] Create agenda when scheduled meeting is created
+- [x] Include agenda in calendar event description
+- [x] Load existing agenda when editing scheduled meeting
+- [x] Pre-populate agenda in pre-join if already exists
+
+**Deliverables**:
+- ✅ Users can add agenda when scheduling meetings
+- ✅ Agenda appears in Google Calendar event
+- ✅ Agenda is preserved when joining the meeting
+- ✅ Existing instant meeting flow unchanged
+- ✅ Users can edit scheduled meetings and their agendas
+
+### Phase 5: Email Invitations
+
+**Goal**: Send meeting invitations via email with full meeting details
+
+**Problem Statement**:
+Users cannot invite others to scheduled meetings. There's no way to:
+1. Send invitation emails with meeting details
+2. Include "Add to Google Calendar" links for invitees
+3. Show agenda to invitees before the meeting
+
+**Solution**:
+
+#### 5.1 Email Service Setup
+
+Use **Resend** for transactional emails:
+- Modern, developer-friendly API
+- React Email for templates
+- Good free tier (100 emails/day)
+- Easy integration with Next.js
+
+```bash
+npm install resend @react-email/components
+```
+
+Environment variables:
+```
+RESEND_API_KEY=re_xxxxxxxxxxxx
+EMAIL_FROM=meetings@hedwiq.com  # Must be verified domain
+```
+
+#### 5.2 Database Changes
+
+```sql
+-- Meeting invitees table
+CREATE TABLE meeting_invitee (
+  id TEXT PRIMARY KEY,
+  meeting_id TEXT NOT NULL REFERENCES meeting(id) ON DELETE CASCADE,
+
+  -- Invitee info (email required, name optional)
+  email TEXT NOT NULL,
+  name TEXT,
+
+  -- RSVP status
+  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'accepted' | 'declined' | 'tentative'
+  responded_at TIMESTAMP,
+
+  -- Invitation tracking
+  invited_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  invited_by TEXT NOT NULL REFERENCES "user"(id),
+
+  -- Email tracking
+  email_sent_at TIMESTAMP,
+  email_opened_at TIMESTAMP,
+
+  -- Token for RSVP without auth (optional)
+  rsvp_token TEXT UNIQUE,
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  UNIQUE(meeting_id, email)  -- One invitation per email per meeting
+);
+
+CREATE INDEX idx_meeting_invitee_meeting ON meeting_invitee(meeting_id);
+CREATE INDEX idx_meeting_invitee_email ON meeting_invitee(email);
+```
+
+```typescript
+// Drizzle schema
+export const meetingInvitee = pgTable(
+  "meeting_invitee",
+  {
+    id: text("id").primaryKey(),
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    name: text("name"),
+    status: text("status").notNull().default("pending"),
+    respondedAt: timestamp("responded_at"),
+    invitedAt: timestamp("invited_at").notNull().defaultNow(),
+    invitedBy: text("invited_by")
+      .notNull()
+      .references(() => user.id),
+    emailSentAt: timestamp("email_sent_at"),
+    emailOpenedAt: timestamp("email_opened_at"),
+    rsvpToken: text("rsvp_token").unique(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_meeting_invitee_meeting").on(table.meetingId),
+    uniqueIndex("idx_meeting_invitee_unique").on(table.meetingId, table.email),
+  ]
+);
+```
+
+#### 5.3 Email Template Design
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                      │
+│  [Hedwiq Logo]                                                      │
+│                                                                      │
+│  ─────────────────────────────────────────────────────────────────  │
+│                                                                      │
+│  You're invited to a meeting                                        │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │                                                                 │ │
+│  │  📅 Weekly Team Standup                                         │ │
+│  │                                                                 │ │
+│  │  🗓️  Friday, December 20, 2024                                  │ │
+│  │  🕐  10:00 AM - 10:30 AM (PST)                                  │ │
+│  │  👤  Hosted by John Smith                                       │ │
+│  │                                                                 │ │
+│  │  ─────────────────────────────────────────────────────────────  │ │
+│  │                                                                 │ │
+│  │  📝 Agenda                                                      │ │
+│  │                                                                 │ │
+│  │  1. Project updates (10 min)                                    │ │
+│  │     Review progress on Q4 deliverables                          │ │
+│  │                                                                 │ │
+│  │  2. Blockers discussion (5 min)                                 │ │
+│  │     Address any blockers preventing progress                    │ │
+│  │                                                                 │ │
+│  │  3. Action items (5 min)                                        │ │
+│  │     Assign tasks for next week                                  │ │
+│  │                                                                 │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                      │
+│  ┌──────────────────┐  ┌──────────────────────────────────────────┐ │
+│  │   Join Meeting   │  │  📅 Add to Google Calendar               │ │
+│  │                  │  │     Add to Apple Calendar                │ │
+│  └──────────────────┘  │     Add to Outlook                       │ │
+│                        │     Download .ics file                    │ │
+│                        └──────────────────────────────────────────┘ │
+│                                                                      │
+│  ─────────────────────────────────────────────────────────────────  │
+│                                                                      │
+│  Can you attend?                                                    │
+│                                                                      │
+│  [✓ Yes]  [? Maybe]  [✗ No]                                        │
+│                                                                      │
+│  ─────────────────────────────────────────────────────────────────  │
+│                                                                      │
+│  Meeting link: https://hedwiq.com/meetings/abc-defg-hij             │
+│  This invitation was sent by john@company.com                       │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 5.4 ICS Calendar File Generation
+
+Generate standard .ics files for any calendar app:
+
+```typescript
+// lib/calendar/ics.ts
+
+export function generateICS(meeting: Meeting, agenda?: AgendaWithItems): string {
+  const start = new Date(meeting.scheduledAt!);
+  const end = new Date(start.getTime() + meeting.durationMinutes * 60 * 1000);
+
+  const agendaText = agenda?.items
+    .map((item, i) => `${i + 1}. ${item.title}${item.estimatedDuration ? ` (${item.estimatedDuration} min)` : ''}`)
+    .join('\\n') || '';
+
+  const description = [
+    meeting.description,
+    agendaText ? `\\n\\nAgenda:\\n${agendaText}` : '',
+    `\\n\\nJoin: ${process.env.NEXT_PUBLIC_APP_URL}/meetings/${meeting.roomId}`,
+  ].filter(Boolean).join('');
+
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Hedwiq//Meeting//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    `UID:${meeting.id}@hedwiq.com`,
+    `DTSTAMP:${formatICSDate(new Date())}`,
+    `DTSTART:${formatICSDate(start)}`,
+    `DTEND:${formatICSDate(end)}`,
+    `SUMMARY:${escapeICS(meeting.title)}`,
+    `DESCRIPTION:${escapeICS(description)}`,
+    `URL:${process.env.NEXT_PUBLIC_APP_URL}/meetings/${meeting.roomId}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+}
+
+function formatICSDate(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+
+function escapeICS(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
+}
+```
+
+#### 5.5 "Add to Calendar" Links
+
+Generate direct links for various calendar apps:
+
+```typescript
+// lib/calendar/links.ts
+
+export interface CalendarLinks {
+  google: string;
+  outlook: string;
+  office365: string;
+  ics: string;  // Download ICS file endpoint
+}
+
+export function generateCalendarLinks(meeting: Meeting): CalendarLinks {
+  const start = new Date(meeting.scheduledAt!);
+  const end = new Date(start.getTime() + meeting.durationMinutes * 60 * 1000);
+  const meetingUrl = `${process.env.NEXT_PUBLIC_APP_URL}/meetings/${meeting.roomId}`;
+
+  // Google Calendar
+  const googleParams = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: meeting.title,
+    dates: `${formatGoogleDate(start)}/${formatGoogleDate(end)}`,
+    details: `${meeting.description || ''}\n\nJoin: ${meetingUrl}`,
+    location: meetingUrl,
+  });
+
+  // Outlook.com (personal)
+  const outlookParams = new URLSearchParams({
+    path: '/calendar/action/compose',
+    rru: 'addevent',
+    subject: meeting.title,
+    startdt: start.toISOString(),
+    enddt: end.toISOString(),
+    body: `${meeting.description || ''}<br><br>Join: ${meetingUrl}`,
+  });
+
+  return {
+    google: `https://calendar.google.com/calendar/render?${googleParams}`,
+    outlook: `https://outlook.live.com/calendar/0/deeplink/compose?${outlookParams}`,
+    office365: `https://outlook.office.com/calendar/0/deeplink/compose?${outlookParams}`,
+    ics: `/api/meetings/${meeting.id}/calendar.ics`,
+  };
+}
+```
+
+#### 5.6 API Endpoints
+
+```typescript
+// POST /api/meetings/[meetingId]/invite
+// Send invitation emails to specified addresses
+
+// GET /api/meetings/[meetingId]/calendar.ics
+// Download ICS file for the meeting
+
+// POST /api/meetings/[meetingId]/rsvp
+// Update RSVP status (accepts token for unauthenticated RSVP)
+
+// GET /api/meetings/[meetingId]/invitees
+// List all invitees with their RSVP status
+```
+
+#### 5.7 UI Updates
+
+**Add Invitees Section to Schedule Dialog**:
+```
+┌─────────────────────────────────────────┐
+│  ▼ Invite Participants                  │
+│  ┌───────────────────────────────────┐  │
+│  │  Enter email addresses...          │  │
+│  │  [john@example.com] [×]            │  │
+│  │  [jane@example.com] [×]            │  │
+│  │  [+ Add another]                   │  │
+│  └───────────────────────────────────┘  │
+│                                          │
+│  ☑ Send invitation emails now           │
+│  ☐ Let me review before sending         │
+└─────────────────────────────────────────┘
+```
+
+**Meeting Card with RSVP Status**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 📅 Weekly Team Standup                                       │
+│    Friday, Dec 20 • 10:00 AM • 30 min                       │
+│                                                              │
+│    Invitees: 👤 3 accepted • 👤 1 pending                    │
+│                                                              │
+│    [Join] [Copy Link] [Edit] [Cancel]                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Tasks**:
+- [ ] Install and configure Resend
+- [ ] Create `meeting_invitee` table (migration)
+- [ ] Create React Email templates
+  - [ ] Meeting invitation email
+  - [ ] Meeting updated email
+  - [ ] Meeting cancelled email
+- [ ] Implement ICS file generation
+- [ ] Implement calendar link generation
+- [ ] Create invitation API endpoints
+- [ ] Add invitee section to schedule dialog
+- [ ] Create invitee management UI
+- [ ] Implement RSVP functionality
+- [ ] Update meeting card to show RSVP status
+
+**Deliverables**:
+- Users can invite others via email
+- Invitees receive professional invitation emails
+- Invitees can add meeting to their calendar (any provider)
+- Agenda is included in invitation emails
+- Basic RSVP tracking
+
+### Phase 6: Polish & Advanced Features
 
 **Goal**: Refine UX and add advanced features
 
@@ -1901,12 +2342,14 @@ describe("Schedule Meeting Flow", () => {
 | Feature | Description | Priority |
 |---------|-------------|----------|
 | Recurring meetings | Weekly, daily, custom patterns | Medium |
-| Meeting invites | Email invitations with RSVP | Medium |
+| ~~Meeting invites~~ | ~~Email invitations with RSVP~~ | ~~Medium~~ → **Phase 5** |
 | Microsoft Outlook | Calendar integration | Medium |
 | Availability view | See free/busy times | Low |
 | Meeting rooms | Resource booking | Low |
 | Custom meeting links | Vanity URLs | Low |
 | Waiting room | Pre-meeting holding area | Medium |
+| Email reminders | Send reminders before meeting | Medium |
+| Meeting templates | Save agenda templates | Low |
 
 ### 13.2 Technical Debt to Address
 
@@ -1995,6 +2438,12 @@ export interface CalendarEvent {
 
 ---
 
-*Document Version: 1.0*
+*Document Version: 2.1*
 *Created: December 2024*
+*Updated: December 2024*
 *Author: Implementation Plan*
+
+**Changelog**:
+- v2.1: Marked Phase 4 (Agenda for Scheduled Meetings) as completed. Added EditMeetingDialog component for editing scheduled meetings and their agendas.
+- v2.0: Added Phase 4 (Agenda for Scheduled Meetings) and Phase 5 (Email Invitations). Marked Phases 1-3 as completed.
+- v1.0: Initial plan with Phases 1-4 (Meeting Persistence, Calendar OAuth, Calendar Sync, Polish)

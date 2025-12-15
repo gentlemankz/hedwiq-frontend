@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, addDays } from "date-fns";
-import { Calendar as CalendarIcon, Loader2, ExternalLink } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  Loader2,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  ListTodo,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,13 +37,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { TIME_OPTIONS, draftItemsToApiInput } from "@/lib/utils/meeting-form";
 import { DURATION_OPTIONS, MEETING_LIMITS } from "@/types/meeting";
 import {
   getMeetingFieldErrors,
   hasMeetingFieldErrors,
 } from "@/lib/validation/meeting";
 import type { CalendarIntegrationPublic } from "@/types/calendar";
+import type { DraftAgendaItem } from "@/types/agenda";
+import { AgendaBuilder } from "@/app/meetings/[roomId]/components/agenda-builder";
 
 interface ScheduleMeetingDialogProps {
   open: boolean;
@@ -48,21 +63,6 @@ interface ScheduleMeetingDialogProps {
   } | null;
 }
 
-// Generate time options (30 min intervals)
-// Use static string formatting to avoid Date object creation on module load
-const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
-  const hour = Math.floor(i / 2);
-  const minute = (i % 2) * 30;
-  const value = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
-
-  // Format as 12-hour time without creating Date objects
-  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-  const ampm = hour < 12 ? "AM" : "PM";
-  const label = `${hour12}:${minute.toString().padStart(2, "0")} ${ampm}`;
-
-  return { value, label };
-});
-
 export function ScheduleMeetingDialog({
   open,
   onOpenChange,
@@ -71,6 +71,18 @@ export function ScheduleMeetingDialog({
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // Ref for timeout cleanup to prevent memory leaks
+  const successTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Calendar state
   const [calendarStatus, setCalendarStatus] = useState(initialCalendarStatus);
@@ -91,6 +103,10 @@ export function ScheduleMeetingDialog({
   const [date, setDate] = useState<Date | undefined>(addDays(new Date(), 1));
   const [time, setTime] = useState("10:00");
   const [duration, setDuration] = useState(30);
+
+  // Agenda state
+  const [agendaItems, setAgendaItems] = useState<DraftAgendaItem[]>([]);
+  const [agendaExpanded, setAgendaExpanded] = useState(false);
 
   // Validation state
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -159,6 +175,10 @@ export function ScheduleMeetingDialog({
       const scheduledAt = new Date(date);
       scheduledAt.setHours(hours, minutes, 0, 0);
 
+      // Prepare agenda items for API (convert DraftAgendaItem to AgendaItemInput)
+      const agendaItemsInput =
+        agendaItems.length > 0 ? draftItemsToApiInput(agendaItems) : undefined;
+
       // Create meeting via API
       const response = await fetch("/api/meetings", {
         method: "POST",
@@ -170,6 +190,7 @@ export function ScheduleMeetingDialog({
           scheduledAt: scheduledAt.toISOString(),
           durationMinutes: duration,
           addToCalendar: addToCalendar && calendarStatus?.connected,
+          agendaItems: agendaItemsInput,
         }),
       });
 
@@ -193,7 +214,8 @@ export function ScheduleMeetingDialog({
       if (data.calendarSync?.synced && data.calendarSync?.eventLink) {
         setIsSuccess(true);
         // Auto-close after 2 seconds to show the calendar link
-        setTimeout(() => {
+        // Store timeout ref for cleanup on unmount
+        successTimeoutRef.current = setTimeout(() => {
           resetForm();
           onOpenChange(false);
           router.refresh();
@@ -220,6 +242,8 @@ export function ScheduleMeetingDialog({
     setDate(addDays(new Date(), 1));
     setTime("10:00");
     setDuration(30);
+    setAgendaItems([]);
+    setAgendaExpanded(false);
     setTouched({});
     setApiError(null);
     setCalendarSyncResult(null);
@@ -391,11 +415,11 @@ export function ScheduleMeetingDialog({
             <Label htmlFor="meeting-description">Description (optional)</Label>
             <Textarea
               id="meeting-description"
-              placeholder="Add meeting details, agenda, or notes..."
+              placeholder="Add meeting details or notes..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onBlur={() => handleBlur("description")}
-              rows={3}
+              rows={2}
               maxLength={MEETING_LIMITS.MAX_DESCRIPTION_LENGTH}
               aria-invalid={!!visibleErrors.description}
               aria-describedby={
@@ -412,6 +436,49 @@ export function ScheduleMeetingDialog({
               characters
             </p>
           </div>
+
+          {/* Meeting Agenda */}
+          <Collapsible open={agendaExpanded} onOpenChange={setAgendaExpanded}>
+            <div className="rounded-lg border">
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <ListTodo className="size-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">
+                      Meeting Agenda
+                      {agendaItems.length > 0 && (
+                        <span className="ml-2 text-muted-foreground font-normal">
+                          ({agendaItems.length} topic
+                          {agendaItems.length !== 1 ? "s" : ""})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {agendaExpanded ? (
+                    <ChevronUp className="size-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="size-4 text-muted-foreground" />
+                  )}
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="border-t px-4 pb-4 pt-2">
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Add topics to help structure your meeting. The AI will
+                    automatically track discussion progress during the call.
+                  </p>
+                  <AgendaBuilder
+                    items={agendaItems}
+                    onChange={setAgendaItems}
+                    disabled={isSubmitting}
+                  />
+                </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
 
           {/* Google Calendar Integration */}
           <div className="rounded-lg border p-4">

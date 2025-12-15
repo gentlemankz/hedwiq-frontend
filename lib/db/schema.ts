@@ -118,6 +118,10 @@ export const document = pgTable("document", {
 /**
  * Meeting Agendas - One per room, created by the meeting organizer.
  * Used for automatic topic tracking during meetings.
+ *
+ * Agendas can be linked to rooms OR meetings:
+ * - roomId: For instant meetings (agenda created in pre-join screen)
+ * - meetingId: For scheduled meetings (agenda created during scheduling)
  */
 export const agenda = pgTable(
   "agenda",
@@ -130,6 +134,14 @@ export const agenda = pgTable(
     createdBy: text("created_by")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    /**
+     * Meeting ID - links agenda to a scheduled meeting (optional).
+     * When set, this agenda was created during meeting scheduling.
+     * Allows agenda to be preserved and shown in pre-join.
+     */
+    meetingId: text("meeting_id").references(() => meeting.id, {
+      onDelete: "cascade",
+    }),
     /** Meeting name/title (e.g., "Marketing Team. Production") */
     meetingName: text("meeting_name"),
     /** Scheduled meeting time (for display in header) */
@@ -152,7 +164,10 @@ export const agenda = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (table) => [index("idx_agenda_room").on(table.roomId)]
+  (table) => [
+    index("idx_agenda_room").on(table.roomId),
+    index("idx_agenda_meeting").on(table.meetingId),
+  ]
 );
 
 /**
@@ -360,5 +375,63 @@ export const calendarEvent = pgTable(
       table.meetingId,
       table.integrationId
     ),
+  ]
+);
+
+// ============================================================================
+// Meeting Invitee Tables
+// ============================================================================
+
+/**
+ * Meeting Invitee - Tracks invitations sent for meetings.
+ * Enables email invitations with RSVP tracking.
+ */
+export const meetingInvitee = pgTable(
+  "meeting_invitee",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** Meeting this invitation is for */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+
+    // Invitee info
+    /** Email address of the invitee */
+    email: text("email").notNull(),
+    /** Display name of the invitee (optional) */
+    name: text("name"),
+
+    // RSVP status: 'pending' | 'accepted' | 'declined' | 'tentative'
+    /** Current RSVP status */
+    status: text("status").notNull().default("pending"),
+    /** When the invitee responded */
+    respondedAt: timestamp("responded_at"),
+
+    // Invitation tracking
+    /** When the invitation was sent */
+    invitedAt: timestamp("invited_at").notNull().defaultNow(),
+    /** User who sent the invitation */
+    invitedBy: text("invited_by")
+      .notNull()
+      .references(() => user.id),
+
+    // Email tracking
+    /** When the email was sent */
+    emailSentAt: timestamp("email_sent_at"),
+    /** When the email was opened (if tracking enabled) */
+    emailOpenedAt: timestamp("email_opened_at"),
+
+    /** Token for RSVP without authentication */
+    rsvpToken: text("rsvp_token").unique(),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_meeting_invitee_meeting").on(table.meetingId),
+    index("idx_meeting_invitee_email").on(table.email),
+    index("idx_meeting_invitee_status").on(table.status),
+    uniqueIndex("idx_meeting_invitee_unique").on(table.meetingId, table.email),
   ]
 );

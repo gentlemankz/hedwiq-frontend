@@ -24,6 +24,14 @@ const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
 // ============================================================================
 
 /**
+ * Agenda item for calendar event description.
+ */
+export interface CalendarAgendaItem {
+  title: string;
+  estimatedDuration?: number | null;
+}
+
+/**
  * Input for creating a Google Calendar event.
  */
 export interface CreateGoogleEventInput {
@@ -41,6 +49,8 @@ export interface CreateGoogleEventInput {
   meetingLink: string;
   /** Meeting room ID for reference */
   roomId: string;
+  /** Agenda items to include in description */
+  agendaItems?: CalendarAgendaItem[];
 }
 
 /**
@@ -215,14 +225,31 @@ export async function createGoogleCalendarEvent(
 
   const { accessToken, integrationId } = tokenData;
 
-  // Build event description with meeting link
+  // Format agenda items if provided
+  const agendaSection =
+    input.agendaItems && input.agendaItems.length > 0
+      ? [
+          "",
+          "Agenda:",
+          ...input.agendaItems.map((item, index) => {
+            const duration = item.estimatedDuration
+              ? ` (${item.estimatedDuration} min)`
+              : "";
+            return `${index + 1}. ${item.title}${duration}`;
+          }),
+        ].join("\n")
+      : "";
+
+  // Build event description with meeting link and agenda
   const description = [
     input.description || "",
+    agendaSection,
     "",
     "---",
     `Join Hedwiq Meeting: ${input.meetingLink}`,
     `Room ID: ${input.roomId}`,
   ]
+    .filter(Boolean)
     .join("\n")
     .trim();
 

@@ -30,6 +30,7 @@ import { getInitials } from "@/lib/utils";
 import {
   MeetingTypeSelector,
   ScheduleMeetingDialog,
+  EditMeetingDialog,
   MeetingList,
 } from "@/components/meetings";
 import { CalendarStatusCard } from "@/components/calendar";
@@ -55,6 +56,8 @@ export function DashboardClient({
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
   const [isNewMeetingDialogOpen, setIsNewMeetingDialogOpen] = useState(false);
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [meetingToEdit, setMeetingToEdit] = useState<Meeting | null>(null);
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
   const [instantMeetingError, setInstantMeetingError] = useState<string | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
@@ -205,6 +208,16 @@ export function DashboardClient({
 
   const handleMeetingDeleted = () => {
     // Refresh meetings list
+    fetchMeetings();
+  };
+
+  const handleEditMeeting = (meeting: Meeting) => {
+    setMeetingToEdit(meeting);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleMeetingUpdated = () => {
+    // Refresh meetings list after edit
     fetchMeetings();
   };
 
@@ -474,6 +487,7 @@ export function DashboardClient({
             <MeetingList
               meetings={meetings}
               calendarEvents={calendarEvents}
+              onEdit={handleEditMeeting}
               onDeleted={handleMeetingDeleted}
               emptyMessage="No upcoming meetings. Click 'New Meeting' to create one."
             />
@@ -491,6 +505,21 @@ export function DashboardClient({
                 fetchMeetings();
               }
             }}
+          />
+        )}
+
+        {/* Edit Meeting Dialog */}
+        {isMounted && meetingToEdit && (
+          <EditMeetingDialog
+            open={isEditDialogOpen}
+            onOpenChange={(open) => {
+              setIsEditDialogOpen(open);
+              if (!open) {
+                setMeetingToEdit(null);
+              }
+            }}
+            meeting={meetingToEdit}
+            onUpdated={handleMeetingUpdated}
           />
         )}
       </div>

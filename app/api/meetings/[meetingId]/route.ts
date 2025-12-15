@@ -7,13 +7,20 @@ import {
   deleteMeeting,
   isMeetingHost,
 } from "@/lib/db/meeting";
+import {
+  getAgendaByMeetingId,
+  createAgenda,
+  upsertAgenda,
+} from "@/lib/db/agenda";
 import { validateUpdateMeetingRequest } from "@/lib/validation/meeting";
+import { validateAgendaItems } from "@/lib/validation/agenda";
 import {
   updateMeetingCalendarEvent,
   deleteMeetingCalendarEvent,
   removeCalendarEventForDeletedMeeting,
 } from "@/lib/calendar-sync";
 import type { MeetingStatus, MeetingSettings } from "@/types/meeting";
+import type { AgendaItemInput } from "@/types/agenda";
 
 /**
  * GET /api/meetings/[meetingId]
@@ -50,7 +57,10 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    return NextResponse.json({ meeting });
+    // Fetch agenda if exists (for editing purposes)
+    const agenda = await getAgendaByMeetingId(meetingId);
+
+    return NextResponse.json({ meeting, agenda });
   } catch (error) {
     console.error("Get meeting error:", error);
     return NextResponse.json(
@@ -109,6 +119,7 @@ export async function PATCH(
     timezone?: string;
     status?: string;
     settings?: MeetingSettings;
+    agendaItems?: AgendaItemInput[];
   };
 
   try {
@@ -138,6 +149,55 @@ export async function PATCH(
       return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
     }
 
+    // Handle agenda items if provided
+    let agenda = null;
+    let agendaError: string | undefined;
+    if (body.agendaItems !== undefined) {
+      // Validate agenda items
+      if (body.agendaItems.length > 0) {
+        const agendaValidation = validateAgendaItems(body.agendaItems);
+        if (!agendaValidation.isValid) {
+          agendaError = agendaValidation.error;
+        }
+      }
+
+      if (!agendaError) {
+        try {
+          // Check if agenda exists for this meeting
+          const existingAgenda = await getAgendaByMeetingId(meetingId);
+
+          if (existingAgenda) {
+            // Update existing agenda using upsertAgenda (which uses roomId)
+            agenda = await upsertAgenda(
+              meeting.roomId,
+              session.user.id,
+              body.agendaItems,
+              {
+                meetingId: meetingId,
+                meetingName: meeting.title,
+                scheduledAt: meeting.scheduledAt ?? undefined,
+              }
+            );
+          } else if (body.agendaItems.length > 0) {
+            // Create new agenda for this meeting
+            agenda = await createAgenda(
+              meeting.roomId,
+              session.user.id,
+              body.agendaItems,
+              {
+                meetingId: meetingId,
+                meetingName: meeting.title,
+                scheduledAt: meeting.scheduledAt ?? undefined,
+              }
+            );
+          }
+        } catch (err) {
+          console.error("Agenda update failed:", err);
+          agendaError = err instanceof Error ? err.message : "Failed to update agenda";
+        }
+      }
+    }
+
     // Sync changes to Google Calendar
     let calendarSync: { success: boolean; eventLink?: string | null; error?: string } | null = null;
 
@@ -155,6 +215,8 @@ export async function PATCH(
 
     return NextResponse.json({
       meeting,
+      agenda,
+      agendaError,
       calendarSync: calendarSync
         ? {
             synced: calendarSync.success,

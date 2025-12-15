@@ -71,6 +71,38 @@ export async function getAgendaByRoomId(
 }
 
 /**
+ * Gets an agenda by meeting ID.
+ * Returns null if no agenda exists for the meeting.
+ * Used for scheduled meetings where agenda is created during scheduling.
+ */
+export async function getAgendaByMeetingId(
+  meetingId: string
+): Promise<AgendaWithItems | null> {
+  const [result] = await db
+    .select()
+    .from(agenda)
+    .where(eq(agenda.meetingId, meetingId))
+    .limit(1);
+
+  if (!result) {
+    return null;
+  }
+
+  const agendaData = mapDbAgendaToAgenda(result);
+
+  const items = await db
+    .select()
+    .from(agendaItem)
+    .where(eq(agendaItem.agendaId, agendaData.id))
+    .orderBy(asc(agendaItem.orderIndex));
+
+  return {
+    ...agendaData,
+    items: items.map(mapDbAgendaItemToAgendaItem),
+  };
+}
+
+/**
  * Gets an agenda with all its items by room ID.
  * Returns null if no agenda exists for the room.
  */
@@ -139,6 +171,8 @@ interface UpsertAgendaOptions {
   meetingName?: string;
   /** Scheduled meeting time (optional, Date or ISO string) */
   scheduledAt?: Date | string;
+  /** Meeting ID for linking to scheduled meetings (optional) */
+  meetingId?: string;
 }
 
 /**
@@ -207,6 +241,7 @@ export async function createAgenda(
       id: agendaId,
       roomId,
       createdBy,
+      meetingId: options?.meetingId ?? null,
       meetingName: options?.meetingName ?? null,
       scheduledAt,
       itemCount: items.length,
@@ -742,6 +777,7 @@ function mapDbAgendaToAgenda(row: typeof agenda.$inferSelect): Agenda {
     id: row.id,
     roomId: row.roomId,
     createdBy: row.createdBy,
+    meetingId: row.meetingId ?? null,
     meetingName: row.meetingName ?? null,
     scheduledAt: row.scheduledAt?.toISOString() ?? null,
     itemCount: row.itemCount,

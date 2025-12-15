@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { createMeeting, listMeetingsByHost } from "@/lib/db/meeting";
+import { createAgenda } from "@/lib/db/agenda";
 import { validateCreateMeetingRequest } from "@/lib/validation/meeting";
+import { validateAgendaItems } from "@/lib/validation/agenda";
 import { syncMeetingToCalendar } from "@/lib/calendar-sync";
 import type { MeetingType, MeetingSettings } from "@/types/meeting";
+import type { AgendaItemInput } from "@/types/agenda";
 
 /**
  * GET /api/meetings
@@ -120,6 +123,7 @@ export async function POST(request: NextRequest) {
     timezone?: string;
     settings?: MeetingSettings;
     addToCalendar?: boolean;
+    agendaItems?: AgendaItemInput[];
   };
 
   try {
@@ -146,6 +150,42 @@ export async function POST(request: NextRequest) {
       settings: body.settings,
     });
 
+    // Create agenda if items were provided
+    let agenda = null;
+    if (body.agendaItems && body.agendaItems.length > 0) {
+      // Validate agenda items before creation
+      const agendaValidation = validateAgendaItems(body.agendaItems);
+      if (!agendaValidation.isValid) {
+        // Return error if agenda items are invalid
+        // Note: Meeting was already created, but agenda creation failed
+        // We could consider wrapping both in a transaction for atomicity
+        return NextResponse.json(
+          {
+            meeting,
+            agenda: null,
+            agendaError: agendaValidation.error,
+          },
+          { status: 201 }
+        );
+      }
+
+      try {
+        agenda = await createAgenda(
+          meeting.roomId,
+          session.user.id,
+          body.agendaItems,
+          {
+            meetingId: meeting.id,
+            meetingName: meeting.title,
+            scheduledAt: meeting.scheduledAt ?? undefined,
+          }
+        );
+      } catch (agendaError) {
+        console.error("Agenda creation failed:", agendaError);
+        // Don't fail the meeting creation, just log the warning
+      }
+    }
+
     // Sync to Google Calendar if requested
     // NOTE: Calendar sync is only supported for scheduled meetings, not instant meetings
     // (instant meetings don't have a scheduled time to add to the calendar)
@@ -161,6 +201,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         meeting,
+        agenda,
         calendarSync: calendarSync
           ? {
               synced: calendarSync.success,

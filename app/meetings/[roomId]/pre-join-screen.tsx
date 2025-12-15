@@ -1,18 +1,20 @@
 "use client";
 
-import { useCallback, useState, useMemo } from "react";
+import { useCallback, useState, useMemo, useEffect, startTransition } from "react";
 import { LocalUserChoices } from "@livekit/components-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar, Info } from "lucide-react";
 import Link from "next/link";
 import { useMediaDevices } from "@/hooks/use-media-devices";
 import { sanitizeUsername } from "@/lib/validation";
 import type { User } from "@/types/user";
 import type { UploadedDocument } from "@/types/document";
-import type { DraftAgendaItem } from "@/types/agenda";
+import type { DraftAgendaItem, AgendaWithItems } from "@/types/agenda";
+import type { Meeting } from "@/types/meeting";
 import { VideoPreview } from "./components/video-preview";
 import { MediaControls } from "./components/media-controls";
 import { UsernameForm } from "./components/username-form";
@@ -66,12 +68,28 @@ export interface UserChoices extends LocalUserChoices {
   scheduledAt?: Date;
 }
 
+/**
+ * Pre-loaded meeting data from API.
+ * Used to pre-populate the pre-join form for scheduled meetings.
+ */
+export interface MeetingData {
+  /** Meeting object if a scheduled meeting exists */
+  meeting: Meeting | null;
+  /** Agenda with items if it exists */
+  agenda: AgendaWithItems | null;
+  /** Pre-converted agenda items in draft format */
+  initialAgendaItems?: DraftAgendaItem[];
+}
+
 interface PreJoinScreenProps {
   roomId: string;
   user: User;
   onSubmit: (choices: UserChoices) => void;
   isConnecting: boolean;
+  isLoadingMeetingData?: boolean;
   error: string | null;
+  /** Pre-loaded meeting data for scheduled meetings */
+  meetingData?: MeetingData | null;
 }
 
 // ============================================================================
@@ -90,7 +108,9 @@ export function PreJoinScreen({
   user,
   onSubmit,
   isConnecting,
+  isLoadingMeetingData = false,
   error,
+  meetingData,
 }: PreJoinScreenProps) {
   // Use custom hook for media device management
   const {
@@ -111,10 +131,13 @@ export function PreJoinScreen({
     stopAllStreams,
   } = useMediaDevices();
 
-  // Meeting info state
+  // Meeting info state - initialize from meeting data if available
   const [meetingName, setMeetingName] = useState("");
   // Initialize with current date, but store as stable reference
   const [scheduledAt, setScheduledAt] = useState<Date | null>(() => new Date());
+
+  // Track if we've initialized from meeting data
+  const [initializedFromMeetingData, setInitializedFromMeetingData] = useState(false);
 
   // Memoize formatted date for input to prevent unnecessary re-renders
   const formattedScheduledAt = useMemo(
@@ -142,6 +165,37 @@ export function PreJoinScreen({
   // Agenda state
   const [agendaItems, setAgendaItems] = useState<DraftAgendaItem[]>([]);
   const [isAgendaSectionExpanded, setIsAgendaSectionExpanded] = useState(false);
+
+  // Initialize form from meeting data when it loads
+  // Using startTransition to mark these updates as non-urgent (recommended pattern for async prop initialization)
+  useEffect(() => {
+    if (!initializedFromMeetingData && meetingData) {
+      startTransition(() => {
+        // Set meeting name from scheduled meeting
+        if (meetingData.meeting?.title) {
+          setMeetingName(meetingData.meeting.title);
+        } else if (meetingData.agenda?.meetingName) {
+          setMeetingName(meetingData.agenda.meetingName);
+        }
+
+        // Set scheduled time from meeting
+        if (meetingData.meeting?.scheduledAt) {
+          setScheduledAt(new Date(meetingData.meeting.scheduledAt));
+        } else if (meetingData.agenda?.scheduledAt) {
+          setScheduledAt(new Date(meetingData.agenda.scheduledAt));
+        }
+
+        // Set agenda items if they exist
+        if (meetingData.initialAgendaItems && meetingData.initialAgendaItems.length > 0) {
+          setAgendaItems(meetingData.initialAgendaItems);
+          // Auto-expand agenda section if items exist
+          setIsAgendaSectionExpanded(true);
+        }
+
+        setInitializedFromMeetingData(true);
+      });
+    }
+  }, [meetingData, initializedFromMeetingData]);
 
   // Handle document upload complete
   const handleDocumentUploadComplete = useCallback((doc: UploadedDocument) => {
@@ -254,40 +308,60 @@ export function PreJoinScreen({
 
           {/* Meeting Info Section */}
           <div className="space-y-4 border rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Calendar className="size-5 text-muted-foreground" />
-              <span className="font-medium">Meeting Details</span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="size-5 text-muted-foreground" />
+                <span className="font-medium">Meeting Details</span>
+              </div>
+              {meetingData?.meeting && (
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                  Scheduled Meeting
+                </span>
+              )}
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="meeting-name">Meeting Name</Label>
-                <Input
-                  id="meeting-name"
-                  placeholder="e.g., Marketing Team Standup"
-                  value={meetingName}
-                  onChange={(e) => handleMeetingNameChange(e.target.value)}
-                  disabled={isConnecting}
-                  maxLength={MAX_MEETING_NAME_LENGTH}
-                />
-                {meetingName.length > 0 && (
-                  <p className="text-xs text-muted-foreground text-right">
-                    {meetingName.length}/{MAX_MEETING_NAME_LENGTH}
-                  </p>
-                )}
+            {isLoadingMeetingData ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
               </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="meeting-name">Meeting Name</Label>
+                  <Input
+                    id="meeting-name"
+                    placeholder="e.g., Marketing Team Standup"
+                    value={meetingName}
+                    onChange={(e) => handleMeetingNameChange(e.target.value)}
+                    disabled={isConnecting || !!meetingData?.meeting}
+                    maxLength={MAX_MEETING_NAME_LENGTH}
+                  />
+                  {meetingName.length > 0 && !meetingData?.meeting && (
+                    <p className="text-xs text-muted-foreground text-right">
+                      {meetingName.length}/{MAX_MEETING_NAME_LENGTH}
+                    </p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="scheduled-time">Scheduled Time</Label>
-                <Input
-                  id="scheduled-time"
-                  type="datetime-local"
-                  value={formattedScheduledAt}
-                  onChange={(e) => handleScheduledAtChange(e.target.value)}
-                  disabled={isConnecting}
-                />
+                <div className="space-y-2">
+                  <Label htmlFor="scheduled-time">Scheduled Time</Label>
+                  <Input
+                    id="scheduled-time"
+                    type="datetime-local"
+                    value={formattedScheduledAt}
+                    onChange={(e) => handleScheduledAtChange(e.target.value)}
+                    disabled={isConnecting || !!meetingData?.meeting}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Meeting Agenda Section (Collapsible) */}
@@ -306,6 +380,11 @@ export function PreJoinScreen({
                       ({agendaItems.length} topic{agendaItems.length !== 1 ? "s" : ""})
                     </span>
                   )}
+                  {meetingData?.agenda && meetingData.agenda.status !== "draft" && (
+                    <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">
+                      Published
+                    </span>
+                  )}
                 </div>
               </div>
               {isAgendaSectionExpanded ? (
@@ -317,15 +396,38 @@ export function PreJoinScreen({
 
             {isAgendaSectionExpanded && (
               <div className="border-t p-4">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Create an agenda to help structure your meeting. The AI will automatically
-                  track topic progress during the meeting.
-                </p>
-                <AgendaBuilder
-                  items={agendaItems}
-                  onChange={handleAgendaChange}
-                  disabled={isConnecting}
-                />
+                {isLoadingMeetingData ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                  </div>
+                ) : (
+                  <>
+                    {meetingData?.meeting && (
+                      <div className="flex items-start gap-2 rounded-md bg-blue-50 dark:bg-blue-950 p-3 text-xs text-blue-700 dark:text-blue-300 mb-4">
+                        <Info className="size-4 shrink-0 mt-0.5" />
+                        <p>
+                          This agenda was created during meeting scheduling.
+                          {meetingData.agenda?.status !== "draft"
+                            ? " It has already been published and cannot be modified."
+                            : " You can edit it before joining."}
+                        </p>
+                      </div>
+                    )}
+                    {!meetingData?.meeting && (
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Create an agenda to help structure your meeting. The AI will automatically
+                        track topic progress during the meeting.
+                      </p>
+                    )}
+                    <AgendaBuilder
+                      items={agendaItems}
+                      onChange={handleAgendaChange}
+                      disabled={isConnecting || (meetingData?.agenda?.status !== "draft" && meetingData?.agenda?.status !== undefined)}
+                    />
+                  </>
+                )}
               </div>
             )}
           </div>

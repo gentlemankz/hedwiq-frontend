@@ -52,11 +52,15 @@ frontend/
 │   │   ├── meetings/                 # Meeting CRUD API (Phase 1 Scheduling)
 │   │   │   ├── route.ts              # GET (list), POST (create) meetings
 │   │   │   └── [meetingId]/
-│   │   │       └── route.ts          # GET, PATCH, DELETE single meeting
+│   │   │       ├── route.ts          # GET, PATCH, DELETE single meeting
+│   │   │       └── calendar.ics/
+│   │   │           └── route.ts      # ICS calendar file download endpoint
 │   │   └── rooms/
 │   │       └── [roomId]/
 │   │           ├── access/
 │   │           │   └── route.ts      # Room participation recording endpoint
+│   │           ├── meeting/
+│   │           │   └── route.ts      # Get meeting + agenda for pre-join screen
 │   │           └── agenda/           # Meeting agenda lifecycle
 │   │               ├── publish/
 │   │               │   └── route.ts  # Publish draft agenda (locks items)
@@ -100,7 +104,8 @@ frontend/
 │   ├── meetings/                     # Meeting scheduling components (Phase 1)
 │   │   ├── index.ts                  # Barrel export
 │   │   ├── meeting-type-selector.tsx # Instant vs Scheduled picker
-│   │   ├── schedule-meeting-dialog.tsx # Full scheduling dialog
+│   │   ├── schedule-meeting-dialog.tsx # Full scheduling dialog with agenda
+│   │   ├── edit-meeting-dialog.tsx   # Edit meeting dialog with agenda editing
 │   │   ├── meeting-card.tsx          # Meeting in list view with actions
 │   │   └── meeting-list.tsx          # List of meetings (upcoming/past)
 │   ├── transcription/                # Real-time transcription components
@@ -131,12 +136,20 @@ frontend/
 ├── lib/
 │   ├── auth.ts                       # Better Auth server configuration
 │   ├── auth-client.ts                # Better Auth client configuration
+│   ├── calendar/                     # Calendar utilities (ICS, provider links)
+│   │   ├── index.ts                  # Barrel export
+│   │   ├── ics.ts                    # ICS file generation for meetings
+│   │   ├── links.ts                  # Add-to-calendar links (Google, Outlook, Yahoo)
+│   │   └── utils.ts                  # Shared calendar formatting utilities
+│   ├── calendar-sync.ts              # Google Calendar sync for meetings
+│   ├── google-calendar.ts            # Google Calendar API integration
 │   ├── db/                           # Drizzle ORM setup
-│   │   ├── agenda.ts                 # Agenda CRUD + publish/reorder helpers
+│   │   ├── agenda.ts                 # Agenda CRUD + publish/reorder + meetingId lookup
 │   │   ├── meeting.ts                # Meeting CRUD (Phase 1 scheduling)
 │   │   ├── index.ts                  # Database connection
 │   │   ├── schema.ts                 # Schema: user, session, account, verification,
-│   │   │                             #         roomParticipant, document, agenda, meeting
+│   │   │                             #         roomParticipant, document, agenda, meeting,
+│   │   │                             #         meetingInvitee, calendarEvent
 │   │   ├── room-access.ts            # Room participation CRUD utilities
 │   │   └── migrations/               # SQL migrations
 │   │       ├── 0000_shallow_freak.sql
@@ -145,12 +158,16 @@ frontend/
 │   │       ├── 0003_flat_black_bolt.sql          # agenda + agenda_item tables
 │   │       ├── 0004_rls_agenda_tables.sql        # RLS policies for agenda tables
 │   │       ├── 0006_add_meeting_table.sql        # meeting table (Phase 1)
+│   │       ├── 0009_add_agenda_meeting_id.sql    # Link agenda to meeting
+│   │       ├── 0010_add_meeting_invitee_table.sql # Meeting invitees + RSVP
 │   │       └── meta/                 # Migration metadata
 │   ├── supabase/                     # Supabase Storage integration
 │   │   ├── index.ts                  # Barrel export + STORAGE_BUCKETS/PATHS
 │   │   ├── client.ts                 # Browser client (anon key)
 │   │   └── server.ts                 # Server client + signed URLs, upload/download
 │   ├── utils.ts                      # Utility functions (cn helper, etc.)
+│   ├── utils/                        # Shared utility modules
+│   │   └── meeting-form.ts           # Meeting form utilities (TIME_OPTIONS, agenda converters)
 │   ├── validation.ts                 # Zod validation schemas
 │   └── validation/                   # Validation utilities
 │       ├── agenda.ts                 # Agenda input/field validation (shared UI + API)
@@ -159,6 +176,7 @@ frontend/
 │   ├── agenda.ts                     # Agenda + agenda item + LiveKit event types
 │   ├── document.ts                   # Document + DocumentReference + BoundingBox types
 │   ├── insight.ts                    # AI insight types
+│   ├── invitee.ts                    # Meeting invitee + RSVP types
 │   ├── meeting.ts                    # Meeting types + constants (Phase 1 scheduling)
 │   └── user.ts                       # User-related types
 ├── docs/                             # Project documentation
@@ -167,6 +185,8 @@ frontend/
 │   ├── startup-info.md               # Startup context
 │   ├── DOCUMENT_REFERENCE_PLAN.md    # Document feature plan
 │   ├── PHASE2_INSIGHTS_PLAN.md       # AI insights implementation plan
+│   ├── MEETING_SCHEDULING_CALENDAR_PLAN.md # Calendar sync + scheduling plan
+│   ├── CODE_REVIEW_SCHEDULE_CALENDAR.md # Code review for schedule-calendar branch
 │   ├── better-auth-llm.txt           # Better Auth reference docs
 │   ├── livekit-llm.txt               # LiveKit reference docs
 │   └── AGENDA_PHASE2_CODE_REVIEW.md  # Code review for Phase 2 agenda builder
@@ -177,7 +197,7 @@ frontend/
 │   ├── lib/validation/agenda.test.ts # Agenda validation tests
 │   ├── types/agenda.test.ts          # Agenda types tests
 │   ├── components/agenda-builder/agenda-builder.test.tsx # Agenda builder UI tests
-│   └── components/meeting-room/join-sequencing.test.tsx  # Join order + agenda metadata
+│   ├── components/meeting-room/join-sequencing.test.tsx  # Join order + agenda metadata
 │   └── setup.ts                      # Vitest setup
 ├── public/                           # Static assets
 │   ├── pdf.worker.min.mjs            # PDF.js worker for react-pdf

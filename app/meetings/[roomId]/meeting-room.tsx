@@ -4,10 +4,11 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { LiveKitRoom } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { RoomOptions, VideoPresets } from "livekit-client";
-import { PreJoinScreen, UserChoices } from "./pre-join-screen";
+import { PreJoinScreen, UserChoices, MeetingData } from "./pre-join-screen";
 import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
 import { DocumentsProvider } from "@/contexts/documents-context";
+import { agendaItemsToDraft } from "@/lib/utils/meeting-form";
 import type { User } from "@/types/user";
 import type { AgendaItemInput, AgendaPublishResponse } from "@/types/agenda";
 
@@ -22,8 +23,41 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Meeting data loaded from API
+  const [meetingData, setMeetingData] = useState<MeetingData | null>(null);
+  const [isLoadingMeetingData, setIsLoadingMeetingData] = useState(true);
+
   // Use AbortController to cancel in-flight requests and prevent race conditions
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Fetch meeting data on mount
+  useEffect(() => {
+    async function fetchMeetingData() {
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/meeting`);
+        if (response.ok) {
+          const data = await response.json();
+
+          // Convert agenda items to draft format using shared utility
+          const initialAgendaItems = agendaItemsToDraft(data.agenda);
+
+          setMeetingData({
+            meeting: data.meeting,
+            agenda: data.agenda,
+            initialAgendaItems:
+              initialAgendaItems.length > 0 ? initialAgendaItems : undefined,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch meeting data:", err);
+        // Don't set error - meeting data is optional
+      } finally {
+        setIsLoadingMeetingData(false);
+      }
+    }
+
+    fetchMeetingData();
+  }, [roomId]);
 
   // Cleanup abort controller on unmount
   useEffect(() => {
@@ -209,7 +243,9 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         user={user}
         onSubmit={handlePreJoinSubmit}
         isConnecting={isConnecting}
+        isLoadingMeetingData={isLoadingMeetingData}
         error={error}
+        meetingData={meetingData}
       />
     );
   }
