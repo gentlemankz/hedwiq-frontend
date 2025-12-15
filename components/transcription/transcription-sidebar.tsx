@@ -11,14 +11,17 @@ import { useRoomContext } from "@livekit/components-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn, getInitials, getHashedAvatar } from "@/lib/utils";
 import { FileText, ChevronDown } from "lucide-react";
 import { useInsights } from "@/hooks/use-insights";
 import { InsightBadge } from "@/components/insights/insight-badge";
 import { DocumentReferenceBadge } from "@/components/documents/document-reference-badge";
+import { AddTranscriptNotePopover } from "@/components/transcript-notes";
 import { useDocumentsContext } from "@/contexts/documents-context";
 import type { Insight } from "@/types/insight";
 import type { DocumentReference } from "@/types/document";
+import type { TranscriptReference } from "@/types/transcript-note";
 
 // ============================================================================
 // Constants
@@ -121,6 +124,10 @@ interface TranscriptionSidebarProps {
   onInsightClick?: (insight: Insight) => void;
   /** Callback when a document reference is clicked */
   onDocumentReferenceClick?: (reference: DocumentReference) => void;
+  /** Callback when a note is added from a transcript entry */
+  onAddNote?: (reference: TranscriptReference, content: string) => void;
+  /** Function to check if a transcript has notes */
+  hasNotesForTranscript?: (transcriptId: string) => boolean;
 }
 
 // ============================================================================
@@ -131,6 +138,8 @@ export function TranscriptionSidebar({
   className,
   onInsightClick,
   onDocumentReferenceClick,
+  onAddNote,
+  hasNotesForTranscript,
 }: TranscriptionSidebarProps) {
   const room = useRoomContext();
   const isMountedRef = useRef(true);
@@ -289,6 +298,8 @@ export function TranscriptionSidebar({
                   documentReferences={getReferencesForTranscript(entry.id)}
                   onDocumentReferenceClick={onDocumentReferenceClick}
                   getDocumentTitle={(docId) => getDocument(docId)?.title}
+                  onAddNote={onAddNote}
+                  hasNotes={hasNotesForTranscript?.(entry.id)}
                 />
               ))}
 
@@ -338,6 +349,10 @@ interface TranscriptionMessageProps {
   onDocumentReferenceClick?: (reference: DocumentReference) => void;
   /** Function to get document title by ID */
   getDocumentTitle?: (docId: string) => string | undefined;
+  /** Callback when a note is added from this transcript entry */
+  onAddNote?: (reference: TranscriptReference, content: string) => void;
+  /** Whether this transcript entry has notes attached */
+  hasNotes?: boolean;
 }
 
 const TranscriptionMessage = React.memo(function TranscriptionMessage({
@@ -348,11 +363,13 @@ const TranscriptionMessage = React.memo(function TranscriptionMessage({
   documentReferences = [],
   onDocumentReferenceClick,
   getDocumentTitle,
+  onAddNote,
+  hasNotes,
 }: TranscriptionMessageProps) {
   const hasBadges = insights.length > 0 || documentReferences.length > 0;
 
   return (
-    <div className={cn("flex gap-3", isInterim && "opacity-60")}>
+    <div className={cn("group flex gap-3", isInterim && "opacity-60")}>
       <Avatar className="size-8 shrink-0">
         <AvatarImage
           src={getHashedAvatar(entry.participantIdentity)}
@@ -363,14 +380,30 @@ const TranscriptionMessage = React.memo(function TranscriptionMessage({
         </AvatarFallback>
       </Avatar>
       <div className="flex-1 space-y-1">
-        <p className="text-sm font-medium leading-none">
-          {entry.participantName}
-          {isInterim && (
-            <span className="ml-2 text-xs text-muted-foreground italic">
-              typing...
-            </span>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium leading-none">
+            {entry.participantName}
+            {isInterim && (
+              <span className="ml-2 text-xs text-muted-foreground italic">
+                typing...
+              </span>
+            )}
+          </p>
+          {/* Add note button - only show for final transcriptions */}
+          {!isInterim && onAddNote && (
+            <TooltipProvider delayDuration={0}>
+              <AddTranscriptNotePopover
+                transcriptId={entry.id}
+                participantIdentity={entry.participantIdentity}
+                participantName={entry.participantName}
+                transcriptText={entry.text}
+                transcriptTimestamp={entry.timestamp}
+                onAddNote={onAddNote}
+                hasNotes={hasNotes}
+              />
+            </TooltipProvider>
           )}
-        </p>
+        </div>
         <p className={cn("text-sm text-foreground", isInterim && "italic")}>
           {entry.text}
         </p>

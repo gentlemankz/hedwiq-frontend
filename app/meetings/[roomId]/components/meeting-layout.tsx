@@ -20,8 +20,10 @@ import {
 import { PanelRightClose, PanelLeftClose } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAgenda } from "@/hooks/use-agenda";
+import { useBlockNotes } from "@/hooks/use-block-notes";
 import type { Insight } from "@/types/insight";
 import type { DocumentReference } from "@/types/document";
+import type { TranscriptReference } from "@/types/transcript-note";
 
 /** Enable debug logging (disabled in production) */
 const DEBUG = process.env.NODE_ENV === "development";
@@ -87,6 +89,34 @@ function MeetingLayoutInner({
   const { hasAgenda, agenda, isLoading, error } = useAgenda();
   const { getDocument, isHydrating, isDocumentLoading, documentCount } =
     useDocumentsContext();
+
+  // Block-based notes management
+  const {
+    blocks,
+    transcriptNotes,
+    addTextBlock,
+    updateTextBlock,
+    deleteBlock,
+    moveBlock,
+    addTranscriptNote,
+    updateTranscriptNote,
+    deleteTranscriptNote,
+    hasNotesForTranscript,
+  } = useBlockNotes({ storageKey: roomId });
+
+  // Handle adding a note from transcript
+  const handleAddNote = useCallback(
+    (reference: TranscriptReference, content: string) => {
+      addTranscriptNote(reference, content);
+      if (DEBUG) {
+        console.log("[MeetingLayout] Added transcript note:", {
+          transcriptId: reference.transcriptId,
+          content,
+        });
+      }
+    },
+    [addTranscriptNote]
+  );
 
   // Debug logging for agenda state
   if (DEBUG) {
@@ -154,6 +184,14 @@ function MeetingLayoutInner({
         <CustomVideoConference
           meetingTitle={meetingName || "Meeting Notes"}
           roomId={roomId}
+          blocks={blocks}
+          transcriptNotes={transcriptNotes}
+          onAddTextBlock={addTextBlock}
+          onUpdateTextBlock={updateTextBlock}
+          onDeleteBlock={deleteBlock}
+          onMoveBlock={moveBlock}
+          onUpdateTranscriptNote={updateTranscriptNote}
+          onDeleteTranscriptNote={deleteTranscriptNote}
         />
       </div>
 
@@ -185,6 +223,8 @@ function MeetingLayoutInner({
                 onDocumentReferenceClick={handleDocumentReferenceClick}
                 meetingName={meetingName}
                 meetingScheduledAt={meetingScheduledAt}
+                onAddNote={handleAddNote}
+                hasNotesForTranscript={hasNotesForTranscript}
               />
             ) : (
               <TranscriptPanel
@@ -192,6 +232,8 @@ function MeetingLayoutInner({
                 onDocumentReferenceClick={handleDocumentReferenceClick}
                 meetingName={meetingName}
                 meetingScheduledAt={meetingScheduledAt}
+                onAddNote={handleAddNote}
+                hasNotesForTranscript={hasNotesForTranscript}
               />
             )}
           </div>
@@ -243,6 +285,8 @@ interface TranscriptPanelProps {
   onDocumentReferenceClick: (reference: DocumentReference) => void;
   meetingName?: string;
   meetingScheduledAt?: Date;
+  onAddNote?: (reference: TranscriptReference, content: string) => void;
+  hasNotesForTranscript?: (transcriptId: string) => boolean;
 }
 
 /**
@@ -254,6 +298,8 @@ function TranscriptPanel({
   onDocumentReferenceClick,
   meetingName,
   meetingScheduledAt,
+  onAddNote,
+  hasNotesForTranscript,
 }: TranscriptPanelProps) {
   return (
     <div className="h-full flex flex-col">
@@ -270,6 +316,8 @@ function TranscriptPanel({
             className="border-l-0 h-full"
             onInsightClick={onInsightClick}
             onDocumentReferenceClick={onDocumentReferenceClick}
+            onAddNote={onAddNote}
+            hasNotesForTranscript={hasNotesForTranscript}
           />
         </TranscriptionErrorBoundary>
       </div>
@@ -286,6 +334,8 @@ interface SplitSidebarContentProps {
   onDocumentReferenceClick: (reference: DocumentReference) => void;
   meetingName?: string;
   meetingScheduledAt?: Date;
+  onAddNote?: (reference: TranscriptReference, content: string) => void;
+  hasNotesForTranscript?: (transcriptId: string) => boolean;
 }
 
 function SplitSidebarContent({
@@ -293,6 +343,8 @@ function SplitSidebarContent({
   onDocumentReferenceClick,
   meetingName,
   meetingScheduledAt,
+  onAddNote,
+  hasNotesForTranscript,
 }: SplitSidebarContentProps) {
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full">
@@ -312,6 +364,8 @@ function SplitSidebarContent({
           onDocumentReferenceClick={onDocumentReferenceClick}
           meetingName={meetingName}
           meetingScheduledAt={meetingScheduledAt}
+          onAddNote={onAddNote}
+          hasNotesForTranscript={hasNotesForTranscript}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

@@ -27,10 +27,10 @@ import {
 } from "@livekit/components-react";
 import { CustomControlBar } from "@/components/meeting/custom-control-bar";
 import { MeetingNotesPanel } from "@/components/meeting/meeting-notes-panel";
-import { useNotesPanel } from "@/hooks/use-notes-panel";
 import type { MessageFormatter } from "@livekit/components-react";
 import { CustomParticipantTile } from "./custom-participant-tile";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import type { NoteBlock, TranscriptNote } from "@/types/transcript-note";
 
 /**
  * Props for the CustomVideoConference component.
@@ -51,6 +51,22 @@ export interface CustomVideoConferenceProps
   showNotesPanel?: boolean;
   /** Room ID for notes persistence (required when showNotesPanel is true) */
   roomId?: string;
+  /** Ordered array of note blocks */
+  blocks?: NoteBlock[];
+  /** Map of transcript notes by ID */
+  transcriptNotes?: Record<string, TranscriptNote>;
+  /** Add a new text block */
+  onAddTextBlock?: (content: string, afterBlockId?: string) => void;
+  /** Update a text block */
+  onUpdateTextBlock?: (id: string, content: string) => void;
+  /** Delete a block */
+  onDeleteBlock?: (id: string) => void;
+  /** Move a block to a new position */
+  onMoveBlock?: (blockId: string, newIndex: number) => void;
+  /** Callback when a transcript note is updated */
+  onUpdateTranscriptNote?: (id: string, content: string) => void;
+  /** Callback when a transcript note is deleted */
+  onDeleteTranscriptNote?: (id: string) => void;
 }
 
 /**
@@ -77,7 +93,16 @@ export function CustomVideoConference({
   SettingsComponent,
   meetingTitle = "Meeting Notes",
   showNotesPanel = true,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   roomId,
+  blocks = [],
+  transcriptNotes = {},
+  onAddTextBlock,
+  onUpdateTextBlock,
+  onDeleteBlock,
+  onMoveBlock,
+  onUpdateTranscriptNote,
+  onDeleteTranscriptNote,
   ...props
 }: CustomVideoConferenceProps) {
   const [widgetState, setWidgetState] = React.useState<WidgetState>({
@@ -86,20 +111,8 @@ export function CustomVideoConference({
     showSettings: false,
   });
 
-  // Notes panel state with localStorage persistence
-  // Use roomId if provided, otherwise fall back to a stable session-based key
-  const fallbackId = React.useId();
-  const notesStorageKey = roomId || `session-${fallbackId}`;
-
-  const {
-    notes: notesContent,
-    setNotes: setNotesContent,
-    isExpanded: notesExpanded,
-    setExpanded: setNotesExpanded,
-  } = useNotesPanel({
-    storageKey: notesStorageKey,
-    debounceMs: 1000,
-  });
+  // Notes panel expanded state (simple controlled state, no longer needs localStorage for content)
+  const [notesExpanded, setNotesExpanded] = React.useState(false);
 
   const lastAutoFocusedScreenShareTrack =
     React.useRef<TrackReferenceOrPlaceholder | null>(null);
@@ -232,8 +245,14 @@ export function CustomVideoConference({
                 meetingTitle={meetingTitle}
                 isExpanded={notesExpanded}
                 onExpandedChange={setNotesExpanded}
-                notes={notesContent}
-                onNotesChange={setNotesContent}
+                blocks={blocks}
+                transcriptNotes={transcriptNotes}
+                onAddTextBlock={onAddTextBlock}
+                onUpdateTextBlock={onUpdateTextBlock}
+                onDeleteBlock={onDeleteBlock}
+                onMoveBlock={onMoveBlock}
+                onUpdateTranscriptNote={onUpdateTranscriptNote}
+                onDeleteTranscriptNote={onDeleteTranscriptNote}
                 className="shrink-0"
               />
             )}

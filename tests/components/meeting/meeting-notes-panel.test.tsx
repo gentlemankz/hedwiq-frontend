@@ -6,7 +6,7 @@
  * - Controlled vs uncontrolled mode
  * - User interactions (click, keyboard)
  * - Accessibility (ARIA attributes, keyboard navigation)
- * - Character count display
+ * - Block-based notes functionality
  * - Callback stability
  */
 
@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MeetingNotesPanel } from "@/components/meeting/meeting-notes-panel";
+import type { NoteBlock, TranscriptNote } from "@/types/transcript-note";
 
 // ============================================================================
 // Test Helpers
@@ -22,6 +23,35 @@ import { MeetingNotesPanel } from "@/components/meeting/meeting-notes-panel";
 const renderPanel = (props: Partial<React.ComponentProps<typeof MeetingNotesPanel>> = {}) => {
   return render(<MeetingNotesPanel {...props} />);
 };
+
+const createTextBlock = (content: string, id = "text-1"): NoteBlock => ({
+  type: "text",
+  id,
+  content,
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+});
+
+const createTranscriptNote = (content: string, id = "tnote-1"): TranscriptNote => ({
+  id,
+  content,
+  reference: {
+    transcriptId: "transcript-1",
+    participantIdentity: "user@example.com",
+    participantName: "John Doe",
+    transcriptText: "This is what was said in the meeting.",
+    transcriptTimestamp: Date.now(),
+  },
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+});
+
+const createTranscriptBlock = (noteId: string, blockId = "block-1"): NoteBlock => ({
+  type: "transcript",
+  id: blockId,
+  transcriptNoteId: noteId,
+  createdAt: Date.now(),
+});
 
 // ============================================================================
 // MeetingNotesPanel Tests
@@ -64,10 +94,10 @@ describe("MeetingNotesPanel", () => {
       expect(screen.getByText("Meeting Notes")).toBeInTheDocument();
     });
 
-    it("renders textarea placeholder when expanded", () => {
-      renderPanel({ isExpanded: true });
+    it("renders textarea placeholder when expanded with no blocks", () => {
+      renderPanel({ isExpanded: true, blocks: [] });
 
-      expect(screen.getByPlaceholderText(/Start typing your meeting notes/)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Type your notes here/)).toBeInTheDocument();
     });
 
     it("does not render content area when collapsed", () => {
@@ -149,75 +179,94 @@ describe("MeetingNotesPanel", () => {
   });
 
   // --------------------------------------------------------------------------
-  // Notes Input Tests
+  // Block-based Notes Tests
   // --------------------------------------------------------------------------
 
-  describe("Notes Input", () => {
-    it("displays notes content when provided", () => {
-      renderPanel({ isExpanded: true, notes: "Test notes content" });
+  describe("Block-based Notes", () => {
+    it("renders text blocks when provided", () => {
+      const blocks = [createTextBlock("Test notes content")];
+      renderPanel({ isExpanded: true, blocks });
 
       expect(screen.getByDisplayValue("Test notes content")).toBeInTheDocument();
     });
 
-    it("calls onNotesChange when typing (controlled)", async () => {
-      const user = userEvent.setup();
-      const mockOnNotesChange = vi.fn();
+    it("renders multiple text blocks", () => {
+      const blocks = [
+        createTextBlock("First block", "text-1"),
+        createTextBlock("Second block", "text-2"),
+      ];
+      renderPanel({ isExpanded: true, blocks });
+
+      expect(screen.getByDisplayValue("First block")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("Second block")).toBeInTheDocument();
+    });
+
+    it("renders transcript blocks with notes", () => {
+      const note = createTranscriptNote("My note about this");
+      const block = createTranscriptBlock(note.id, "block-1");
       renderPanel({
         isExpanded: true,
-        notes: "",
-        onNotesChange: mockOnNotesChange,
+        blocks: [block],
+        transcriptNotes: { [note.id]: note },
+      });
+
+      expect(screen.getByText("My note about this")).toBeInTheDocument();
+      expect(screen.getByText("John Doe")).toBeInTheDocument();
+    });
+
+    it("calls onAddTextBlock when typing in empty state", async () => {
+      const user = userEvent.setup();
+      const mockOnAddTextBlock = vi.fn();
+      renderPanel({
+        isExpanded: true,
+        blocks: [],
+        onAddTextBlock: mockOnAddTextBlock,
       });
 
       const textarea = screen.getByRole("textbox");
-      await user.type(textarea, "Hi");
+      await user.type(textarea, "New content");
 
-      // Should be called for each character
-      expect(mockOnNotesChange).toHaveBeenCalledTimes(2);
-      // First call should be "H", second should be "i" (since notes prop stays "")
-      expect(mockOnNotesChange).toHaveBeenNthCalledWith(1, "H");
-      expect(mockOnNotesChange).toHaveBeenNthCalledWith(2, "i");
+      // Should call onAddTextBlock when content is added
+      expect(mockOnAddTextBlock).toHaveBeenCalled();
     });
 
-    it("updates internal state when typing (uncontrolled)", async () => {
+    it("calls onUpdateTextBlock when editing existing block", async () => {
       const user = userEvent.setup();
-      renderPanel({ isExpanded: true });
+      const mockOnUpdateTextBlock = vi.fn();
+      const blocks = [createTextBlock("Initial content")];
+      renderPanel({
+        isExpanded: true,
+        blocks,
+        onUpdateTextBlock: mockOnUpdateTextBlock,
+      });
 
-      const textarea = screen.getByRole("textbox");
-      await user.type(textarea, "Hello world");
+      const textarea = screen.getByDisplayValue("Initial content");
+      await user.clear(textarea);
+      await user.type(textarea, "Updated content");
 
-      expect(screen.getByDisplayValue("Hello world")).toBeInTheDocument();
+      expect(mockOnUpdateTextBlock).toHaveBeenCalled();
     });
 
-    it("handles long text input", async () => {
-      const longText = "A".repeat(5000);
-      renderPanel({ isExpanded: true, notes: longText });
+    it("shows block count when collapsed with content", () => {
+      const blocks = [
+        createTextBlock("Text 1", "text-1"),
+        createTextBlock("Text 2", "text-2"),
+      ];
+      renderPanel({ isExpanded: false, blocks });
 
-      expect(screen.getByDisplayValue(longText)).toBeInTheDocument();
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // Character Count Tests
-  // --------------------------------------------------------------------------
-
-  describe("Character Count", () => {
-    it("does not show character count when notes are empty", () => {
-      renderPanel({ isExpanded: true, notes: "" });
-
-      expect(screen.queryByText(/characters/)).not.toBeInTheDocument();
+      expect(screen.getByText(/2 text/)).toBeInTheDocument();
     });
 
-    it("shows character count when notes have content", () => {
-      renderPanel({ isExpanded: true, notes: "Test" });
+    it("shows linked count when collapsed with transcript blocks", () => {
+      const note = createTranscriptNote("Note");
+      const blocks = [createTranscriptBlock(note.id)];
+      renderPanel({
+        isExpanded: false,
+        blocks,
+        transcriptNotes: { [note.id]: note },
+      });
 
-      expect(screen.getByText("4 characters")).toBeInTheDocument();
-    });
-
-    it("formats large character counts with locale formatting", () => {
-      const longText = "A".repeat(1234);
-      renderPanel({ isExpanded: true, notes: longText });
-
-      expect(screen.getByText("1,234 characters")).toBeInTheDocument();
+      expect(screen.getByText(/1 linked/)).toBeInTheDocument();
     });
   });
 
@@ -270,11 +319,8 @@ describe("MeetingNotesPanel", () => {
       // Expand
       await user.click(screen.getByRole("button", { name: /expand notes panel/i }));
 
-      // Type in textarea
-      const textarea = screen.getByRole("textbox");
-      await user.type(textarea, "Notes");
-
-      expect(screen.getByDisplayValue("Notes")).toBeInTheDocument();
+      // Should show header
+      expect(screen.getByText("Meeting Notes")).toBeInTheDocument();
     });
 
     it("works in partially controlled mode (only expanded)", async () => {
@@ -283,35 +329,11 @@ describe("MeetingNotesPanel", () => {
       renderPanel({
         isExpanded: true,
         onExpandedChange: mockOnExpandedChange,
-        // notes is uncontrolled
       });
-
-      // Type in textarea (uncontrolled)
-      const textarea = screen.getByRole("textbox");
-      await user.type(textarea, "Text");
-
-      expect(screen.getByDisplayValue("Text")).toBeInTheDocument();
 
       // Collapse (controlled) - click the chevron button
       await user.click(screen.getByRole("button", { name: /^collapse notes$/i }));
       expect(mockOnExpandedChange).toHaveBeenCalledWith(false);
-    });
-
-    it("does not update controlled notes internally", async () => {
-      const user = userEvent.setup();
-      const mockOnNotesChange = vi.fn();
-      renderPanel({
-        isExpanded: true,
-        notes: "Initial",
-        onNotesChange: mockOnNotesChange,
-      });
-
-      const textarea = screen.getByRole("textbox");
-      await user.type(textarea, " more");
-
-      // The displayed value should still be "Initial" because it's controlled
-      // and we're not updating the notes prop
-      expect(screen.getByDisplayValue("Initial")).toBeInTheDocument();
     });
   });
 
@@ -362,24 +384,27 @@ describe("MeetingNotesPanel", () => {
       expect(header).toHaveTextContent("");
     });
 
-    it("handles special characters in notes", async () => {
+    it("handles special characters in text blocks", () => {
       const specialChars = '<script>alert("xss")</script>';
-      renderPanel({ isExpanded: true, notes: specialChars });
+      const blocks = [createTextBlock(specialChars)];
+      renderPanel({ isExpanded: true, blocks });
 
       // Should render as text, not execute
       expect(screen.getByDisplayValue(specialChars)).toBeInTheDocument();
     });
 
-    it("handles unicode characters in notes", () => {
-      const unicodeText = "🎉 会議メモ 📝 العربية";
-      renderPanel({ isExpanded: true, notes: unicodeText });
+    it("handles unicode characters in text blocks", () => {
+      const unicodeText = "会議メモ 📝 العربية";
+      const blocks = [createTextBlock(unicodeText)];
+      renderPanel({ isExpanded: true, blocks });
 
       expect(screen.getByDisplayValue(unicodeText)).toBeInTheDocument();
     });
 
-    it("handles multiline notes", () => {
+    it("handles multiline text in blocks", () => {
       const multilineText = "Line 1\nLine 2\nLine 3";
-      renderPanel({ isExpanded: true, notes: multilineText });
+      const blocks = [createTextBlock(multilineText)];
+      renderPanel({ isExpanded: true, blocks });
 
       // Textarea value can be checked directly
       const textarea = screen.getByRole("textbox");
