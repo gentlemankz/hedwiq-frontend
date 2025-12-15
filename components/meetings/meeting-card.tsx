@@ -15,6 +15,10 @@ import {
   Video,
   ExternalLink,
   AlertCircle,
+  Users,
+  UserCheck,
+  UserMinus,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,16 +55,27 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Meeting } from "@/types/meeting";
 import type { CalendarEventPublic } from "@/types/calendar";
+import type { RSVPSummary } from "@/types/invitee";
 
 interface MeetingCardProps {
   meeting: Meeting;
   /** Calendar event info if synced */
   calendarEvent?: CalendarEventPublic | null;
+  /** RSVP summary for meeting invitees */
+  rsvpSummary?: RSVPSummary | null;
   onEdit?: (meeting: Meeting) => void;
   onDeleted?: () => void;
+  onManageInvitees?: (meeting: Meeting) => void;
 }
 
-export function MeetingCard({ meeting, calendarEvent, onEdit, onDeleted }: MeetingCardProps) {
+export function MeetingCard({
+  meeting,
+  calendarEvent,
+  rsvpSummary,
+  onEdit,
+  onDeleted,
+  onManageInvitees,
+}: MeetingCardProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -265,6 +280,12 @@ export function MeetingCard({ meeting, calendarEvent, onEdit, onDeleted }: Meeti
                     Edit
                   </DropdownMenuItem>
                 )}
+                {onManageInvitees && meeting.type === "scheduled" && (
+                  <DropdownMenuItem onClick={() => onManageInvitees(meeting)}>
+                    <UserPlus className="mr-2 size-4" />
+                    Manage Invitees
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
@@ -283,6 +304,41 @@ export function MeetingCard({ meeting, calendarEvent, onEdit, onDeleted }: Meeti
             <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">
               {meeting.description}
             </p>
+          )}
+
+          {/* RSVP Summary */}
+          {rsvpSummary && rsvpSummary.total > 0 && (
+            <div className="mb-3 flex items-center gap-3 text-sm">
+              <div className="flex items-center gap-1.5">
+                <Users className="size-4 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  {rsvpSummary.total} invited
+                </span>
+              </div>
+              {rsvpSummary.accepted > 0 && (
+                <div className="flex items-center gap-1">
+                  <UserCheck className="size-3.5 text-green-600" />
+                  <span className="text-green-600">{rsvpSummary.accepted}</span>
+                </div>
+              )}
+              {rsvpSummary.tentative > 0 && (
+                <div className="flex items-center gap-1">
+                  <Users className="size-3.5 text-amber-600" />
+                  <span className="text-amber-600">{rsvpSummary.tentative}</span>
+                </div>
+              )}
+              {rsvpSummary.declined > 0 && (
+                <div className="flex items-center gap-1">
+                  <UserMinus className="size-3.5 text-red-600" />
+                  <span className="text-red-600">{rsvpSummary.declined}</span>
+                </div>
+              )}
+              {rsvpSummary.pending > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  ({rsvpSummary.pending} pending)
+                </span>
+              )}
+            </div>
           )}
 
           <div className="flex items-center gap-2">

@@ -382,3 +382,46 @@ export function getMeetingFieldErrors(input: {
 export function hasMeetingFieldErrors(errors: MeetingFieldErrors): boolean {
   return Object.keys(errors).length > 0;
 }
+
+// ============================================================================
+// Meeting ID Validation
+// ============================================================================
+
+/**
+ * Meeting ID validation regex.
+ * Format: mtg-{13-digit timestamp}-{8 alphanumeric chars}
+ */
+export const MEETING_ID_REGEX = /^mtg-\d{13}-[a-z0-9]{8}$/;
+
+/**
+ * Maximum meeting ID length to prevent regex DoS.
+ */
+export const MAX_MEETING_ID_LENGTH = 30;
+
+/**
+ * Validate meeting ID format.
+ */
+export function isValidMeetingId(meetingId: unknown): meetingId is string {
+  if (typeof meetingId !== "string") return false;
+  if (!meetingId || meetingId.length > MAX_MEETING_ID_LENGTH) return false;
+  return MEETING_ID_REGEX.test(meetingId);
+}
+
+/**
+ * Validate meeting ID and return result with error message.
+ */
+export function validateMeetingId(meetingId: unknown): ValidationResult {
+  if (!meetingId || typeof meetingId !== "string") {
+    return { isValid: false, error: "Meeting ID is required" };
+  }
+
+  if (meetingId.length > MAX_MEETING_ID_LENGTH) {
+    return { isValid: false, error: "Invalid meeting ID" };
+  }
+
+  if (!MEETING_ID_REGEX.test(meetingId)) {
+    return { isValid: false, error: "Invalid meeting ID format" };
+  }
+
+  return { isValid: true };
+}

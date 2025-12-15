@@ -107,3 +107,33 @@ export function generatePrefixedId(prefix: string): string {
   const random = secureRandomString(8, ALPHANUMERIC_CHARSET);
   return `${prefix}-${timestamp}-${random}`;
 }
+
+// ============================================================================
+// Duration Formatting Utilities
+// ============================================================================
+
+/**
+ * Formats a duration in minutes to a human-readable string.
+ * Examples:
+ * - 30 -> "30 minutes"
+ * - 60 -> "1 hour"
+ * - 90 -> "1 hour 30 min"
+ * - 120 -> "2 hours"
+ * @param minutes - Duration in minutes
+ * @returns Formatted duration string
+ */
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  const hourStr = `${hours} hour${hours > 1 ? "s" : ""}`;
+  if (remainingMinutes === 0) {
+    return hourStr;
+  }
+
+  return `${hourStr} ${remainingMinutes} min`;
+}

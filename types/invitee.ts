@@ -167,3 +167,13 @@ export const RSVP_STATUS_COLORS: Record<RSVPStatus, string> = {
   declined: "text-red-600",
   tentative: "text-amber-600",
 };
+
+/**
+ * RSVP status background colors for UI display.
+ */
+export const RSVP_STATUS_BG_COLORS: Record<RSVPStatus, string> = {
+  pending: "bg-muted",
+  accepted: "bg-green-100 dark:bg-green-900/30",
+  declined: "bg-red-100 dark:bg-red-900/30",
+  tentative: "bg-amber-100 dark:bg-amber-900/30",
+};

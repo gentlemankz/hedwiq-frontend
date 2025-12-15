@@ -11,6 +11,7 @@ interface MeetingListProps {
   calendarEvents?: Record<string, CalendarEventPublic>;
   onEdit?: (meeting: Meeting) => void;
   onDeleted?: () => void;
+  onManageInvitees?: (meeting: Meeting) => void;
   emptyMessage?: string;
 }
 
@@ -19,6 +20,7 @@ export function MeetingList({
   calendarEvents,
   onEdit,
   onDeleted,
+  onManageInvitees,
   emptyMessage = "No meetings scheduled",
 }: MeetingListProps) {
   if (meetings.length === 0) {
@@ -41,6 +43,7 @@ export function MeetingList({
           calendarEvent={calendarEvents?.[meeting.id]}
           onEdit={onEdit}
           onDeleted={onDeleted}
+          onManageInvitees={onManageInvitees}
         />
       ))}
     </div>

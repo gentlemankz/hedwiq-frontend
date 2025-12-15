@@ -10,6 +10,8 @@ import {
   ChevronDown,
   ChevronUp,
   ListTodo,
+  Mail,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +54,7 @@ import {
 import type { CalendarIntegrationPublic } from "@/types/calendar";
 import type { DraftAgendaItem } from "@/types/agenda";
 import { AgendaBuilder } from "@/app/meetings/[roomId]/components/agenda-builder";
+import { InviteeInput, type InviteeEntry } from "@/components/meetings/invitee-input";
 
 interface ScheduleMeetingDialogProps {
   open: boolean;
@@ -107,6 +110,15 @@ export function ScheduleMeetingDialog({
   // Agenda state
   const [agendaItems, setAgendaItems] = useState<DraftAgendaItem[]>([]);
   const [agendaExpanded, setAgendaExpanded] = useState(false);
+
+  // Invitee state
+  const [invitees, setInvitees] = useState<InviteeEntry[]>([]);
+  const [inviteesExpanded, setInviteesExpanded] = useState(false);
+  const [sendInvitations, setSendInvitations] = useState(true);
+  const [invitationResult, setInvitationResult] = useState<{
+    sent: number;
+    failed: number;
+  } | null>(null);
 
   // Validation state
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -168,6 +180,7 @@ export function ScheduleMeetingDialog({
     setIsSubmitting(true);
     setApiError(null);
     setCalendarSyncResult(null);
+    setInvitationResult(null);
 
     try {
       // Parse time and create scheduledAt
@@ -210,16 +223,55 @@ export function ScheduleMeetingDialog({
         }
       }
 
-      // Show success state briefly if calendar was synced with a link
-      if (data.calendarSync?.synced && data.calendarSync?.eventLink) {
+      // Send invitations if there are invitees
+      if (invitees.length > 0 && sendInvitations) {
+        try {
+          const inviteResponse = await fetch(
+            `/api/meetings/${data.meeting.id}/invite`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                emails: invitees.map((inv) => inv.email),
+                names: invitees.reduce(
+                  (acc, inv) => {
+                    if (inv.name) acc[inv.email] = inv.name;
+                    return acc;
+                  },
+                  {} as Record<string, string>
+                ),
+                sendEmails: true,
+              }),
+            }
+          );
+
+          if (inviteResponse.ok) {
+            const inviteData = await inviteResponse.json();
+            setInvitationResult({
+              sent: inviteData.emailsSent || 0,
+              failed: inviteData.emailsFailed || 0,
+            });
+          }
+        } catch (inviteError) {
+          console.error("Failed to send invitations:", inviteError);
+          // Don't fail the whole operation if invitations fail
+        }
+      }
+
+      // Show success state briefly if calendar was synced with a link or invitations sent
+      const showSuccess =
+        (data.calendarSync?.synced && data.calendarSync?.eventLink) ||
+        invitees.length > 0;
+
+      if (showSuccess) {
         setIsSuccess(true);
-        // Auto-close after 2 seconds to show the calendar link
+        // Auto-close after 2 seconds to show the results
         // Store timeout ref for cleanup on unmount
         successTimeoutRef.current = setTimeout(() => {
           resetForm();
           onOpenChange(false);
           router.refresh();
-        }, 2000);
+        }, 2500);
       } else {
         // Close dialog and refresh immediately
         resetForm();
@@ -244,6 +296,10 @@ export function ScheduleMeetingDialog({
     setDuration(30);
     setAgendaItems([]);
     setAgendaExpanded(false);
+    setInvitees([]);
+    setInviteesExpanded(false);
+    setSendInvitations(true);
+    setInvitationResult(null);
     setTouched({});
     setApiError(null);
     setCalendarSyncResult(null);
@@ -280,11 +336,31 @@ export function ScheduleMeetingDialog({
               <div className="flex size-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
                 <CalendarIcon className="size-6 text-green-600 dark:text-green-400" />
               </div>
-              <p className="text-center text-sm text-muted-foreground">
-                {calendarSyncResult?.synced
-                  ? "Event added to your Google Calendar"
-                  : "Meeting created"}
-              </p>
+              <div className="space-y-2 text-center">
+                {calendarSyncResult?.synced && (
+                  <p className="text-sm text-muted-foreground">
+                    Event added to your Google Calendar
+                  </p>
+                )}
+                {invitationResult && invitationResult.sent > 0 && (
+                  <p className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+                    <Mail className="size-4 text-green-600" />
+                    {invitationResult.sent} invitation
+                    {invitationResult.sent !== 1 ? "s" : ""} sent
+                  </p>
+                )}
+                {invitationResult && invitationResult.failed > 0 && (
+                  <p className="text-sm text-amber-600">
+                    {invitationResult.failed} invitation
+                    {invitationResult.failed !== 1 ? "s" : ""} failed to send
+                  </p>
+                )}
+                {!calendarSyncResult?.synced && !invitationResult && (
+                  <p className="text-sm text-muted-foreground">
+                    Meeting created
+                  </p>
+                )}
+              </div>
               {calendarSyncResult?.synced && calendarSyncResult?.eventLink && (
                 <a
                   href={calendarSyncResult.eventLink}
@@ -475,6 +551,67 @@ export function ScheduleMeetingDialog({
                     onChange={setAgendaItems}
                     disabled={isSubmitting}
                   />
+                </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
+
+          {/* Invite Participants */}
+          <Collapsible open={inviteesExpanded} onOpenChange={setInviteesExpanded}>
+            <div className="rounded-lg border">
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Users className="size-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">
+                      Invite Participants
+                      {invitees.length > 0 && (
+                        <span className="ml-2 text-muted-foreground font-normal">
+                          ({invitees.length} invitee
+                          {invitees.length !== 1 ? "s" : ""})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {inviteesExpanded ? (
+                    <ChevronUp className="size-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="size-4 text-muted-foreground" />
+                  )}
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="border-t px-4 pb-4 pt-3 space-y-3">
+                  <InviteeInput
+                    invitees={invitees}
+                    onChange={setInvitees}
+                    disabled={isSubmitting}
+                    placeholder="Enter email to invite"
+                  />
+                  {invitees.length > 0 && (
+                    <div className="flex items-start gap-3 pt-2">
+                      <Checkbox
+                        id="send-invitations"
+                        checked={sendInvitations}
+                        onCheckedChange={(checked) => setSendInvitations(!!checked)}
+                        disabled={isSubmitting}
+                      />
+                      <div className="grid gap-1 leading-none">
+                        <Label
+                          htmlFor="send-invitations"
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Send invitation emails
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Invitees will receive an email with meeting details and calendar links
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CollapsibleContent>
             </div>

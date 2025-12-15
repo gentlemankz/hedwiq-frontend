@@ -32,6 +32,7 @@ import {
   ScheduleMeetingDialog,
   EditMeetingDialog,
   MeetingList,
+  ManageInviteesDialog,
 } from "@/components/meetings";
 import { CalendarStatusCard } from "@/components/calendar";
 import type { User } from "@/types/user";
@@ -58,6 +59,8 @@ export function DashboardClient({
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [meetingToEdit, setMeetingToEdit] = useState<Meeting | null>(null);
+  const [isManageInviteesDialogOpen, setIsManageInviteesDialogOpen] = useState(false);
+  const [meetingForInvitees, setMeetingForInvitees] = useState<Meeting | null>(null);
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
   const [instantMeetingError, setInstantMeetingError] = useState<string | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
@@ -218,6 +221,16 @@ export function DashboardClient({
 
   const handleMeetingUpdated = () => {
     // Refresh meetings list after edit
+    fetchMeetings();
+  };
+
+  const handleManageInvitees = (meeting: Meeting) => {
+    setMeetingForInvitees(meeting);
+    setIsManageInviteesDialogOpen(true);
+  };
+
+  const handleInviteesUpdated = () => {
+    // Refresh meetings list to update RSVP counts
     fetchMeetings();
   };
 
@@ -489,6 +502,7 @@ export function DashboardClient({
               calendarEvents={calendarEvents}
               onEdit={handleEditMeeting}
               onDeleted={handleMeetingDeleted}
+              onManageInvitees={handleManageInvitees}
               emptyMessage="No upcoming meetings. Click 'New Meeting' to create one."
             />
           </CardContent>
@@ -520,6 +534,21 @@ export function DashboardClient({
             }}
             meeting={meetingToEdit}
             onUpdated={handleMeetingUpdated}
+          />
+        )}
+
+        {/* Manage Invitees Dialog */}
+        {isMounted && meetingForInvitees && (
+          <ManageInviteesDialog
+            open={isManageInviteesDialogOpen}
+            onOpenChange={(open) => {
+              setIsManageInviteesDialogOpen(open);
+              if (!open) {
+                setMeetingForInvitees(null);
+              }
+            }}
+            meeting={meetingForInvitees}
+            onInviteesUpdated={handleInviteesUpdated}
           />
         )}
       </div>
