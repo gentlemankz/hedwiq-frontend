@@ -191,18 +191,39 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
     [roomId]
   );
 
-  const handleDisconnect = useCallback(() => {
+  const handleDisconnect = useCallback(async () => {
     // Cancel any pending request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
 
+    // End the meeting if the current user is the host and meeting is live
+    // This updates the database status from "live" to "ended"
+    if (
+      meetingData?.meeting &&
+      meetingData.meeting.hostId === user.id &&
+      meetingData.meeting.status === "live"
+    ) {
+      try {
+        await fetch(`/api/meetings/${meetingData.meeting.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: "ended" }),
+        });
+      } catch (err) {
+        // Log error but don't block disconnect flow
+        console.error("Failed to end meeting:", err);
+      }
+    }
+
     setToken(null);
     setUserChoices(null);
     setIsConnecting(false);
     setError(null);
-  }, []);
+  }, [meetingData, user.id]);
 
   // Handle LiveKit errors - clear token to return to PreJoin screen
   const handleError = useCallback((err: Error) => {

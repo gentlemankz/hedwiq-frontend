@@ -135,7 +135,8 @@ export async function PATCH(
   }
 
   try {
-    const meeting = await updateMeeting(meetingId, session.user.id, {
+    // Build update object with automatic timestamp handling for status changes
+    const updates: Parameters<typeof updateMeeting>[2] = {
       title: body.title,
       description: body.description,
       scheduledAt: validation.parsedDate,
@@ -143,7 +144,16 @@ export async function PATCH(
       timezone: body.timezone,
       status: body.status as MeetingStatus | undefined,
       settings: body.settings,
-    });
+    };
+
+    // Automatically set timestamps when status changes
+    if (body.status === "live") {
+      updates.startedAt = new Date();
+    } else if (body.status === "ended") {
+      updates.endedAt = new Date();
+    }
+
+    const meeting = await updateMeeting(meetingId, session.user.id, updates);
 
     if (!meeting) {
       return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
