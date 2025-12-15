@@ -179,52 +179,55 @@ export const MeetingNotesPanel = React.memo(function MeetingNotesPanel({
       {/* Content Area - only render when expanded for performance */}
       {isExpanded && (
         <div className="flex-1 flex flex-col overflow-hidden px-4 pb-3">
-          {/* Header */}
-          <div className="flex items-center justify-between py-2 border-b border-border/50">
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold text-foreground">
-                {meetingTitle}
-              </h3>
+          {/* Centered content container with max width for better readability */}
+          <div className="w-full max-w-2xl mx-auto flex flex-col flex-1">
+            {/* Header */}
+            <div className="flex items-center justify-between py-2 border-b border-border/50">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold text-foreground">
+                  {meetingTitle}
+                </h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={() => handleSetExpanded(false)}
+                aria-label="Collapse notes"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={() => handleSetExpanded(false)}
-              aria-label="Collapse notes"
-            >
-              <ChevronDown className="h-4 w-4" />
-            </Button>
-          </div>
 
-          {/* Notes Content */}
-          <div className="flex-1 overflow-y-auto py-2">
-            <Textarea
-              value={currentNotes}
-              onChange={handleNotesChange}
-              placeholder="Start typing your meeting notes here...
+            {/* Notes Content */}
+            <div className="flex-1 overflow-y-auto py-2">
+              <Textarea
+                value={currentNotes}
+                onChange={handleNotesChange}
+                placeholder="Start typing your meeting notes here...
 
 • Key discussion points
 • Action items
 • Decisions made
 • Follow-ups needed"
-              className={cn(
-                "min-h-full resize-none border-0 bg-transparent p-0",
-                "focus-visible:ring-0 focus-visible:ring-offset-0",
-                "placeholder:text-muted-foreground/50 text-sm leading-relaxed"
-              )}
-            />
-          </div>
-
-          {/* Footer with character count */}
-          {currentNotes.length > 0 && (
-            <div className="flex justify-end pt-1 border-t border-border/30">
-              <span className="text-[10px] text-muted-foreground/50">
-                {currentNotes.length.toLocaleString()} characters
-              </span>
+                className={cn(
+                  "min-h-full resize-none border-0 bg-transparent p-0",
+                  "focus-visible:ring-0 focus-visible:ring-offset-0",
+                  "placeholder:text-muted-foreground/50 text-sm leading-relaxed"
+                )}
+              />
             </div>
-          )}
+
+            {/* Footer with character count */}
+            {currentNotes.length > 0 && (
+              <div className="flex justify-end pt-1 border-t border-border/30">
+                <span className="text-[10px] text-muted-foreground/50">
+                  {currentNotes.length.toLocaleString()} characters
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
