@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { CustomVideoConference } from "@/components/participant";
 import {
   TranscriptionSidebar,
   TranscriptionErrorBoundary,
+  type TranscriptionEntry,
 } from "@/components/transcription";
 import { AgendaProgress } from "@/components/agenda";
 import { MeetingInfoHeader } from "@/components/meeting/meeting-info-header";
 import { DocumentViewerModal } from "@/components/documents/document-viewer-modal";
 import { useDocumentsContext } from "@/contexts/documents-context";
+import { useMeetingPersistence } from "@/contexts/meeting-persistence-context";
+import { useInsightsContext } from "@/contexts/insights-context";
 import { AgendaProvider } from "@/contexts/agenda";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,8 +90,10 @@ function MeetingLayoutInner({
 }: MeetingLayoutInnerProps) {
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
   const { hasAgenda, agenda, isLoading, error } = useAgenda();
-  const { getDocument, isHydrating, isDocumentLoading, documentCount } =
+  const { getDocument, isHydrating, isDocumentLoading, documentCount, references } =
     useDocumentsContext();
+  const { insights } = useInsightsContext();
+  const persistence = useMeetingPersistence();
 
   // Block-based notes management
   const {
@@ -103,6 +108,46 @@ function MeetingLayoutInner({
     deleteTranscriptNote,
     hasNotesForTranscript,
   } = useBlockNotes({ storageKey: roomId });
+
+  // Persist insights when they change
+  useEffect(() => {
+    if (persistence?.isEnabled && insights.length > 0) {
+      persistence.queueInsights(insights);
+    }
+  }, [persistence, insights]);
+
+  // Persist document references when they change
+  useEffect(() => {
+    if (persistence?.isEnabled && references.length > 0) {
+      persistence.queueDocumentReferences(references);
+    }
+  }, [persistence, references]);
+
+  // Persist notes when they change
+  useEffect(() => {
+    if (persistence?.isEnabled && (blocks.length > 0 || Object.keys(transcriptNotes).length > 0)) {
+      persistence.saveNotes(blocks, transcriptNotes);
+    }
+  }, [persistence, blocks, transcriptNotes]);
+
+  // Handle transcription updates for persistence
+  const handleTranscriptionUpdate = useCallback(
+    (entries: TranscriptionEntry[]) => {
+      if (persistence?.isEnabled) {
+        // Convert from TranscriptionEntry to the format expected by persistence
+        const formattedEntries = entries.map((e) => ({
+          id: e.id,
+          speakerIdentity: e.participantIdentity,
+          speakerName: e.participantName,
+          text: e.text,
+          timestamp: e.timestamp,
+          isFinal: e.isFinal,
+        }));
+        persistence.queueTranscription(formattedEntries);
+      }
+    },
+    [persistence]
+  );
 
   // Handle adding a note from transcript
   const handleAddNote = useCallback(
@@ -225,6 +270,7 @@ function MeetingLayoutInner({
                 meetingScheduledAt={meetingScheduledAt}
                 onAddNote={handleAddNote}
                 hasNotesForTranscript={hasNotesForTranscript}
+                onTranscriptionUpdate={handleTranscriptionUpdate}
               />
             ) : (
               <TranscriptPanel
@@ -234,6 +280,7 @@ function MeetingLayoutInner({
                 meetingScheduledAt={meetingScheduledAt}
                 onAddNote={handleAddNote}
                 hasNotesForTranscript={hasNotesForTranscript}
+                onTranscriptionUpdate={handleTranscriptionUpdate}
               />
             )}
           </div>
@@ -287,6 +334,7 @@ interface TranscriptPanelProps {
   meetingScheduledAt?: Date;
   onAddNote?: (reference: TranscriptReference, content: string) => void;
   hasNotesForTranscript?: (transcriptId: string) => boolean;
+  onTranscriptionUpdate?: (entries: TranscriptionEntry[]) => void;
 }
 
 /**
@@ -300,6 +348,7 @@ function TranscriptPanel({
   meetingScheduledAt,
   onAddNote,
   hasNotesForTranscript,
+  onTranscriptionUpdate,
 }: TranscriptPanelProps) {
   return (
     <div className="h-full flex flex-col">
@@ -318,6 +367,7 @@ function TranscriptPanel({
             onDocumentReferenceClick={onDocumentReferenceClick}
             onAddNote={onAddNote}
             hasNotesForTranscript={hasNotesForTranscript}
+            onTranscriptionUpdate={onTranscriptionUpdate}
           />
         </TranscriptionErrorBoundary>
       </div>
@@ -336,6 +386,7 @@ interface SplitSidebarContentProps {
   meetingScheduledAt?: Date;
   onAddNote?: (reference: TranscriptReference, content: string) => void;
   hasNotesForTranscript?: (transcriptId: string) => boolean;
+  onTranscriptionUpdate?: (entries: TranscriptionEntry[]) => void;
 }
 
 function SplitSidebarContent({
@@ -345,6 +396,7 @@ function SplitSidebarContent({
   meetingScheduledAt,
   onAddNote,
   hasNotesForTranscript,
+  onTranscriptionUpdate,
 }: SplitSidebarContentProps) {
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full">
@@ -366,6 +418,7 @@ function SplitSidebarContent({
           meetingScheduledAt={meetingScheduledAt}
           onAddNote={onAddNote}
           hasNotesForTranscript={hasNotesForTranscript}
+          onTranscriptionUpdate={onTranscriptionUpdate}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

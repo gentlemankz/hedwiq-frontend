@@ -5,3 +5,5 @@ export { MeetingCard } from "./meeting-card";
 export { MeetingList } from "./meeting-list";
 export { InviteeInput, type InviteeEntry } from "./invitee-input";
 export { ManageInviteesDialog } from "./manage-invitees-dialog";
+export { PastMeetingCard } from "./past-meeting-card";
+export { PastMeetingsList } from "./past-meetings-list";

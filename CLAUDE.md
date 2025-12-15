@@ -34,8 +34,7 @@ frontend/
 ├── app/                              # Next.js App Router
 │   ├── (auth)/                       # Auth route group
 │   │   ├── layout.tsx                # Shared auth layout
-│   │   └── sign-in/
-│   │       └── page.tsx              # Sign-in page
+│   │   └── sign-in/page.tsx          # Sign-in page
 │   ├── (public)/                     # Public route group (no auth required)
 │   │   └── rsvp/[token]/page.tsx     # Public RSVP landing
 │   ├── api/                          # API routes
@@ -53,90 +52,108 @@ frontend/
 │   │   │       ├── route.ts          # Get/delete a document
 │   │   │       └── pdf/route.ts      # Serve signed URL to PDF
 │   │   ├── livekit/token/route.ts    # LiveKit token generation endpoint
-│   │   ├── meetings/                 # Meeting CRUD + invites
+│   │   ├── meetings/                 # Meeting CRUD + invites + persistence
 │   │   │   ├── route.ts              # List/create meetings
+│   │   │   ├── history/route.ts      # User's past meetings list with stats
 │   │   │   └── [meetingId]/
 │   │   │       ├── route.ts          # Get/update/delete a meeting
 │   │   │       ├── calendar.ics/route.ts # ICS download
 │   │   │       ├── invite/route.ts   # Send invitations
-│   │   │       └── invitees/route.ts # List/remove invitees
+│   │   │       ├── invitees/route.ts # List/remove invitees
+│   │   │       ├── session/route.ts  # Session tracking (join/leave)
+│   │   │       ├── data/route.ts     # Bulk save transcription/insights/refs
+│   │   │       ├── notes/route.ts    # User notes CRUD
+│   │   │       └── history/route.ts  # Full meeting history with all data
 │   │   ├── rooms/[roomId]/           # Room-scoped APIs
 │   │   │   ├── access/route.ts       # Record/check participant access
 │   │   │   ├── meeting/route.ts      # Pre-join meeting metadata
-│   │   │   └── agenda/route.ts       # Agenda GET/PUT (draft/active)
+│   │   │   └── agenda/               # Agenda draft/active lifecycle
+│   │   │       ├── route.ts          # Get/upsert draft agenda (items inline)
+│   │   │       ├── publish/route.ts  # Publish a draft agenda
+│   │   │       ├── reorder/route.ts  # Reorder agenda items
+│   │   │       └── items/[itemId]/   # Item-level updates
+│   │   │           ├── route.ts      # Update/delete an agenda item
+│   │   │           └── status/route.ts # Manual status override (fallback)
 │   │   └── rsvp/[token]/route.ts     # Public RSVP status endpoint
-│   ├── dashboard/
-│   │   ├── dashboard-client.tsx      # Dashboard client with meeting list
-│   │   └── page.tsx                  # Dashboard page (fetches meetings)
-│   ├── meetings/
-│   │   └── [roomId]/                 # Dynamic room routes
-│   │       ├── components/
-│   │       │   ├── agenda-builder/   # Pre-join agenda creation UI
-│   │       │   │   ├── add-topic-dialog.tsx
-│   │       │   │   ├── agenda-builder.tsx
-│   │       │   │   ├── agenda-item.tsx
-│   │       │   │   ├── sortable-list.tsx
-│   │       │   │   └── index.ts
-│   │       │   ├── media-controls.tsx
-│   │       │   ├── meeting-layout.tsx  # Sidebar tabs + document viewer modal
-│   │       │   ├── username-form.tsx
-│   │       │   └── video-preview.tsx
-│   │       ├── meeting-room.tsx      # LiveKit room wrapper with providers
-│   │       ├── page.tsx
-│   │       └── pre-join-screen.tsx   # Pre-join flow + agenda builder
+│   ├── dashboard/                    # Dashboard shell + meeting loader
+│   │   ├── dashboard-client.tsx
+│   │   └── page.tsx
+│   ├── meetings/[roomId]/            # Dynamic room routes
+│   │   ├── components/
+│   │   │   ├── agenda-builder/
+│   │   │   │   ├── add-topic-dialog.tsx
+│   │   │   │   ├── agenda-builder.tsx
+│   │   │   │   ├── agenda-item.tsx
+│   │   │   │   ├── sortable-list.tsx
+│   │   │   │   └── index.ts
+│   │   │   ├── media-controls.tsx
+│   │   │   ├── meeting-layout.tsx    # Sidebar tabs + document viewer modal
+│   │   │   ├── username-form.tsx
+│   │   │   └── video-preview.tsx
+│   │   ├── history/                  # Meeting history view (post-meeting)
+│   │   │   ├── page.tsx              # Server component with auth + data fetch
+│   │   │   └── meeting-history-view.tsx # Client component with tabs UI
+│   │   ├── meeting-room.tsx          # LiveKit room wrapper with providers
+│   │   ├── pre-join-screen.tsx       # Pre-join flow + agenda builder
+│   │   └── page.tsx
 │   ├── globals.css                   # Global styles with LiveKit theme integration
 │   ├── layout.tsx                    # Root layout
 │   └── page.tsx                      # Landing page
 ├── components/
-│   ├── agenda/                       # In-room agenda progress UI
-│   │   ├── agenda-progress.tsx
+│   ├── agenda/
 │   │   ├── agenda-progress-item.tsx
+│   │   ├── agenda-progress.tsx
 │   │   └── progress-indicator.tsx
-│   ├── calendar/                     # Calendar connection surface
+│   ├── calendar/
 │   │   ├── calendar-status-card.tsx
 │   │   └── index.ts
-│   ├── documents/                    # PDF upload/viewer + references
+│   ├── documents/
 │   │   ├── document-reference-badge.tsx
 │   │   ├── document-upload.tsx
 │   │   ├── document-viewer-modal.tsx
 │   │   ├── pdf-viewer.tsx
 │   │   └── index.ts
-│   ├── insights/                     # AI insights display
+│   ├── insights/
 │   │   ├── insight-badge.tsx
 │   │   ├── insight-card.tsx
 │   │   ├── insights-summary-panel.tsx
 │   │   └── index.ts
-│   ├── meeting/                      # In-room controls and notes
+│   ├── meeting/
 │   │   ├── custom-control-bar.tsx
 │   │   ├── meeting-info-header.tsx
 │   │   ├── meeting-notes-panel.tsx
 │   │   └── index.ts
-│   ├── meetings/                     # Scheduling UI
+│   ├── meetings/
+│   │   ├── edit-meeting-dialog.tsx
+│   │   ├── invitee-input.tsx
+│   │   ├── manage-invitees-dialog.tsx
 │   │   ├── meeting-card.tsx
 │   │   ├── meeting-list.tsx
 │   │   ├── meeting-type-selector.tsx
 │   │   ├── schedule-meeting-dialog.tsx
-│   │   ├── edit-meeting-dialog.tsx
-│   │   ├── manage-invitees-dialog.tsx
-│   │   ├── invitee-input.tsx
+│   │   ├── past-meeting-card.tsx     # Card for displaying past meeting summary
+│   │   ├── past-meetings-list.tsx    # Paginated list of past meetings
 │   │   └── index.ts
-│   ├── participant/                  # LiveKit participant overrides
+│   ├── participant/
 │   │   ├── custom-participant-tile.tsx
 │   │   ├── custom-video-conference.tsx
 │   │   ├── use-is-encrypted.ts
 │   │   └── index.ts
-│   ├── transcription/                # Real-time transcription components
+│   ├── transcript-notes/
+│   │   ├── add-transcript-note-popover.tsx
+│   │   ├── transcript-note-card.tsx
+│   │   └── index.ts
+│   ├── transcription/
 │   │   ├── transcription-error-boundary.tsx
 │   │   ├── transcription-sidebar.tsx
 │   │   └── index.ts
 │   └── ui/                           # shadcn/ui components (50+ primitives)
-├── contexts/                         # React context providers
+├── contexts/
 │   ├── index.ts                      # Barrel export
-│   ├── agenda/                       # Agenda context module (modular architecture)
-│   │   ├── index.ts                  # Barrel export for agenda context
+│   ├── agenda/
 │   │   ├── agenda-context.tsx        # Main provider orchestrating all hooks
-│   │   ├── types.ts                  # Context types + LiveKit interfaces
 │   │   ├── constants.ts              # Agent prefix, retry settings, debug flag
+│   │   ├── types.ts                  # Context types + LiveKit interfaces
 │   │   ├── validators.ts             # Type guards for events + state attributes
 │   │   ├── use-agenda-api.ts         # API fetch with retry/backoff logic
 │   │   ├── use-agenda-computed.ts    # Memoized computed values from state
@@ -144,97 +161,68 @@ frontend/
 │   │   ├── use-agenda-late-joiner-sync.ts # Late joiner sync via agent attributes
 │   │   └── use-agenda-livekit.ts     # LiveKit stream subscription handler
 │   ├── documents-context.tsx         # Document refs + deduplication + LiveKit stream
-│   └── insights-context.tsx          # AI insights state management
-├── hooks/                            # Custom React hooks
-│   ├── use-agenda.ts                 # Hook for consuming agenda context with utilities
-│   ├── use-insights.ts               # Hook for consuming insights context
-│   ├── use-media-devices.ts          # Camera/microphone device management
-│   ├── use-mobile.ts                 # Mobile detection hook
-│   └── use-notes-panel.ts            # Meeting notes panel state
+│   ├── insights-context.tsx          # AI insights state management
+│   └── meeting-persistence-context.tsx # Meeting data persistence (transcripts, insights, notes)
+├── hooks/
+│   ├── use-agenda.ts                 # Agenda context consumer utilities
+│   ├── use-block-notes.ts            # Block-based notes (text + transcript refs) w/ storage + migration
+│   ├── use-insights.ts
+│   ├── use-media-devices.ts
+│   ├── use-mobile.ts
+│   └── use-notes-panel.ts            # Legacy notes panel state
 ├── lib/
-│   ├── auth.ts                       # Better Auth server configuration
-│   ├── auth-client.ts                # Better Auth client configuration
-│   ├── calendar/                     # Calendar utilities (ICS, provider links)
-│   │   ├── index.ts                  # Barrel export
-│   │   ├── ics.ts                    # ICS file generation for meetings
-│   │   ├── links.ts                  # Add-to-calendar links (Google, Outlook, Yahoo)
-│   │   └── utils.ts                  # Shared calendar formatting utilities
+│   ├── auth.ts / auth-client.ts      # Better Auth configuration
 │   ├── calendar-service.ts           # Calendar sync service layer
 │   ├── calendar-sync.ts              # Google Calendar sync for meetings
-│   ├── google-calendar.ts            # Google Calendar API integration
-│   ├── google-oauth.ts               # OAuth helpers for calendar connection
+│   ├── calendar/ {ics.ts, links.ts, utils.ts, index.ts}
 │   ├── db/                           # Drizzle ORM setup
-│   │   ├── agenda.ts                 # Agenda CRUD + publish/reorder + meetingId lookup
-│   │   ├── calendar.ts               # Calendar integration helpers
-│   │   ├── calendar-event.ts         # Calendar event mapping + DTOs
-│   │   ├── meeting.ts                # Meeting CRUD
-│   │   ├── invitee.ts                # Meeting invitee CRUD + RSVP operations
-│   │   ├── room-access.ts            # Room participation CRUD utilities
-│   │   ├── index.ts                  # Database connection
-│   │   ├── schema.ts                 # Database schema definitions
-│   │   └── migrations/               # SQL migrations
-│   │       ├── 0000_shallow_freak.sql
-│   │       ├── 0001_right_professor_monster.sql
-│   │       ├── 0002_sleepy_redwing.sql
-│   │       ├── 0003_flat_black_bolt.sql
-│   │       ├── 0004_rls_agenda_tables.sql
-│   │       ├── 0005_add_meeting_info.sql
-│   │       ├── 0006_add_meeting_table.sql
-│   │       ├── 0007_add_calendar_integration.sql
-│   │       ├── 0008_add_calendar_event_table.sql
-│   │       ├── 0009_add_agenda_meeting_id.sql
-│   │       └── 0010_add_meeting_invitee_table.sql
-│   ├── email/                        # Email service (Resend integration)
-│   │   ├── index.ts                  # Email sending functions + batch processing
-│   │   └── templates/                # React Email templates
-│   │       ├── meeting-invitation.tsx  # Invitation email with RSVP buttons
-│   │       ├── meeting-updated.tsx     # Meeting reschedule/update notification
-│   │       └── meeting-cancelled.tsx   # Meeting cancellation notification
-│   ├── supabase/                     # Supabase Storage integration
-│   │   ├── index.ts                  # Barrel export + STORAGE_BUCKETS/PATHS
-│   │   ├── client.ts                 # Browser client (anon key)
-│   │   └── server.ts                 # Server client + signed URLs, upload/download
-│   ├── utils.ts                      # Utility functions (cn, formatDuration, etc.)
-│   ├── utils/                        # Shared utility modules
-│   │   └── meeting-form.ts           # Meeting form utilities (TIME_OPTIONS, agenda converters)
-│   ├── validation.ts                 # Zod validation schemas
-│   └── validation/                   # Validation utilities
-│       ├── agenda.ts                 # Agenda input/field validation (shared UI + API)
-│       ├── invitee.ts                # Invitee email/RSVP validation
-│       └── meeting.ts                # Meeting input/field + meeting ID validation
-├── types/                            # TypeScript type definitions
-│   ├── agenda.ts                     # Agenda + agenda item + LiveKit event types
-│   ├── calendar.ts                   # Calendar integration types
-│   ├── document.ts                   # Document + DocumentReference + BoundingBox types
-│   ├── insight.ts                    # AI insight types
-│   ├── invitee.ts                    # Meeting invitee + RSVP types
-│   ├── meeting.ts                    # Meeting types + constants (Phase 1 scheduling)
-│   └── user.ts                       # User-related types
-├── docs/                             # Project documentation
-│   ├── AGENDA_FEATURE_PLAN.md        # Agenda UX + agent integration plan
-│   ├── DOCUMENT_REFERENCE_PLAN.md    # Document feature plan
-│   ├── PHASE2_INSIGHTS_PLAN.md       # AI insights implementation plan
-│   ├── MEETING_SCHEDULING_CALENDAR_PLAN.md # Calendar sync + scheduling plan
-│   ├── CODE_REVIEW_INVITEE_FEATURE.md # Code review for invitee/RSVP feature
-│   ├── PRD.md                        # Product Requirements Document
-│   ├── startup-info.md               # Startup context
-│   ├── better-auth-llm.txt           # Better Auth reference docs
-│   └── livekit-llm.txt               # LiveKit reference docs
-├── tests/                            # Vitest coverage
-│   ├── api/rooms/agenda.test.ts      # Agenda API route tests
-│   ├── components/agenda-builder/agenda-builder.test.tsx # Agenda builder UI tests
-│   ├── components/agenda/agenda-progress.test.tsx        # Agenda progress UI tests
-│   ├── components/meeting-room/join-sequencing.test.tsx  # Join order + agenda metadata
-│   ├── components/meeting/meeting-notes-panel.test.tsx   # Meeting notes panel tests
-│   ├── hooks/use-notes-panel.test.ts                     # Notes panel hook tests
-│   ├── lib/db/agenda.integration.test.ts                 # Agenda DB integration tests
-│   ├── lib/db/agenda.test.ts                             # Agenda DB unit tests
-│   ├── lib/utils.test.ts                                 # Utility tests
-│   ├── lib/validation/agenda.test.ts                     # Agenda validation tests
-│   └── types/agenda.test.ts                              # Agenda types tests
-├── public/                           # Static assets
+│   │   ├── agenda.ts
+│   │   ├── calendar-event.ts
+│   │   ├── calendar.ts
+│   │   ├── invitee.ts
+│   │   ├── meeting.ts
+│   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
+│   │   ├── room-access.ts
+│   │   ├── schema.ts                 # Includes meeting_session, transcription_segment, meeting_insight, document_reference, meeting_note tables
+│   │   ├── index.ts
+│   │   └── migrations/               # SQL + meta snapshots
+│   │       └── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
+│   ├── email/
+│   │   ├── index.ts
+│   │   └── templates/{meeting-invitation.tsx, meeting-updated.tsx, meeting-cancelled.tsx}
+│   ├── supabase/{client.ts, server.ts, index.ts}
+│   ├── utils.ts                      # Includes formatDurationCompact, formatMeetingDate, formatMeetingTime
+│   ├── utils/meeting-form.ts
+│   ├── validation.ts
+│   └── validation/{agenda.ts, invitee.ts, meeting.ts}
+├── types/
+│   ├── agenda.ts
+│   ├── calendar.ts
+│   ├── document.ts
+│   ├── insight.ts
+│   ├── invitee.ts
+│   ├── meeting.ts
+│   ├── meeting-history.ts            # Types for meeting history (sessions, transcripts, insights, notes, stats)
+│   ├── persistence.ts                # Shared persistence types (TranscriptionEntry)
+│   ├── transcript-note.ts
+│   └── user.ts
+├── docs/                             # Project documentation + reference notes
+├── tests/
+│   ├── setup.ts                      # Vitest setup (jsdom, matchers)
+│   ├── api/rooms/agenda.test.ts
+│   ├── components/agenda-builder/agenda-builder.test.tsx
+│   ├── components/agenda/agenda-progress.test.tsx
+│   ├── components/meeting-room/join-sequencing.test.tsx
+│   ├── components/meeting/meeting-notes-panel.test.tsx
+│   ├── hooks/use-notes-panel.test.ts
+│   ├── lib/db/agenda.integration.test.ts
+│   ├── lib/db/agenda.test.ts
+│   ├── lib/utils.test.ts
+│   ├── lib/validation/agenda.test.ts
+│   └── types/agenda.test.ts
+├── public/
 │   ├── pdf.worker.min.mjs            # PDF.js worker for react-pdf
-│   ├── *.webp avatar set
+│   ├── blue_avatar.webp ... red_avatar.webp
 │   ├── image1.png
 │   ├── file.svg
 │   ├── globe.svg
@@ -244,11 +232,12 @@ frontend/
 ├── proxy.ts                          # Next.js 16 route protection middleware
 ├── drizzle.config.ts                 # Drizzle ORM configuration
 ├── components.json                   # shadcn/ui configuration
-├── tsconfig.json                     # TypeScript configuration
 ├── next.config.ts                    # Next.js configuration
 ├── eslint.config.mjs                 # ESLint configuration
 ├── postcss.config.mjs                # PostCSS configuration
+├── tsconfig.json                     # TypeScript configuration
 └── package.json                      # Project dependencies
+
 ```
 
 ### Key Technologies
@@ -425,3 +414,73 @@ import { PdfViewer } from "@/components/documents/pdf-viewer"
   onPageChange={(page) => console.log(page)}
 />
 ```
+
+### Meeting Data Persistence
+
+Meeting data (transcriptions, insights, document references, notes) is persisted to the database for post-meeting review.
+
+#### Database Tables (schema.ts)
+
+- `meeting_session` - Tracks user participation (join/leave times, duration)
+- `transcription_segment` - Speech-to-text segments with speaker info
+- `meeting_insight` - AI-detected insights (action items, decisions, questions)
+- `document_reference` - AI-detected document mentions with page/section
+- `meeting_note` - User-created notes (block-based with transcript references)
+
+#### Persistence Context
+
+```tsx
+import { MeetingPersistenceProvider, useMeetingPersistence } from "@/contexts/meeting-persistence-context"
+
+// Wrap your meeting room component
+<MeetingPersistenceProvider meetingId={meetingId} enabled={true}>
+  <MeetingRoom />
+</MeetingPersistenceProvider>
+
+// In child components, queue data for persistence
+const { queueTranscription, queueInsights, queueDocumentReferences, saveNotes } = useMeetingPersistence()
+
+// Queue transcription (auto-batched every 30s)
+queueTranscription(transcriptionEntries)
+
+// Queue insights
+queueInsights(insights)
+
+// Save notes (debounced)
+saveNotes(blocks, transcriptNotes)
+```
+
+#### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/meetings/[id]/session` | POST | Create session on join |
+| `/api/meetings/[id]/session` | PATCH | End session on leave |
+| `/api/meetings/[id]/data` | POST | Bulk save transcripts/insights/refs |
+| `/api/meetings/[id]/notes` | POST | Save user notes |
+| `/api/meetings/[id]/notes` | GET | Get user notes (or all with `?all=true`) |
+| `/api/meetings/[id]/history` | GET | Full meeting history with all data |
+| `/api/meetings/history` | GET | User's past meetings list |
+
+#### Data Access Functions (lib/db/meeting-data.ts)
+
+```typescript
+import {
+  createMeetingSession,
+  endMeetingSession,
+  saveTranscriptionSegments,
+  saveInsights,
+  saveDocumentReferences,
+  saveMeetingNotes,
+  getMeetingHistory,
+  getUserMeetingHistory,
+} from "@/lib/db/meeting-data"
+```
+
+#### Meeting History View
+
+After a meeting ends, users can view the full history at `/meetings/[roomId]/history`:
+- **Transcription tab**: Full searchable transcript
+- **Insights tab**: Grouped by type (action items, decisions, etc.)
+- **Documents tab**: Referenced documents with page/section links
+- **Notes tab**: All participant notes (host sees all, others see their own)

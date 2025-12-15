@@ -8,6 +8,7 @@ import { PreJoinScreen, UserChoices, MeetingData } from "./pre-join-screen";
 import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
 import { DocumentsProvider } from "@/contexts/documents-context";
+import { MeetingPersistenceProvider } from "@/contexts/meeting-persistence-context";
 import { agendaItemsToDraft } from "@/lib/utils/meeting-form";
 import type { User } from "@/types/user";
 import type { AgendaItemInput, AgendaPublishResponse } from "@/types/agenda";
@@ -297,17 +298,23 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
           console.error("Media device failure:", failure);
         }}
       >
-        <InsightsProvider>
-          <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
-            <MeetingLayout
-              showTranscription={true}
-              agendaVersion={userChoices.agendaVersion}
-              roomId={roomId}
-              meetingName={userChoices.meetingName}
-              meetingScheduledAt={userChoices.scheduledAt}
-            />
-          </DocumentsProvider>
-        </InsightsProvider>
+        <MeetingPersistenceProvider
+          meetingId={meetingData?.meeting?.id ?? null}
+          roomId={roomId}
+          enabled={true}
+        >
+          <InsightsProvider>
+            <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
+              <MeetingLayout
+                showTranscription={true}
+                agendaVersion={userChoices.agendaVersion}
+                roomId={roomId}
+                meetingName={userChoices.meetingName}
+                meetingScheduledAt={userChoices.scheduledAt}
+              />
+            </DocumentsProvider>
+          </InsightsProvider>
+        </MeetingPersistenceProvider>
       </LiveKitRoom>
     </div>
   );

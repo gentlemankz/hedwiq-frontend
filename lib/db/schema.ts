@@ -435,3 +435,254 @@ export const meetingInvitee = pgTable(
     uniqueIndex("idx_meeting_invitee_unique").on(table.meetingId, table.email),
   ]
 );
+
+// ============================================================================
+// Meeting Data Persistence Tables
+// ============================================================================
+
+/**
+ * Meeting Session - Tracks individual participation sessions in a meeting.
+ * A user may have multiple sessions if they disconnect and rejoin.
+ * This table links all meeting data (transcription, insights, notes) to a specific session.
+ */
+export const meetingSession = pgTable(
+  "meeting_session",
+  {
+    /** Unique session identifier */
+    id: text("id").primaryKey(),
+    /** Meeting this session belongs to */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** User who participated in this session */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** LiveKit room ID for quick access */
+    roomId: text("room_id").notNull(),
+    /** When the user joined the meeting */
+    joinedAt: timestamp("joined_at").notNull().defaultNow(),
+    /** When the user left the meeting (null if still connected) */
+    leftAt: timestamp("left_at"),
+    /** Session duration in seconds (calculated on leave) */
+    durationSeconds: integer("duration_seconds"),
+    /** Whether this is the host's session */
+    isHost: boolean("is_host").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_meeting_session_meeting").on(table.meetingId),
+    index("idx_meeting_session_user").on(table.userId),
+    index("idx_meeting_session_room").on(table.roomId),
+    index("idx_meeting_session_joined").on(table.joinedAt),
+  ]
+);
+
+/**
+ * Transcription Segment - Stores transcribed speech from meetings.
+ * Each segment represents a continuous piece of speech from one speaker.
+ */
+export const transcriptionSegment = pgTable(
+  "transcription_segment",
+  {
+    /** Unique identifier (uses LiveKit segment ID) */
+    id: text("id").primaryKey(),
+    /** Meeting this transcription belongs to */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** Room ID for quick access */
+    roomId: text("room_id").notNull(),
+    /** Speaker's identity (user ID or guest identifier) */
+    speakerIdentity: text("speaker_identity").notNull(),
+    /** Speaker's display name */
+    speakerName: text("speaker_name").notNull(),
+    /** Transcribed text content */
+    text: text("text").notNull(),
+    /** When this speech occurred (Unix timestamp ms) */
+    timestamp: timestamp("timestamp").notNull(),
+    /** Order within the meeting for sorting */
+    orderIndex: integer("order_index").notNull().default(0),
+    /** Whether this is the final version (vs interim) */
+    isFinal: boolean("is_final").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_transcription_meeting").on(table.meetingId),
+    index("idx_transcription_room").on(table.roomId),
+    index("idx_transcription_timestamp").on(table.timestamp),
+    index("idx_transcription_order").on(table.meetingId, table.orderIndex),
+  ]
+);
+
+/**
+ * Meeting Insight - Stores AI-detected insights from meeting conversations.
+ * Linked to transcription segments for context.
+ */
+export const meetingInsight = pgTable(
+  "meeting_insight",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** Meeting this insight belongs to */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** Room ID for quick access */
+    roomId: text("room_id").notNull(),
+    /** Type of insight: idea, problem, solution, risk, insight, hypothesis, action_item, open_question */
+    type: text("type").notNull(),
+    /** The actual insight content */
+    content: text("content").notNull(),
+    /** Speaker's identity who mentioned this */
+    speakerIdentity: text("speaker_identity"),
+    /** Speaker's display name */
+    speakerName: text("speaker_name"),
+    /** Confidence score from 0.0 to 1.0 */
+    confidence: integer("confidence").notNull().default(80),
+    /** Reference to the transcription segment ID */
+    transcriptRef: text("transcript_ref"),
+    /** When the insight was detected (Unix timestamp ms) */
+    timestamp: timestamp("timestamp").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_insight_meeting").on(table.meetingId),
+    index("idx_insight_room").on(table.roomId),
+    index("idx_insight_type").on(table.type),
+    index("idx_insight_timestamp").on(table.timestamp),
+    index("idx_insight_transcript").on(table.transcriptRef),
+  ]
+);
+
+/**
+ * Document Reference - Stores AI-detected references to uploaded documents.
+ * Links speech to specific locations in documents.
+ */
+export const documentReference = pgTable(
+  "document_reference",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** Meeting this reference belongs to */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** Room ID for quick access */
+    roomId: text("room_id").notNull(),
+    /** Referenced document */
+    documentId: text("document_id")
+      .notNull()
+      .references(() => document.id, { onDelete: "cascade" }),
+    /** Section ID for deduplication */
+    sectionId: text("section_id").notNull(),
+    /** Page number in the document (1-indexed) */
+    pageNumber: integer("page_number").notNull().default(1),
+    /** Title of the section if available */
+    sectionTitle: text("section_title"),
+    /** Evidence span from the document */
+    matchedText: text("matched_text"),
+    /** Bounding box for highlighting (JSON) */
+    bbox: jsonb("bbox").$type<{
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+    }>(),
+    /** Brief explanation of why this is a match */
+    context: text("context").notNull(),
+    /** Confidence score (0-100 as integer for DB) */
+    confidence: integer("confidence").notNull().default(80),
+    /** Reference to the transcription segment ID */
+    transcriptRef: text("transcript_ref"),
+    /** When the reference was detected (Unix timestamp ms) */
+    timestamp: timestamp("timestamp").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_doc_ref_meeting").on(table.meetingId),
+    index("idx_doc_ref_room").on(table.roomId),
+    index("idx_doc_ref_document").on(table.documentId),
+    index("idx_doc_ref_transcript").on(table.transcriptRef),
+    index("idx_doc_ref_timestamp").on(table.timestamp),
+  ]
+);
+
+/**
+ * Meeting Note - Stores user notes created during meetings.
+ * Uses JSONB to store the flexible block structure.
+ */
+export const meetingNote = pgTable(
+  "meeting_note",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** Meeting this note belongs to */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** Room ID for quick access */
+    roomId: text("room_id").notNull(),
+    /** User who created the note */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Ordered array of note blocks (text and transcript references) */
+    blocks: jsonb("blocks")
+      .notNull()
+      .$type<
+        Array<
+          | {
+              type: "text";
+              id: string;
+              content: string;
+              createdAt: number;
+              updatedAt: number;
+            }
+          | {
+              type: "transcript";
+              id: string;
+              transcriptNoteId: string;
+              createdAt: number;
+            }
+        >
+      >()
+      .default([]),
+    /** Map of transcript notes by ID */
+    transcriptNotes: jsonb("transcript_notes")
+      .notNull()
+      .$type<
+        Record<
+          string,
+          {
+            id: string;
+            content: string;
+            reference: {
+              transcriptId: string;
+              participantIdentity: string;
+              participantName: string;
+              transcriptText: string;
+              transcriptTimestamp: number;
+            };
+            createdAt: number;
+            updatedAt: number;
+          }
+        >
+      >()
+      .default({}),
+    /** Storage version for migrations */
+    version: integer("version").notNull().default(2),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_meeting_note_meeting").on(table.meetingId),
+    index("idx_meeting_note_room").on(table.roomId),
+    index("idx_meeting_note_user").on(table.userId),
+    uniqueIndex("idx_meeting_note_unique").on(
+      table.meetingId,
+      table.userId
+    ),
+  ]
+);

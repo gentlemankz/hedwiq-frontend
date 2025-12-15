@@ -33,6 +33,7 @@ import {
   EditMeetingDialog,
   MeetingList,
   ManageInviteesDialog,
+  PastMeetingsList,
 } from "@/components/meetings";
 import { CalendarStatusCard } from "@/components/calendar";
 import type { User } from "@/types/user";
@@ -505,6 +506,19 @@ export function DashboardClient({
               onManageInvitees={handleManageInvitees}
               emptyMessage="No upcoming meetings. Click 'New Meeting' to create one."
             />
+          </CardContent>
+        </Card>
+
+        {/* Past Meetings */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Past Meetings</CardTitle>
+            <CardDescription>
+              View transcriptions, insights, and notes from previous meetings
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PastMeetingsList pageSize={6} />
           </CardContent>
         </Card>
 

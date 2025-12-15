@@ -1,0 +1,179 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { isMeetingHost, getMeetingById } from "@/lib/db/meeting";
+import {
+  createMeetingSession,
+  endMeetingSession,
+  getActiveSession,
+  validateSessionOwnership,
+} from "@/lib/db/meeting-data";
+
+/**
+ * POST /api/meetings/[meetingId]/session
+ *
+ * Create a new session when user joins a meeting.
+ * Returns the session ID to be used when leaving.
+ *
+ * Body:
+ * - roomId: string (required)
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ meetingId: string }> }
+) {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { meetingId } = await params;
+
+  if (!meetingId || typeof meetingId !== "string") {
+    return NextResponse.json({ error: "Invalid meeting ID" }, { status: 400 });
+  }
+
+  // Parse request body
+  let body: { roomId?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.roomId) {
+    return NextResponse.json({ error: "roomId is required" }, { status: 400 });
+  }
+
+  try {
+    // Verify meeting exists
+    const meeting = await getMeetingById(meetingId);
+    if (!meeting) {
+      return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
+    }
+
+    // Check if user is host
+    const isHost = await isMeetingHost(meetingId, session.user.id);
+
+    // Create session
+    const sessionId = await createMeetingSession({
+      meetingId,
+      userId: session.user.id,
+      roomId: body.roomId,
+      isHost,
+    });
+
+    return NextResponse.json({
+      sessionId,
+      isHost,
+    });
+  } catch (error) {
+    console.error("Create session error:", error);
+    return NextResponse.json(
+      { error: "Failed to create session" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/meetings/[meetingId]/session
+ *
+ * End a session when user leaves a meeting.
+ *
+ * Body:
+ * - sessionId: string (required)
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ meetingId: string }> }
+) {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { meetingId } = await params;
+
+  if (!meetingId || typeof meetingId !== "string") {
+    return NextResponse.json({ error: "Invalid meeting ID" }, { status: 400 });
+  }
+
+  // Parse request body
+  let body: { sessionId?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.sessionId) {
+    return NextResponse.json(
+      { error: "sessionId is required" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    // Verify the session belongs to the current user
+    const isOwner = await validateSessionOwnership(body.sessionId, session.user.id);
+    if (!isOwner) {
+      return NextResponse.json(
+        { error: "You can only end your own sessions" },
+        { status: 403 }
+      );
+    }
+
+    await endMeetingSession(body.sessionId);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("End session error:", error);
+    return NextResponse.json(
+      { error: "Failed to end session" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * GET /api/meetings/[meetingId]/session
+ *
+ * Get the current active session for the user in this meeting.
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ meetingId: string }> }
+) {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { meetingId } = await params;
+
+  if (!meetingId || typeof meetingId !== "string") {
+    return NextResponse.json({ error: "Invalid meeting ID" }, { status: 400 });
+  }
+
+  try {
+    const activeSession = await getActiveSession(meetingId, session.user.id);
+
+    return NextResponse.json({ session: activeSession });
+  } catch (error) {
+    console.error("Get session error:", error);
+    return NextResponse.json(
+      { error: "Failed to get session" },
+      { status: 500 }
+    );
+  }
+}

@@ -95,7 +95,7 @@ function useAutoScroll(deps: React.DependencyList) {
 // Types
 // ============================================================================
 
-interface TranscriptionEntry {
+export interface TranscriptionEntry {
   id: string;
   participantIdentity: string;
   participantName: string;
@@ -128,6 +128,8 @@ interface TranscriptionSidebarProps {
   onAddNote?: (reference: TranscriptReference, content: string) => void;
   /** Function to check if a transcript has notes */
   hasNotesForTranscript?: (transcriptId: string) => boolean;
+  /** Callback when transcription entries are ready for persistence */
+  onTranscriptionUpdate?: (entries: TranscriptionEntry[]) => void;
 }
 
 // ============================================================================
@@ -140,6 +142,7 @@ export function TranscriptionSidebar({
   onDocumentReferenceClick,
   onAddNote,
   hasNotesForTranscript,
+  onTranscriptionUpdate,
 }: TranscriptionSidebarProps) {
   const room = useRoomContext();
   const isMountedRef = useRef(true);
@@ -179,6 +182,35 @@ export function TranscriptionSidebar({
   // Use custom auto-scroll hook
   const { autoScroll, handleScroll, scrollToBottom, setScrollContainer } =
     useAutoScroll([sortedEntries]);
+
+  // Ref to track which entries we've already reported for persistence
+  // Limited to prevent unbounded memory growth in long meetings
+  const reportedEntriesRef = useRef<Set<string>>(new Set());
+  const MAX_REPORTED_ENTRIES = 1000;
+
+  // Call onTranscriptionUpdate when new final entries are available
+  useEffect(() => {
+    if (!onTranscriptionUpdate || finalEntries.length === 0) return;
+
+    // Find entries that haven't been reported yet
+    const newEntries = finalEntries.filter(
+      (entry) => !reportedEntriesRef.current.has(entry.id)
+    );
+
+    if (newEntries.length > 0) {
+      // Mark as reported
+      newEntries.forEach((entry) => reportedEntriesRef.current.add(entry.id));
+
+      // Trim set if it gets too large to prevent memory leak
+      if (reportedEntriesRef.current.size > MAX_REPORTED_ENTRIES) {
+        const entries = Array.from(reportedEntriesRef.current);
+        reportedEntriesRef.current = new Set(entries.slice(-MAX_REPORTED_ENTRIES));
+      }
+
+      // Call callback with new entries
+      onTranscriptionUpdate(newEntries);
+    }
+  }, [finalEntries, onTranscriptionUpdate]);
 
   // Handle text stream from transcription agent
   const handleTextStream = useCallback(

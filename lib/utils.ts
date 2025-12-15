@@ -175,3 +175,48 @@ export function formatRelativeTime(timestamp: number): string {
     day: "numeric",
   });
 }
+
+/**
+ * Formats a duration in minutes to a compact string (e.g., "30 min", "1h 30m").
+ * Shorter format suitable for badges and compact displays.
+ * @param minutes - Duration in minutes (null returns "< 1 min")
+ * @returns Formatted duration string
+ */
+export function formatDurationCompact(minutes: number | null): string {
+  if (!minutes || minutes === 0) return "< 1 min";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}m`;
+}
+
+/**
+ * Formats a date string to a localized date display.
+ * @param dateString - ISO date string or null
+ * @returns Formatted date string (e.g., "Mon, Dec 16, 2024")
+ */
+export function formatMeetingDate(dateString: string | null): string {
+  if (!dateString) return "Unknown date";
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/**
+ * Formats a date string to time only.
+ * @param dateString - ISO date string or null
+ * @returns Formatted time string (e.g., "2:30 PM")
+ */
+export function formatMeetingTime(dateString: string | null): string {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  return date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
