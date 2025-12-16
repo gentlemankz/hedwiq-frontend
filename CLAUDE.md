@@ -51,6 +51,11 @@ frontend/
 │   │   │   └── [documentId]/
 │   │   │       ├── route.ts          # Get/delete a document
 │   │   │       └── pdf/route.ts      # Serve signed URL to PDF
+│   │   ├── gmail/                    # Gmail OAuth for Real-Time Actions
+│   │   │   ├── connect/route.ts      # Start Gmail OAuth flow
+│   │   │   ├── callback/route.ts     # OAuth callback handler
+│   │   │   ├── status/route.ts       # Connection status for user
+│   │   │   └── disconnect/route.ts   # Revoke Gmail connection
 │   │   ├── livekit/token/route.ts    # LiveKit token generation endpoint
 │   │   ├── meetings/                 # Meeting CRUD + invites + persistence
 │   │   │   ├── route.ts              # List/create meetings
@@ -112,6 +117,9 @@ frontend/
 │   │   ├── document-upload.tsx
 │   │   ├── document-viewer-modal.tsx
 │   │   ├── pdf-viewer.tsx
+│   │   └── index.ts
+│   ├── gmail/
+│   │   ├── gmail-status-card.tsx
 │   │   └── index.ts
 │   ├── insights/
 │   │   ├── insight-badge.tsx
@@ -175,18 +183,22 @@ frontend/
 │   ├── calendar-service.ts           # Calendar sync service layer
 │   ├── calendar-sync.ts              # Google Calendar sync for meetings
 │   ├── calendar/ {ics.ts, links.ts, utils.ts, index.ts}
+│   ├── gmail-oauth.ts                # Gmail OAuth utilities (token exchange, refresh, revoke)
+│   ├── google-oauth.ts               # Google Calendar OAuth utilities
 │   ├── db/                           # Drizzle ORM setup
 │   │   ├── agenda.ts
 │   │   ├── calendar-event.ts
 │   │   ├── calendar.ts
+│   │   ├── gmail.ts                  # Gmail integration CRUD operations
 │   │   ├── invitee.ts
 │   │   ├── meeting.ts
 │   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
 │   │   ├── room-access.ts
-│   │   ├── schema.ts                 # Includes meeting_session, transcription_segment, meeting_insight, document_reference, meeting_note tables
+│   │   ├── schema.ts                 # Includes gmail_integration, meeting_session, transcription_segment, meeting_insight, document_reference, meeting_note tables
 │   │   ├── index.ts
 │   │   └── migrations/               # SQL + meta snapshots
-│   │       └── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
+│   │       ├── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
+│   │       └── 0013_add_gmail_integration.sql    # Gmail OAuth integration table
 │   ├── email/
 │   │   ├── index.ts
 │   │   └── templates/{meeting-invitation.tsx, meeting-updated.tsx, meeting-cancelled.tsx}
@@ -199,6 +211,7 @@ frontend/
 │   ├── agenda.ts
 │   ├── calendar.ts
 │   ├── document.ts
+│   ├── gmail.ts                      # Gmail integration types + OAuth constants
 │   ├── insight.ts
 │   ├── invitee.ts
 │   ├── meeting.ts
@@ -484,3 +497,84 @@ After a meeting ends, users can view the full history at `/meetings/[roomId]/his
 - **Insights tab**: Grouped by type (action items, decisions, etc.)
 - **Documents tab**: Referenced documents with page/section links
 - **Notes tab**: All participant notes (host sees all, others see their own)
+
+### Gmail OAuth Integration (Real-Time Actions)
+
+Gmail OAuth integration enables sending AI-drafted follow-up emails from meetings.
+
+#### OAuth Flow
+
+```typescript
+import { getGmailIntegration, upsertGmailIntegration } from "@/lib/db/gmail"
+import { buildGmailAuthUrl, exchangeGmailCodeForTokens } from "@/lib/gmail-oauth"
+
+// Check connection status
+const integration = await getGmailIntegration(userId)
+const isConnected = integration?.status === "connected"
+
+// Initiate OAuth flow
+const authUrl = buildGmailAuthUrl(state, redirectUri)
+
+// After callback, store tokens
+await upsertGmailIntegration({
+  userId,
+  accessToken: tokens.access_token,
+  refreshToken: tokens.refresh_token,
+  tokenExpiresAt: calculateGmailTokenExpiry(tokens.expires_in),
+  gmailEmail: userInfo.email,
+})
+```
+
+#### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/gmail/connect` | GET | Initiate Gmail OAuth flow |
+| `/api/gmail/callback` | GET | Handle OAuth callback from Google |
+| `/api/gmail/status` | GET | Get Gmail connection status |
+| `/api/gmail/disconnect` | POST | Disconnect Gmail integration |
+
+#### Gmail Scopes
+
+Uses minimal scopes required for sending emails:
+- `gmail.send` - Send emails on behalf of user
+- `userinfo.email` - Get user's email address
+
+**Note:** Does NOT use `gmail.compose` (restricted scope) - drafts are stored locally in our database.
+
+#### UI Component
+
+```tsx
+import { GmailStatusCard } from "@/components/gmail"
+
+<GmailStatusCard
+  initialConnected={false}
+  onConnectionChange={(connected) => console.log(connected)}
+/>
+```
+
+#### Database Table: `gmail_integration`
+
+- `id` - Unique identifier
+- `user_id` - User who connected Gmail
+- `access_token` - OAuth access token (encrypted at rest)
+- `refresh_token` - OAuth refresh token (encrypted at rest)
+- `token_expires_at` - Token expiry timestamp
+- `gmail_email` - Email associated with the Gmail account
+- `status` - Connection status (connected, disconnected, error)
+- `error_message` - Error details if status is 'error'
+
+#### Token Refresh
+
+Tokens are automatically refreshed when expiring within 5 minutes:
+
+```typescript
+import { getValidGmailToken } from "@/lib/db/gmail"
+
+// Gets valid token, refreshing if needed
+const result = await getValidGmailToken(userId)
+if (result) {
+  const { accessToken, gmailEmail } = result
+  // Use accessToken to send emails via Gmail API
+}
+```

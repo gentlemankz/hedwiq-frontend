@@ -104,8 +104,9 @@ Subscribe to `hedwiq.action` topic, parse classification metadata.
 
 **Required Gmail Scopes:**
 - `gmail.send` - Send emails on behalf of user
-- `gmail.compose` - Create drafts
 - `userinfo.email` - Get user's email address
+
+**Note:** We intentionally avoid `gmail.compose` (restricted scope) by storing drafts locally in our database rather than syncing to Gmail Drafts folder.
 
 **New Files:**
 - `lib/gmail-oauth.ts` - OAuth URL builder, token exchange (copy pattern from google-oauth.ts)
@@ -120,7 +121,6 @@ Subscribe to `hedwiq.action` topic, parse classification metadata.
 | `/api/gmail/status` | GET | Check connection status |
 | `/api/gmail/disconnect` | POST | Revoke integration |
 | `/api/gmail/send` | POST | Send email via Gmail API |
-| `/api/gmail/draft` | POST | Create draft in Gmail |
 
 **Database Table: `gmail_integration`**
 - id, user_id, access_token (encrypted), refresh_token (encrypted)
@@ -189,7 +189,7 @@ Functions:
 - `updateDraft(id, changes)` - Edit draft locally
 - `sendDraft(id)` - Submit to Gmail API
 - `rejectDraft(id)` - Dismiss draft
-- `saveDraftToGmail(id)` - Save as Gmail draft (not send)
+- `saveDraft(id)` - Persist draft to local database (auto-saved on edit)
 
 ### Phase 4: Real-Time UI Components
 
@@ -215,7 +215,7 @@ Features:
 - List of pending email drafts
 - Inline editing (to, subject, body)
 - Recipient autocomplete from meeting participants
-- Send / Save as Draft / Reject buttons
+- Send / Reject buttons (drafts auto-saved locally)
 - Character count, attachment hint
 
 **Draft Card Component:**
@@ -321,14 +321,14 @@ Create incremental migration files:
 
 **Deliverable:** Actions classified and displayed by type in UI
 
-### Phase 2: Gmail OAuth (Week 2-3)
+### Phase 2: Gmail OAuth (Week 2-3) - COMPLETE
 **Goal:** Gmail connected and tokens managed
 
-- [ ] Copy calendar OAuth pattern for Gmail
-- [ ] Database: gmail_integration table
-- [ ] API routes: connect, callback, status, disconnect
-- [ ] Frontend: Gmail connection UI (Settings or Dashboard)
-- [ ] Token refresh mechanism
+- [x] Copy calendar OAuth pattern for Gmail (`lib/gmail-oauth.ts`)
+- [x] Database: gmail_integration table (`lib/db/schema.ts`, `0013_add_gmail_integration.sql`)
+- [x] API routes: connect, callback, status, disconnect (`app/api/gmail/`)
+- [x] Frontend: Gmail connection UI (`components/gmail/gmail-status-card.tsx`)
+- [x] Token refresh mechanism (`lib/db/gmail.ts` - `getValidGmailToken`)
 
 **Deliverable:** Users can connect/disconnect Gmail account
 
@@ -466,6 +466,7 @@ Validations:
 - **Attachments** - Attach meeting documents to emails
 - **Email templates** - User-defined templates per action type
 - **Scheduling sends** - "Send tomorrow morning"
+- **Gmail Drafts sync** - Sync drafts to Gmail (requires `gmail.compose` restricted scope approval)
 
 ### 9.2 Medium-Term
 - **Other email providers** - Outlook, custom SMTP
@@ -517,8 +518,8 @@ GMAIL_CLIENT_SECRET      # Can reuse GOOGLE_CLIENT_SECRET if same project
    - Could revisit with enterprise admin controls
 
 3. **Draft storage: Local vs Server?**
-   - Recommendation: Server (syncs across devices, survives browser close)
-   - Local storage as backup/cache
+   - **Decision:** Server database (`email_draft` table) - syncs across devices, survives browser close
+   - Note: Gmail Drafts sync not available (requires restricted `gmail.compose` scope)
 
 4. **Multiple email accounts?**
    - MVP: Single Gmail per user
@@ -547,5 +548,7 @@ GMAIL_CLIENT_SECRET      # Can reuse GOOGLE_CLIENT_SECRET if same project
 
 - **Author:** AI-assisted planning
 - **Created:** 2024-12-16
-- **Status:** Draft
+- **Updated:** 2024-12-17
+- **Status:** Draft (Phase 1 & 2 Complete)
 - **Related Docs:** PHASE2_INSIGHTS_PLAN.md, MEETING_SCHEDULING_CALENDAR_PLAN.md
+- **Scope Change:** Removed `gmail.compose` scope - drafts stored locally only

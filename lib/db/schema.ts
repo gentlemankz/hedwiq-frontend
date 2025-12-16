@@ -264,6 +264,48 @@ export const calendarIntegration = pgTable(
 );
 
 // ============================================================================
+// Gmail Integration Tables
+// ============================================================================
+
+/**
+ * Gmail Integration - Stores OAuth tokens for Gmail API access.
+ * One integration per user (only Gmail provider supported).
+ * Used for sending emails as part of Real-Time Actions feature.
+ */
+export const gmailIntegration = pgTable(
+  "gmail_integration",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** User who connected Gmail */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** OAuth access token */
+    accessToken: text("access_token").notNull(),
+    /** OAuth refresh token */
+    refreshToken: text("refresh_token"),
+    /** Token expiry timestamp */
+    tokenExpiresAt: timestamp("token_expires_at"),
+    /** OAuth scopes granted */
+    scope: text("scope"),
+    /** Email associated with the Gmail account */
+    gmailEmail: text("gmail_email"),
+    /** Connection status: connected, disconnected, error */
+    status: text("status").notNull().default("connected"),
+    /** Error message if status is 'error' */
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    // Unique constraint: one Gmail integration per user
+    // Note: unique index already provides index functionality, no separate index needed
+    uniqueIndex("idx_gmail_integration_user_unique").on(table.userId),
+  ]
+);
+
+// ============================================================================
 // Meeting Scheduling Tables
 // ============================================================================
 
