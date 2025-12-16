@@ -10,17 +10,25 @@ import {
 import { AgendaProgress } from "@/components/agenda";
 import { MeetingInfoHeader } from "@/components/meeting/meeting-info-header";
 import { DocumentViewerModal } from "@/components/documents/document-viewer-modal";
+import { EmailDraftPanel } from "@/components/email-drafts";
 import { useDocumentsContext } from "@/contexts/documents-context";
 import { useMeetingPersistence } from "@/contexts/meeting-persistence-context";
 import { useInsightsContext } from "@/contexts/insights-context";
+import { useEmailDraftsContext } from "@/contexts/email-drafts-context";
 import { AgendaProvider } from "@/contexts/agenda";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { PanelRightClose, PanelLeftClose } from "lucide-react";
+import { PanelRightClose, PanelLeftClose, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAgenda } from "@/hooks/use-agenda";
 import { useBlockNotes } from "@/hooks/use-block-notes";
@@ -89,11 +97,51 @@ function MeetingLayoutInner({
   meetingScheduledAt,
 }: MeetingLayoutInnerProps) {
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
+  const [showEmailDrafts, setShowEmailDrafts] = useState(false);
+  const [isGmailConnected, setIsGmailConnected] = useState(false);
   const { hasAgenda, agenda, isLoading, error } = useAgenda();
   const { getDocument, isHydrating, isDocumentLoading, documentCount, references } =
     useDocumentsContext();
   const { insights } = useInsightsContext();
+  const { pendingCount } = useEmailDraftsContext();
   const persistence = useMeetingPersistence();
+
+  // Check Gmail connection status on mount and when window regains focus
+  // This handles the case where user connects Gmail in another tab/window
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkGmailStatus() {
+      try {
+        const response = await fetch("/api/gmail/status");
+        if (response.ok && isMounted) {
+          const data = await response.json();
+          setIsGmailConnected(data.connected);
+        }
+      } catch (err) {
+        console.error("Failed to check Gmail status:", err);
+      }
+    }
+
+    // Initial check
+    checkGmailStatus();
+
+    // Re-check when window regains focus (user might have connected Gmail in another tab)
+    const handleFocus = () => {
+      checkGmailStatus();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  // Handle Gmail connection
+  const handleConnectGmail = useCallback(() => {
+    window.location.href = "/api/gmail/connect";
+  }, []);
 
   // Block-based notes management
   const {
@@ -301,6 +349,38 @@ function MeetingLayoutInner({
           </Button>
         </div>
       )}
+
+      {/* Email Drafts floating button */}
+      <Sheet open={showEmailDrafts} onOpenChange={setShowEmailDrafts}>
+        <SheetTrigger asChild>
+          <Button
+            variant="secondary"
+            size="sm"
+            className={cn(
+              "fixed left-4 bottom-4 z-50 shadow-lg",
+              pendingCount > 0 && "animate-pulse"
+            )}
+          >
+            <Mail className="size-4 mr-2" />
+            Email Drafts
+            {pendingCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="ml-2 rounded-full px-1.5 min-w-[1.25rem] h-5"
+              >
+                {pendingCount}
+              </Badge>
+            )}
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="w-[400px] sm:w-[450px] p-0">
+          <EmailDraftPanel
+            isGmailConnected={isGmailConnected}
+            onConnectGmail={handleConnectGmail}
+            roomId={roomId}
+          />
+        </SheetContent>
+      </Sheet>
 
       {/* Document viewer modal */}
       <DocumentViewerModal

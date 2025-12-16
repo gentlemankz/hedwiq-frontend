@@ -126,8 +126,8 @@ export function MeetingPersistenceProvider({
   const isMountedRef = useRef(true);
 
   // Refs for cleanup (avoid stale closures)
-  const saveDataRef = useRef<() => Promise<void>>();
-  const saveNotesInternalRef = useRef<() => Promise<void>>();
+  const saveDataRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const saveNotesInternalRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const isEnabledRef = useRef(false);
   const meetingIdRef = useRef<string | null>(null);
 

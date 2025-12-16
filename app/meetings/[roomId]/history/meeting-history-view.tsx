@@ -417,12 +417,14 @@ function InsightsTab({ insights }: InsightsTabProps) {
 
 function getInsightIcon(type: InsightType) {
   const icons: Record<InsightType, React.ReactNode> = {
-    action_item: <span className="text-blue-500">✓</span>,
-    decision: <span className="text-green-500">⚡</span>,
-    question: <span className="text-yellow-500">?</span>,
-    concern: <span className="text-red-500">!</span>,
-    followup: <span className="text-purple-500">→</span>,
-    key_point: <span className="text-cyan-500">★</span>,
+    action_item: <span className="text-indigo-500">✓</span>,
+    idea: <span className="text-yellow-500">💡</span>,
+    problem: <span className="text-orange-500">⚠</span>,
+    solution: <span className="text-green-500">✓</span>,
+    risk: <span className="text-red-500">!</span>,
+    insight: <span className="text-blue-500">🔍</span>,
+    hypothesis: <span className="text-purple-500">🧪</span>,
+    open_question: <span className="text-cyan-500">?</span>,
   };
   return icons[type] || <Lightbulb className="size-4" />;
 }

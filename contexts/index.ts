@@ -5,6 +5,12 @@ export {
   useActionsContext,
   useActionForInsight,
 } from "./actions-context";
+export {
+  EmailDraftsProvider,
+  useEmailDraftsContext,
+  useDraftForAction,
+  usePendingDraftCount,
+} from "./email-drafts-context";
 export { AgendaProvider, useAgendaContext } from "./agenda";
 export {
   MeetingPersistenceProvider,

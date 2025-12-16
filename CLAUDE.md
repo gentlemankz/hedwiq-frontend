@@ -51,11 +51,15 @@ frontend/
 │   │   │   └── [documentId]/
 │   │   │       ├── route.ts          # Get/delete a document
 │   │   │       └── pdf/route.ts      # Serve signed URL to PDF
+│   │   ├── email-drafts/             # AI-generated email draft management
+│   │   │   ├── route.ts              # List/create email drafts
+│   │   │   └── [draftId]/route.ts    # Get/update/delete email draft
 │   │   ├── gmail/                    # Gmail OAuth for Real-Time Actions
 │   │   │   ├── connect/route.ts      # Start Gmail OAuth flow
 │   │   │   ├── callback/route.ts     # OAuth callback handler
 │   │   │   ├── status/route.ts       # Connection status for user
-│   │   │   └── disconnect/route.ts   # Revoke Gmail connection
+│   │   │   ├── disconnect/route.ts   # Revoke Gmail connection
+│   │   │   └── send/route.ts         # Send email via Gmail API
 │   │   ├── livekit/token/route.ts    # LiveKit token generation endpoint
 │   │   ├── meetings/                 # Meeting CRUD + invites + persistence
 │   │   │   ├── route.ts              # List/create meetings
@@ -118,6 +122,10 @@ frontend/
 │   │   ├── document-viewer-modal.tsx
 │   │   ├── pdf-viewer.tsx
 │   │   └── index.ts
+│   ├── email-drafts/
+│   │   ├── email-draft-card.tsx    # Collapsible email draft card with inline editing
+│   │   ├── email-draft-panel.tsx   # Email drafts panel with tabs (Pending/Sent/Dismissed)
+│   │   └── index.ts
 │   ├── gmail/
 │   │   ├── gmail-status-card.tsx
 │   │   └── index.ts
@@ -169,6 +177,7 @@ frontend/
 │   │   ├── use-agenda-late-joiner-sync.ts # Late joiner sync via agent attributes
 │   │   └── use-agenda-livekit.ts     # LiveKit stream subscription handler
 │   ├── documents-context.tsx         # Document refs + deduplication + LiveKit stream
+│   ├── email-drafts-context.tsx      # Email draft state management + LiveKit stream subscription
 │   ├── insights-context.tsx          # AI insights state management
 │   └── meeting-persistence-context.tsx # Meeting data persistence (transcripts, insights, notes)
 ├── hooks/
@@ -189,16 +198,18 @@ frontend/
 │   │   ├── agenda.ts
 │   │   ├── calendar-event.ts
 │   │   ├── calendar.ts
+│   │   ├── email-draft.ts            # Email draft CRUD operations (upsert, update, send tracking)
 │   │   ├── gmail.ts                  # Gmail integration CRUD operations
 │   │   ├── invitee.ts
 │   │   ├── meeting.ts
 │   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
 │   │   ├── room-access.ts
-│   │   ├── schema.ts                 # Includes gmail_integration, meeting_session, transcription_segment, meeting_insight, document_reference, meeting_note tables
+│   │   ├── schema.ts                 # Includes gmail_integration, email_draft, email_sent tables
 │   │   ├── index.ts
 │   │   └── migrations/               # SQL + meta snapshots
 │   │       ├── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
-│   │       └── 0013_add_gmail_integration.sql    # Gmail OAuth integration table
+│   │       ├── 0013_add_gmail_integration.sql    # Gmail OAuth integration table
+│   │       └── 0014_add_email_draft_table.sql    # Email draft + sent audit tables
 │   ├── email/
 │   │   ├── index.ts
 │   │   └── templates/{meeting-invitation.tsx, meeting-updated.tsx, meeting-cancelled.tsx}
@@ -211,6 +222,7 @@ frontend/
 │   ├── agenda.ts
 │   ├── calendar.ts
 │   ├── document.ts
+│   ├── email-draft.ts                # Email draft types, status config, helper functions
 │   ├── gmail.ts                      # Gmail integration types + OAuth constants
 │   ├── insight.ts
 │   ├── invitee.ts
@@ -365,216 +377,3 @@ LiveKit React components use CSS variables prefixed with `--lk-`. These are over
 ```
 
 This ensures LiveKit components match the shadcn dark/light theme automatically.
-
-### Supabase Storage Pattern
-
-Documents (PDFs) are stored in Supabase Storage with the following architecture:
-
-```typescript
-// Bucket: "meeting-documents"
-// Path format: {roomId}/{documentId}.pdf
-
-import { uploadFile, getSignedUrl, downloadFile, deleteFiles } from "@/lib/supabase"
-import { STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase"
-
-// Upload a document
-const path = STORAGE_PATHS.document(roomId, documentId)
-await uploadFile(STORAGE_BUCKETS.DOCUMENTS, path, fileBuffer)
-
-// Get a signed URL for viewing (1 hour expiry)
-const url = await getSignedUrl(STORAGE_BUCKETS.DOCUMENTS, path, 3600)
-```
-
-**Important**: The server uses the service role key for storage operations (upload, delete, signed URLs). The browser client uses the anon key but document access is controlled via signed URLs generated server-side.
-
-### Room Access Control
-
-Room participation is tracked to control access to room-scoped resources (documents):
-
-```typescript
-import { recordRoomParticipation, isRoomParticipant, validateRoomAccess } from "@/lib/db/room-access"
-
-// Record when user visits a room (called from page.tsx or access API)
-await recordRoomParticipation(userId, roomId)
-
-// Check if user can access room resources
-const hasAccess = await isRoomParticipant(userId, roomId)
-
-// Validate and get error message (for API routes)
-const error = await validateRoomAccess(userId, roomId)
-if (error) return NextResponse.json({ error }, { status: 403 })
-```
-
-The `roomParticipant` table tracks which users have visited which rooms, enabling document upload authorization without requiring explicit room ownership.
-
-### PDF Viewer Component
-
-The `PdfViewer` component (`components/documents/pdf-viewer.tsx`) uses react-pdf with:
-- Bounding box highlighting (coordinate-based, rotation-aware)
-- Fuzzy text highlighting (fallback when no bbox)
-- Page navigation, zoom, and rotation controls
-- Local PDF.js worker (`public/pdf.worker.min.mjs`)
-
-```tsx
-import { PdfViewer } from "@/components/documents/pdf-viewer"
-
-<PdfViewer
-  file={pdfUrl}
-  initialPage={1}
-  bbox={{ x0: 100, y0: 200, x1: 400, y1: 250 }}  // Optional
-  highlightText="search term"                      // Fallback
-  highlightPage={3}
-  onPageChange={(page) => console.log(page)}
-/>
-```
-
-### Meeting Data Persistence
-
-Meeting data (transcriptions, insights, document references, notes) is persisted to the database for post-meeting review.
-
-#### Database Tables (schema.ts)
-
-- `meeting_session` - Tracks user participation (join/leave times, duration)
-- `transcription_segment` - Speech-to-text segments with speaker info
-- `meeting_insight` - AI-detected insights (action items, decisions, questions)
-- `document_reference` - AI-detected document mentions with page/section
-- `meeting_note` - User-created notes (block-based with transcript references)
-
-#### Persistence Context
-
-```tsx
-import { MeetingPersistenceProvider, useMeetingPersistence } from "@/contexts/meeting-persistence-context"
-
-// Wrap your meeting room component
-<MeetingPersistenceProvider meetingId={meetingId} enabled={true}>
-  <MeetingRoom />
-</MeetingPersistenceProvider>
-
-// In child components, queue data for persistence
-const { queueTranscription, queueInsights, queueDocumentReferences, saveNotes } = useMeetingPersistence()
-
-// Queue transcription (auto-batched every 30s)
-queueTranscription(transcriptionEntries)
-
-// Queue insights
-queueInsights(insights)
-
-// Save notes (debounced)
-saveNotes(blocks, transcriptNotes)
-```
-
-#### API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/meetings/[id]/session` | POST | Create session on join |
-| `/api/meetings/[id]/session` | PATCH | End session on leave |
-| `/api/meetings/[id]/data` | POST | Bulk save transcripts/insights/refs |
-| `/api/meetings/[id]/notes` | POST | Save user notes |
-| `/api/meetings/[id]/notes` | GET | Get user notes (or all with `?all=true`) |
-| `/api/meetings/[id]/history` | GET | Full meeting history with all data |
-| `/api/meetings/history` | GET | User's past meetings list |
-
-#### Data Access Functions (lib/db/meeting-data.ts)
-
-```typescript
-import {
-  createMeetingSession,
-  endMeetingSession,
-  saveTranscriptionSegments,
-  saveInsights,
-  saveDocumentReferences,
-  saveMeetingNotes,
-  getMeetingHistory,
-  getUserMeetingHistory,
-} from "@/lib/db/meeting-data"
-```
-
-#### Meeting History View
-
-After a meeting ends, users can view the full history at `/meetings/[roomId]/history`:
-- **Transcription tab**: Full searchable transcript
-- **Insights tab**: Grouped by type (action items, decisions, etc.)
-- **Documents tab**: Referenced documents with page/section links
-- **Notes tab**: All participant notes (host sees all, others see their own)
-
-### Gmail OAuth Integration (Real-Time Actions)
-
-Gmail OAuth integration enables sending AI-drafted follow-up emails from meetings.
-
-#### OAuth Flow
-
-```typescript
-import { getGmailIntegration, upsertGmailIntegration } from "@/lib/db/gmail"
-import { buildGmailAuthUrl, exchangeGmailCodeForTokens } from "@/lib/gmail-oauth"
-
-// Check connection status
-const integration = await getGmailIntegration(userId)
-const isConnected = integration?.status === "connected"
-
-// Initiate OAuth flow
-const authUrl = buildGmailAuthUrl(state, redirectUri)
-
-// After callback, store tokens
-await upsertGmailIntegration({
-  userId,
-  accessToken: tokens.access_token,
-  refreshToken: tokens.refresh_token,
-  tokenExpiresAt: calculateGmailTokenExpiry(tokens.expires_in),
-  gmailEmail: userInfo.email,
-})
-```
-
-#### API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/gmail/connect` | GET | Initiate Gmail OAuth flow |
-| `/api/gmail/callback` | GET | Handle OAuth callback from Google |
-| `/api/gmail/status` | GET | Get Gmail connection status |
-| `/api/gmail/disconnect` | POST | Disconnect Gmail integration |
-
-#### Gmail Scopes
-
-Uses minimal scopes required for sending emails:
-- `gmail.send` - Send emails on behalf of user
-- `userinfo.email` - Get user's email address
-
-**Note:** Does NOT use `gmail.compose` (restricted scope) - drafts are stored locally in our database.
-
-#### UI Component
-
-```tsx
-import { GmailStatusCard } from "@/components/gmail"
-
-<GmailStatusCard
-  initialConnected={false}
-  onConnectionChange={(connected) => console.log(connected)}
-/>
-```
-
-#### Database Table: `gmail_integration`
-
-- `id` - Unique identifier
-- `user_id` - User who connected Gmail
-- `access_token` - OAuth access token (encrypted at rest)
-- `refresh_token` - OAuth refresh token (encrypted at rest)
-- `token_expires_at` - Token expiry timestamp
-- `gmail_email` - Email associated with the Gmail account
-- `status` - Connection status (connected, disconnected, error)
-- `error_message` - Error details if status is 'error'
-
-#### Token Refresh
-
-Tokens are automatically refreshed when expiring within 5 minutes:
-
-```typescript
-import { getValidGmailToken } from "@/lib/db/gmail"
-
-// Gets valid token, refreshing if needed
-const result = await getValidGmailToken(userId)
-if (result) {
-  const { accessToken, gmailEmail } = result
-  // Use accessToken to send emails via Gmail API
-}
-```
