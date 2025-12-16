@@ -7,8 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useInsights } from "@/hooks/use-insights";
+import { useActions } from "@/hooks/use-actions";
 import { InsightCardList } from "./insight-card";
 import type { Insight } from "@/types/insight";
+import type { ClassifiedAction } from "@/types/action";
 import {
   Sparkles,
   ClipboardList,
@@ -21,6 +23,8 @@ interface InsightsSummaryPanelProps {
   className?: string;
   /** Handler when an insight is clicked */
   onInsightClick?: (insight: Insight) => void;
+  /** Handler when an action button is clicked (e.g., "Generate Email") */
+  onActionClick?: (action: ClassifiedAction) => void;
 }
 
 /**
@@ -31,19 +35,23 @@ interface InsightsSummaryPanelProps {
  * - Real-time updates as insights are detected
  * - Count badges for each category
  * - Click to navigate to related transcript
+ * - Action type badges for classified action items
  *
  * @example
  * ```tsx
  * <InsightsSummaryPanel
  *   onInsightClick={(insight) => scrollToTranscript(insight.transcriptRef)}
+ *   onActionClick={(action) => generateEmailDraft(action)}
  * />
  * ```
  */
 export function InsightsSummaryPanel({
   className,
   onInsightClick,
+  onActionClick,
 }: InsightsSummaryPanelProps) {
   const { insights, insightsByType, insightCount } = useInsights();
+  const { getActionByInsightId, emailActionCount } = useActions();
   const [activeTab, setActiveTab] = useState("all");
 
   // Calculate counts for each tab
@@ -134,14 +142,27 @@ export function InsightsSummaryPanel({
               <InsightCardList
                 insights={getFilteredInsights("all")}
                 onInsightClick={onInsightClick}
+                getActionForInsight={getActionByInsightId}
+                onActionClick={onActionClick}
                 emptyMessage="No insights detected yet"
               />
             </TabsContent>
 
             <TabsContent value="actions" className="mt-0">
+              {/* Show email action count indicator if any */}
+              {emailActionCount > 0 && (
+                <div className="mb-3 flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+                  <Badge variant="secondary" className="text-xs">
+                    {emailActionCount} email {emailActionCount === 1 ? "action" : "actions"}
+                  </Badge>
+                  <span className="text-muted-foreground">ready for drafting</span>
+                </div>
+              )}
               <InsightCardList
                 insights={getFilteredInsights("actions")}
                 onInsightClick={onInsightClick}
+                getActionForInsight={getActionByInsightId}
+                onActionClick={onActionClick}
                 emptyMessage="No action items detected"
               />
             </TabsContent>

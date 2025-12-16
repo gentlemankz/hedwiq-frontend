@@ -7,6 +7,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
@@ -683,6 +684,88 @@ export const meetingNote = pgTable(
     uniqueIndex("idx_meeting_note_unique").on(
       table.meetingId,
       table.userId
+    ),
+  ]
+);
+
+// ============================================================================
+// Real-Time Actions Tables (Phase 1)
+// ============================================================================
+
+/**
+ * Action Item - Stores classified action items from meeting insights.
+ * Actions are enhanced action_items with classification and metadata.
+ *
+ * Classification Types:
+ * - email_followup: "send email", "follow up with"
+ * - email_share: "share with", "send to"
+ * - email_schedule: "schedule meeting with"
+ * - task_create: "create task", "add to backlog"
+ * - calendar_event: "block time", "schedule"
+ * - manual: Default fallback
+ */
+export const actionItem = pgTable(
+  "action_item",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** Meeting this action belongs to */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** Room ID for quick access */
+    roomId: text("room_id").notNull(),
+    /** Link to original insight */
+    originalInsightId: text("original_insight_id").notNull(),
+    /** Action content from the original insight */
+    content: text("content").notNull(),
+    /** Speaker's identity */
+    speakerIdentity: text("speaker_identity"),
+    /** Speaker's display name */
+    speakerName: text("speaker_name"),
+    /** Reference to transcript segment */
+    transcriptRef: text("transcript_ref"),
+    /** Classification type */
+    actionType: text("action_type").notNull().default("manual"),
+    /** Classification confidence (0-100 as integer) */
+    classificationConfidence: integer("classification_confidence")
+      .notNull()
+      .default(80),
+    /** Extracted metadata (JSONB) */
+    metadata: jsonb("metadata")
+      .notNull()
+      .$type<{
+        recipientHint?: string;
+        subjectHint?: string;
+        projectHint?: string;
+        assigneeHint?: string;
+        datetimeHint?: string;
+        durationHint?: string;
+        urgency: "low" | "normal" | "high" | "critical";
+      }>()
+      .default({ urgency: "normal" }),
+    /** Lifecycle status */
+    status: text("status").notNull().default("detected"),
+    /** Whether this action requires email */
+    requiresEmail: boolean("requires_email").notNull().default(false),
+    /** When the action was detected */
+    timestamp: timestamp("timestamp").notNull(),
+    /** When classification completed */
+    classifiedAt: timestamp("classified_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_action_item_meeting").on(table.meetingId),
+    index("idx_action_item_room").on(table.roomId),
+    index("idx_action_item_type").on(table.actionType),
+    index("idx_action_item_status").on(table.status),
+    index("idx_action_item_timestamp").on(table.timestamp),
+    index("idx_action_item_original_insight").on(table.originalInsightId),
+    // Ensure one action per insight per meeting (prevents duplicates)
+    unique("uq_action_item_meeting_insight").on(
+      table.meetingId,
+      table.originalInsightId
     ),
   ]
 );

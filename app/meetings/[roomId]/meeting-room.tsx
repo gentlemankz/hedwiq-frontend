@@ -8,6 +8,7 @@ import { PreJoinScreen, UserChoices, MeetingData } from "./pre-join-screen";
 import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
 import { DocumentsProvider } from "@/contexts/documents-context";
+import { ActionsProvider } from "@/contexts/actions-context";
 import { MeetingPersistenceProvider } from "@/contexts/meeting-persistence-context";
 import { agendaItemsToDraft } from "@/lib/utils/meeting-form";
 import type { User } from "@/types/user";
@@ -304,15 +305,17 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
           enabled={true}
         >
           <InsightsProvider>
-            <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
-              <MeetingLayout
-                showTranscription={true}
-                agendaVersion={userChoices.agendaVersion}
-                roomId={roomId}
-                meetingName={userChoices.meetingName}
-                meetingScheduledAt={userChoices.scheduledAt}
-              />
-            </DocumentsProvider>
+            <ActionsProvider>
+              <DocumentsProvider initialDocuments={userChoices.uploadedDocuments}>
+                <MeetingLayout
+                  showTranscription={true}
+                  agendaVersion={userChoices.agendaVersion}
+                  roomId={roomId}
+                  meetingName={userChoices.meetingName}
+                  meetingScheduledAt={userChoices.scheduledAt}
+                />
+              </DocumentsProvider>
+            </ActionsProvider>
           </InsightsProvider>
         </MeetingPersistenceProvider>
       </LiveKitRoom>
