@@ -43,7 +43,7 @@ import { FOLDER_COLORS, FOLDER_LIMITS, type Folder } from "@/types/folder";
 function PastMeetingsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { folders, createFolder, updateFolder, deleteFolder, foldersLoading } =
+  const { folders, createFolder, updateFolder, deleteFolder, refreshFolders, foldersLoading } =
     useSidebarContext();
 
   // New folder dialog state
@@ -206,6 +206,9 @@ function PastMeetingsContent() {
             <PastMeetingsList
               pageSize={10}
               emptyMessage="No past meetings yet. Start a meeting to see it here after it ends."
+              folders={folders}
+              foldersLoading={foldersLoading}
+              onFoldersRefresh={refreshFolders}
             />
           </CardContent>
         </Card>

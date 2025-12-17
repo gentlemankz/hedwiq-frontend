@@ -68,6 +68,7 @@ frontend/
 │   │   ├── meetings/                 # Meeting CRUD + invites + persistence
 │   │   │   ├── route.ts              # List/create meetings
 │   │   │   ├── history/route.ts      # User's past meetings list with stats
+│   │   │   ├── bulk-move/route.ts    # Bulk move meetings to folder
 │   │   │   └── [meetingId]/
 │   │   │       ├── route.ts          # Get/update/delete a meeting
 │   │   │       ├── calendar.ics/route.ts # ICS download
@@ -169,8 +170,9 @@ frontend/
 │   │   ├── meeting-list.tsx
 │   │   ├── meeting-type-selector.tsx
 │   │   ├── schedule-meeting-dialog.tsx
-│   │   ├── past-meeting-card.tsx     # Card for displaying past meeting summary
-│   │   ├── past-meetings-list.tsx    # Paginated list of past meetings
+│   │   ├── past-meeting-card.tsx     # Card with selection mode + move to folder action
+│   │   ├── past-meetings-list.tsx    # Paginated list with bulk selection + move
+│   │   ├── move-meeting-to-folder-dialog.tsx # Dialog for single/bulk meeting move
 │   │   └── index.ts
 │   ├── participant/
 │   │   ├── custom-participant-tile.tsx
@@ -253,7 +255,7 @@ frontend/
 │   ├── insight.ts
 │   ├── invitee.ts
 │   ├── meeting.ts                    # Meeting types (includes folderId)
-│   ├── meeting-history.ts            # Types for meeting history (sessions, transcripts, insights, notes, stats)
+│   ├── meeting-history.ts            # Types for meeting history (includes folderId, sessions, transcripts, insights, notes, stats)
 │   ├── persistence.ts                # Shared persistence types (TranscriptionEntry)
 │   ├── transcript-note.ts
 │   └── user.ts

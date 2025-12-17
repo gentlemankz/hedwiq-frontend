@@ -229,6 +229,9 @@ export default function FolderPage() {
               pageSize={10}
               folderId={folderId}
               emptyMessage={`No meetings in "${folder.name}" yet. Meetings will appear here after they end.`}
+              folders={folders}
+              foldersLoading={foldersLoading}
+              onFoldersRefresh={refreshFolders}
             />
           </CardContent>
         </Card>

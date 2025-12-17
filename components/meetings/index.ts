@@ -7,3 +7,4 @@ export { InviteeInput, type InviteeEntry } from "./invitee-input";
 export { ManageInviteesDialog } from "./manage-invitees-dialog";
 export { PastMeetingCard } from "./past-meeting-card";
 export { PastMeetingsList } from "./past-meetings-list";
+export { MoveMeetingToFolderDialog } from "./move-meeting-to-folder-dialog";

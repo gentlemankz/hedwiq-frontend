@@ -186,6 +186,7 @@ export interface MeetingHistorySummary {
   status: string;
   endedAt: string | null;
   durationMinutes: number | null;
+  folderId: string | null;
   participantCount: number;
   transcriptionCount: number;
   insightCount: number;
