@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PastMeetingCard } from "./past-meeting-card";
@@ -17,6 +17,8 @@ interface PastMeetingsListProps {
   pageSize?: number;
   /** Empty state message */
   emptyMessage?: string;
+  /** Filter by folder ID (optional) */
+  folderId?: string | null;
 }
 
 /**
@@ -26,6 +28,7 @@ export function PastMeetingsList({
   initialMeetings = [],
   pageSize = 10,
   emptyMessage = "No past meetings yet. Start a meeting to see it here after it ends.",
+  folderId,
 }: PastMeetingsListProps) {
   const [meetings, setMeetings] = useState<MeetingHistorySummary[]>(initialMeetings);
   const [isLoading, setIsLoading] = useState(initialMeetings.length === 0);
@@ -33,12 +36,14 @@ export function PastMeetingsList({
   const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // AbortController ref for request cancellation
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   /**
-   * Fetch meetings from API
+   * Fetch meetings from API with proper cancellation support
    */
   const fetchMeetings = useCallback(
-    async (loadMore = false) => {
+    async (loadMore = false, signal?: AbortSignal) => {
       // Use functional update to get latest offset value and avoid stale closure
       let currentOffset = 0;
       if (loadMore) {
@@ -55,9 +60,18 @@ export function PastMeetingsList({
           currentOffset = 0;
         }
 
-        const response = await fetch(
-          `/api/meetings/history?limit=${pageSize}&offset=${currentOffset}`
-        );
+        // Build URL with proper encoding for folderId filter
+        const params = new URLSearchParams({
+          limit: String(pageSize),
+          offset: String(currentOffset),
+        });
+        if (folderId !== undefined) {
+          params.set("folderId", folderId === null ? "null" : folderId);
+        }
+
+        const response = await fetch(`/api/meetings/history?${params.toString()}`, {
+          signal,
+        });
 
         if (!response.ok) {
           throw new Error("Failed to load meetings");
@@ -74,6 +88,10 @@ export function PastMeetingsList({
         setOffset(currentOffset);
         setHasMore(data.pagination.hasMore);
       } catch (err) {
+        // Ignore abort errors - they're expected on cleanup
+        if (err instanceof Error && err.name === "AbortError") {
+          return;
+        }
         console.error("Failed to fetch past meetings:", err);
         setError(err instanceof Error ? err.message : "Failed to load meetings");
       } finally {
@@ -81,16 +99,33 @@ export function PastMeetingsList({
         setIsLoadingMore(false);
       }
     },
-    [offset, pageSize]
+    [offset, pageSize, folderId]
   );
 
-  // Initial load
+  // Initial load and refetch when folderId changes
   useEffect(() => {
-    if (initialMeetings.length === 0) {
-      fetchMeetings();
+    // Cancel any ongoing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
+
+    // Create new AbortController for this request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Reset state and refetch when folderId changes
+    setMeetings([]);
+    setOffset(0);
+    setHasMore(false);
+    setIsLoading(true);
+    fetchMeetings(false, controller.signal);
+
+    // Cleanup: abort on unmount or when folderId changes
+    return () => {
+      controller.abort();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [folderId, pageSize]);
 
   const handleRefresh = () => {
     setOffset(0);

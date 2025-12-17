@@ -17,3 +17,4 @@ export {
   useMeetingPersistence,
   useMeetingPersistenceRequired,
 } from "./meeting-persistence-context";
+export { SidebarProvider, useSidebarContext } from "./sidebar-context";

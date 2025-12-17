@@ -160,13 +160,13 @@ export async function getFolderByIdForUser(
 /**
  * Lists all folders for a user, ordered by orderIndex.
  * Optionally includes meeting counts.
+ * Creates a default folder only if no folders exist (lazy initialization).
  */
 export async function listFoldersByUser(
   userId: string,
   options: { includeMeetingCounts?: boolean } = {}
 ): Promise<Folder[]> {
-  // Ensure user has default folder
-  await getOrCreateDefaultFolder(userId);
+  let folders: Folder[];
 
   if (options.includeMeetingCounts) {
     // Query with meeting counts
@@ -181,17 +181,25 @@ export async function listFoldersByUser(
       .groupBy(meetingFolder.id)
       .orderBy(meetingFolder.orderIndex, desc(meetingFolder.createdAt));
 
-    return rows.map((row) => rowToFolder(row.folder, row.meetingCount));
+    folders = rows.map((row) => rowToFolder(row.folder, row.meetingCount));
+  } else {
+    // Simple query without counts
+    const rows = await db
+      .select()
+      .from(meetingFolder)
+      .where(eq(meetingFolder.userId, userId))
+      .orderBy(meetingFolder.orderIndex, desc(meetingFolder.createdAt));
+
+    folders = rows.map((row) => rowToFolder(row));
   }
 
-  // Simple query without counts
-  const rows = await db
-    .select()
-    .from(meetingFolder)
-    .where(eq(meetingFolder.userId, userId))
-    .orderBy(meetingFolder.orderIndex, desc(meetingFolder.createdAt));
+  // Lazy initialization: only create default folder if user has no folders
+  if (folders.length === 0) {
+    const defaultFolder = await getOrCreateDefaultFolder(userId);
+    return [defaultFolder];
+  }
 
-  return rows.map((row) => rowToFolder(row));
+  return folders;
 }
 
 /**
@@ -233,28 +241,51 @@ export async function updateFolder(
 /**
  * Deletes a folder and moves all its meetings to the default folder.
  * Cannot delete the default folder.
- * Uses a transaction to ensure atomicity.
+ * Uses a transaction to ensure atomicity of all operations.
  */
 export async function deleteFolder(
   folderId: string,
   userId: string
 ): Promise<{ success: boolean; meetingsMoved: number }> {
-  // Get the folder to check if it's the default
-  const folder = await getFolderByIdForUser(folderId, userId);
-
-  if (!folder) {
-    return { success: false, meetingsMoved: 0 };
-  }
-
-  if (folder.isDefault) {
-    throw new Error("Cannot delete the default folder");
-  }
-
-  // Get or create the default folder to move meetings to
-  const defaultFolder = await getOrCreateDefaultFolder(userId);
-
-  // Use transaction to ensure atomicity of move + delete
+  // Use transaction to ensure atomicity of all operations including default folder creation
   const result = await db.transaction(async (tx) => {
+    // Get the folder to check if it's the default (within transaction for consistency)
+    const [folder] = await tx
+      .select()
+      .from(meetingFolder)
+      .where(and(eq(meetingFolder.id, folderId), eq(meetingFolder.userId, userId)))
+      .limit(1);
+
+    if (!folder) {
+      return { success: false, meetingsMoved: 0 };
+    }
+
+    if (folder.isDefault) {
+      throw new Error("Cannot delete the default folder");
+    }
+
+    // Find or create the default folder within transaction
+    let [defaultFolder] = await tx
+      .select()
+      .from(meetingFolder)
+      .where(and(eq(meetingFolder.userId, userId), eq(meetingFolder.isDefault, true)))
+      .limit(1);
+
+    if (!defaultFolder) {
+      // Create default folder within transaction
+      const defaultFolderId = generateFolderId(userId);
+      [defaultFolder] = await tx
+        .insert(meetingFolder)
+        .values({
+          id: defaultFolderId,
+          userId,
+          name: DEFAULT_FOLDER_NAME,
+          isDefault: true,
+          orderIndex: 0,
+        })
+        .returning();
+    }
+
     // Move all meetings from this folder to the default folder
     const moveResult = await tx
       .update(meeting)

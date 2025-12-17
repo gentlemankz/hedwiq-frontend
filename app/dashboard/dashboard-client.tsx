@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useSyncExternalStore } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { signOut } from "@/lib/auth-client";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,7 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -24,35 +22,26 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Users, Plus, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Users, Plus, Loader2, AlertCircle } from "lucide-react";
 import { validateRoomId, sanitizeRoomId } from "@/lib/validation";
-import { getInitials } from "@/lib/utils";
 import {
   MeetingTypeSelector,
   ScheduleMeetingDialog,
   EditMeetingDialog,
   MeetingList,
   ManageInviteesDialog,
-  PastMeetingsList,
 } from "@/components/meetings";
-import { CalendarStatusCard } from "@/components/calendar";
-import type { User } from "@/types/user";
 import type { Meeting } from "@/types/meeting";
-import type { CalendarStatusResponse, CalendarEventPublic } from "@/types/calendar";
+import type { CalendarEventPublic } from "@/types/calendar";
 
 interface DashboardClientProps {
-  user: User;
   initialMeetings?: Meeting[];
-  initialCalendarStatus?: CalendarStatusResponse;
 }
 
 export function DashboardClient({
-  user,
   initialMeetings = [],
-  initialCalendarStatus,
 }: DashboardClientProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [joinRoomId, setJoinRoomId] = useState("");
   const [roomIdError, setRoomIdError] = useState<string | null>(null);
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
@@ -60,58 +49,19 @@ export function DashboardClient({
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [meetingToEdit, setMeetingToEdit] = useState<Meeting | null>(null);
-  const [isManageInviteesDialogOpen, setIsManageInviteesDialogOpen] = useState(false);
-  const [meetingForInvitees, setMeetingForInvitees] = useState<Meeting | null>(null);
+  const [isManageInviteesDialogOpen, setIsManageInviteesDialogOpen] =
+    useState(false);
+  const [meetingForInvitees, setMeetingForInvitees] = useState<Meeting | null>(
+    null
+  );
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
-  const [instantMeetingError, setInstantMeetingError] = useState<string | null>(null);
+  const [instantMeetingError, setInstantMeetingError] = useState<string | null>(
+    null
+  );
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
-  const [calendarEvents, setCalendarEvents] = useState<Record<string, CalendarEventPublic>>({});
-
-  // Calendar OAuth feedback from URL params
-  const [calendarMessage, setCalendarMessage] = useState<{
-    type: "success" | "error";
-    message: string;
-  } | null>(null);
-
-  // Handle calendar OAuth callback params
-  useEffect(() => {
-    const calendarConnected = searchParams.get("calendar_connected");
-    const calendarError = searchParams.get("calendar_error");
-
-    if (calendarConnected === "true") {
-      setCalendarMessage({
-        type: "success",
-        message: "Google Calendar connected successfully!",
-      });
-      // Clean up URL params
-      router.replace("/dashboard", { scroll: false });
-    } else if (calendarError) {
-      setCalendarMessage({
-        type: "error",
-        message: calendarError,
-      });
-      // Clean up URL params
-      router.replace("/dashboard", { scroll: false });
-    }
-  }, [searchParams, router]);
-
-  // Auto-dismiss calendar message after 5 seconds
-  useEffect(() => {
-    if (!calendarMessage) {
-      return;
-    }
-
-    // Store the current message for comparison in cleanup
-    const currentMessage = calendarMessage;
-    const timer = setTimeout(() => {
-      // Only clear if the message hasn't changed
-      setCalendarMessage((prev) =>
-        prev === currentMessage ? null : prev
-      );
-    }, 5000);
-
-    return () => clearTimeout(timer);
-  }, [calendarMessage]);
+  const [calendarEvents, setCalendarEvents] = useState<
+    Record<string, CalendarEventPublic>
+  >({});
 
   // Mounted state for hydration safety with Radix UI Dialog
   const isMounted = useSyncExternalStore(
@@ -120,25 +70,13 @@ export function DashboardClient({
     () => false
   );
 
-  const handleSignOut = async () => {
-    await signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          window.location.href = "/sign-in";
-        },
-      },
-    });
-  };
-
   const handleInstantMeeting = async () => {
-    // Prevent double-clicks
     if (isCreatingInstant) return;
 
     setIsCreatingInstant(true);
     setInstantMeetingError(null);
 
     try {
-      // Create meeting via API
       const response = await fetch("/api/meetings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -156,14 +94,14 @@ export function DashboardClient({
       const data = await response.json();
       const meeting = data.meeting as Meeting;
 
-      // Navigate to the meeting room
       setIsNewMeetingDialogOpen(false);
       router.push(`/meetings/${meeting.roomId}`);
     } catch (error) {
       console.error("Failed to create instant meeting:", error);
-      // Show error to user instead of creating orphan room
       setInstantMeetingError(
-        error instanceof Error ? error.message : "Failed to create meeting. Please try again."
+        error instanceof Error
+          ? error.message
+          : "Failed to create meeting. Please try again."
       );
     } finally {
       setIsCreatingInstant(false);
@@ -211,7 +149,6 @@ export function DashboardClient({
   };
 
   const handleMeetingDeleted = () => {
-    // Refresh meetings list
     fetchMeetings();
   };
 
@@ -221,7 +158,6 @@ export function DashboardClient({
   };
 
   const handleMeetingUpdated = () => {
-    // Refresh meetings list after edit
     fetchMeetings();
   };
 
@@ -231,7 +167,6 @@ export function DashboardClient({
   };
 
   const handleInviteesUpdated = () => {
-    // Refresh meetings list to update RSVP counts
     fetchMeetings();
   };
 
@@ -242,10 +177,13 @@ export function DashboardClient({
         const data = await response.json();
         setMeetings(data.meetings);
 
-        // Fetch calendar events for these meetings
         if (data.meetings.length > 0) {
-          const meetingIds = data.meetings.map((m: Meeting) => m.id).join(",");
-          const eventsResponse = await fetch(`/api/calendar/events?meetingIds=${meetingIds}`);
+          const meetingIds = data.meetings
+            .map((m: Meeting) => m.id)
+            .join(",");
+          const eventsResponse = await fetch(
+            `/api/calendar/events?meetingIds=${meetingIds}`
+          );
           if (eventsResponse.ok) {
             const eventsData = await eventsResponse.json();
             setCalendarEvents(eventsData.events || {});
@@ -259,7 +197,7 @@ export function DashboardClient({
     }
   };
 
-  // Fetch calendar events on initial load with proper cleanup
+  // Fetch calendar events on initial load
   useEffect(() => {
     if (initialMeetings.length === 0) return;
 
@@ -280,7 +218,6 @@ export function DashboardClient({
           }
         }
       } catch (err) {
-        // Ignore abort errors
         if (err instanceof Error && err.name === "AbortError") return;
         console.error("Failed to fetch calendar events:", err);
       }
@@ -295,58 +232,15 @@ export function DashboardClient({
   }, [initialMeetings]);
 
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="mx-auto max-w-4xl space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <Button variant="outline" onClick={handleSignOut}>
-            Sign Out
-          </Button>
+    <div className="p-6 md:p-8">
+      <div className="mx-auto max-w-4xl space-y-6">
+        {/* Page Header */}
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Home</h1>
+          <p className="text-muted-foreground">
+            Start a new meeting or manage your upcoming sessions
+          </p>
         </div>
-
-        {/* Calendar OAuth Feedback */}
-        {calendarMessage && (
-          <Alert
-            variant={calendarMessage.type === "error" ? "destructive" : "default"}
-            className={
-              calendarMessage.type === "success"
-                ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-                : undefined
-            }
-          >
-            {calendarMessage.type === "success" ? (
-              <CheckCircle2 className="size-4" />
-            ) : (
-              <AlertCircle className="size-4" />
-            )}
-            <AlertDescription>{calendarMessage.message}</AlertDescription>
-          </Alert>
-        )}
-
-        {/* Welcome Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Welcome back!</CardTitle>
-            <CardDescription>
-              You are signed in and ready to start your meetings
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <Avatar className="size-16">
-                <AvatarImage src={user.image || undefined} alt={user.name} />
-                <AvatarFallback className="text-lg">
-                  {getInitials(user.name)}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="text-lg font-medium">{user.name}</p>
-                <p className="text-sm text-muted-foreground">{user.email}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Quick Actions */}
         <Card>
@@ -356,7 +250,7 @@ export function DashboardClient({
               Start a new meeting or join an existing one
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex gap-4">
+          <CardContent className="flex flex-wrap gap-4">
             {isMounted ? (
               <>
                 {/* New Meeting Button */}
@@ -386,7 +280,9 @@ export function DashboardClient({
                       {instantMeetingError && (
                         <Alert variant="destructive" className="mb-4">
                           <AlertCircle className="size-4" />
-                          <AlertDescription>{instantMeetingError}</AlertDescription>
+                          <AlertDescription>
+                            {instantMeetingError}
+                          </AlertDescription>
                         </Alert>
                       )}
                       <MeetingTypeSelector
@@ -483,19 +379,11 @@ export function DashboardClient({
           </CardContent>
         </Card>
 
-        {/* Calendar Integration */}
-        <CalendarStatusCard
-          initialConnected={initialCalendarStatus?.connected}
-          initialIntegration={initialCalendarStatus?.integration}
-        />
-
         {/* Upcoming Meetings */}
         <Card>
           <CardHeader>
             <CardTitle>Upcoming Meetings</CardTitle>
-            <CardDescription>
-              Your scheduled and live meetings
-            </CardDescription>
+            <CardDescription>Your scheduled and live meetings</CardDescription>
           </CardHeader>
           <CardContent>
             <MeetingList
@@ -509,19 +397,6 @@ export function DashboardClient({
           </CardContent>
         </Card>
 
-        {/* Past Meetings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Past Meetings</CardTitle>
-            <CardDescription>
-              View transcriptions, insights, and notes from previous meetings
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <PastMeetingsList pageSize={6} />
-          </CardContent>
-        </Card>
-
         {/* Schedule Meeting Dialog */}
         {isMounted && (
           <ScheduleMeetingDialog
@@ -529,7 +404,6 @@ export function DashboardClient({
             onOpenChange={(open) => {
               setIsScheduleDialogOpen(open);
               if (!open) {
-                // Refresh meetings when dialog closes
                 fetchMeetings();
               }
             }}

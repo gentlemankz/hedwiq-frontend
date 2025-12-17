@@ -3,10 +3,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { DashboardClient } from "./dashboard-client";
 import { listMeetingsByHost } from "@/lib/db/meeting";
-import {
-  getCalendarIntegration,
-  toPublicCalendarIntegration,
-} from "@/lib/db/calendar";
 
 export default async function DashboardPage() {
   const session = await auth.api.getSession({
@@ -17,29 +13,11 @@ export default async function DashboardPage() {
     redirect("/sign-in");
   }
 
-  // Fetch upcoming meetings and calendar status in parallel
-  const [upcomingMeetings, calendarIntegration] = await Promise.all([
-    listMeetingsByHost(session.user.id, {
-      status: "upcoming",
-      limit: 10,
-    }),
-    getCalendarIntegration(session.user.id),
-  ]);
+  // Fetch upcoming meetings
+  const upcomingMeetings = await listMeetingsByHost(session.user.id, {
+    status: "upcoming",
+    limit: 10,
+  });
 
-  // Convert calendar integration to public format (no tokens)
-  const calendarStatus =
-    calendarIntegration && calendarIntegration.status !== "disconnected"
-      ? {
-          connected: calendarIntegration.status === "connected",
-          integration: toPublicCalendarIntegration(calendarIntegration),
-        }
-      : { connected: false, integration: null };
-
-  return (
-    <DashboardClient
-      user={session.user}
-      initialMeetings={upcomingMeetings}
-      initialCalendarStatus={calendarStatus}
-    />
-  );
+  return <DashboardClient initialMeetings={upcomingMeetings} />;
 }

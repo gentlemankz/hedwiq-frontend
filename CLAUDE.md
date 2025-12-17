@@ -88,9 +88,18 @@ frontend/
 │   │   │           ├── route.ts      # Update/delete an agenda item
 │   │   │           └── status/route.ts # Manual status override (fallback)
 │   │   └── rsvp/[token]/route.ts     # Public RSVP status endpoint
-│   ├── dashboard/                    # Dashboard shell + meeting loader
-│   │   ├── dashboard-client.tsx
-│   │   └── page.tsx
+│   ├── dashboard/                    # Dashboard with sidebar navigation
+│   │   ├── layout.tsx                # Dashboard layout with sidebar + auth check
+│   │   ├── page.tsx                  # Home: Quick Actions + Upcoming Meetings
+│   │   ├── dashboard-client.tsx      # Client component for home page
+│   │   ├── integrations/
+│   │   │   └── page.tsx              # Calendar + Gmail integration cards
+│   │   ├── past-meetings/
+│   │   │   ├── page.tsx              # All folders overview + meetings list
+│   │   │   └── [folderId]/
+│   │   │       └── page.tsx          # Single folder view with meetings
+│   │   └── settings/
+│   │       └── page.tsx              # User preferences (stub)
 │   ├── meetings/[roomId]/            # Dynamic room routes
 │   │   ├── components/
 │   │   │   ├── agenda-builder/
@@ -119,6 +128,12 @@ frontend/
 │   │   └── progress-indicator.tsx
 │   ├── calendar/
 │   │   ├── calendar-status-card.tsx
+│   │   └── index.ts
+│   ├── folders/                      # Meeting folder UI components
+│   │   ├── folder-color-dot.tsx      # Reusable folder color indicator
+│   │   └── index.ts
+│   ├── layout/                       # Layout components
+│   │   ├── dashboard-sidebar.tsx     # Dashboard sidebar with folders nav
 │   │   └── index.ts
 │   ├── documents/
 │   │   ├── document-reference-badge.tsx
@@ -183,7 +198,8 @@ frontend/
 │   ├── documents-context.tsx         # Document refs + deduplication + LiveKit stream
 │   ├── email-drafts-context.tsx      # Email draft state management + LiveKit stream subscription
 │   ├── insights-context.tsx          # AI insights state management
-│   └── meeting-persistence-context.tsx # Meeting data persistence (transcripts, insights, notes)
+│   ├── meeting-persistence-context.tsx # Meeting data persistence (transcripts, insights, notes)
+│   └── sidebar-context.tsx           # Dashboard sidebar UI state + folders CRUD
 ├── hooks/
 │   ├── use-agenda.ts                 # Agenda context consumer utilities
 │   ├── use-block-notes.ts            # Block-based notes (text + transcript refs) w/ storage + migration
