@@ -195,9 +195,9 @@ export function EmailDraftPanel({
   const sentCount = draftsByStatus.sent?.length ?? 0;
 
   return (
-    <div className={cn("flex flex-col h-full", className)}>
+    <div className={cn("flex flex-col h-full overflow-hidden", className)}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
+      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
         <div className="flex items-center gap-2">
           <Mail className="size-5" />
           <h3 className="font-semibold">Email Drafts</h3>
@@ -224,7 +224,7 @@ export function EmailDraftPanel({
 
       {/* Status messages */}
       {sendSuccess && (
-        <Alert className="mx-4 mt-2 bg-green-50 dark:bg-green-950/50 border-green-200">
+        <Alert className="mx-4 mt-2 bg-green-50 dark:bg-green-950/50 border-green-200 shrink-0">
           <CheckCircle2 className="size-4 text-green-600" />
           <AlertDescription className="text-green-700 dark:text-green-300">
             {sendSuccess}
@@ -233,7 +233,7 @@ export function EmailDraftPanel({
       )}
 
       {sendError && (
-        <Alert className="mx-4 mt-2 bg-destructive/10 border-destructive">
+        <Alert className="mx-4 mt-2 bg-destructive/10 border-destructive shrink-0">
           <AlertCircle className="size-4 text-destructive" />
           <AlertDescription className="text-destructive">
             {sendError}
@@ -243,7 +243,7 @@ export function EmailDraftPanel({
 
       {/* Gmail not connected warning */}
       {!isGmailConnected && pendingCount > 0 && (
-        <Alert className="mx-4 mt-2 bg-amber-50 dark:bg-amber-950/50 border-amber-200">
+        <Alert className="mx-4 mt-2 bg-amber-50 dark:bg-amber-950/50 border-amber-200 shrink-0">
           <AlertCircle className="size-4 text-amber-600" />
           <AlertDescription className="text-amber-700 dark:text-amber-300 text-xs">
             Connect your Gmail account to send email drafts.
@@ -255,9 +255,9 @@ export function EmailDraftPanel({
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as typeof activeTab)}
-        className="flex-1 flex flex-col"
+        className="flex-1 flex flex-col min-h-0"
       >
-        <TabsList className="grid w-full grid-cols-3 mx-4 mt-2" style={{ width: "calc(100% - 2rem)" }}>
+        <TabsList className="grid w-full grid-cols-3 mx-4 mt-2 shrink-0" style={{ width: "calc(100% - 2rem)" }}>
           <TabsTrigger value="pending" className="text-xs">
             Pending
             {pendingCount > 0 && (
@@ -279,7 +279,7 @@ export function EmailDraftPanel({
           </TabsTrigger>
         </TabsList>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 h-0">
           <TabsContent value="pending" className="p-4 m-0">
             <EmailDraftCardList
               drafts={tabDrafts}
@@ -317,7 +317,7 @@ export function EmailDraftPanel({
       </Tabs>
 
       {/* Footer stats */}
-      <div className="px-4 py-2 border-t text-xs text-muted-foreground">
+      <div className="px-4 py-2 border-t text-xs text-muted-foreground shrink-0">
         <div className="flex items-center justify-between">
           <span>
             {drafts.length} total draft{drafts.length !== 1 ? "s" : ""}

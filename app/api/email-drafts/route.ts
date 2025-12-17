@@ -73,11 +73,12 @@ export async function GET(request: NextRequest) {
 }
 
 // Schema for creating a draft
+// Note: meetingId and originalInsightId can be optional since agent may not have them
 const createDraftSchema = z.object({
   actionId: z.string().min(1),
-  meetingId: z.string().min(1),
+  meetingId: z.string().optional(), // Can be derived from roomId
   roomId: z.string().min(1),
-  originalInsightId: z.string().min(1),
+  originalInsightId: z.string().optional(), // Can be derived from actionId
   suggestedTo: z.array(
     z.object({
       email: z.string().nullable(),
@@ -86,7 +87,7 @@ const createDraftSchema = z.object({
     })
   ),
   subject: z.string().min(1).max(200),
-  body: z.string().min(10).max(5000),
+  body: z.string().min(1).max(10000), // Reduced min to 1, increased max
   meetingContext: z.object({
     meetingTitle: z.string().nullable(),
     meetingDate: z.string().nullable(),
@@ -94,10 +95,10 @@ const createDraftSchema = z.object({
     agendaTopics: z.array(z.string()),
     roomId: z.string().nullable(),
   }),
-  transcriptContext: z.string().optional(),
+  transcriptContext: z.string().nullable().optional(),
   actionContent: z.string().min(1),
   actionType: z.string().min(1),
-  speakerName: z.string().optional(),
+  speakerName: z.string().nullable().optional(),
   generationConfidence: z.number().min(0).max(1).optional(),
 });
 
@@ -131,18 +132,20 @@ export async function POST(request: NextRequest) {
 
     const draft = await upsertEmailDraft({
       actionId: data.actionId,
-      meetingId: data.meetingId,
+      // Use roomId as fallback for meetingId (agent may not have meetingId)
+      meetingId: data.meetingId || data.roomId,
       userId: session.user.id,
       roomId: data.roomId,
-      originalInsightId: data.originalInsightId,
+      // Use actionId as fallback for originalInsightId
+      originalInsightId: data.originalInsightId || data.actionId,
       suggestedTo: data.suggestedTo as EmailRecipient[],
       subject: data.subject,
       body: data.body,
       meetingContext: data.meetingContext as MeetingContext,
-      transcriptContext: data.transcriptContext,
+      transcriptContext: data.transcriptContext ?? undefined,
       actionContent: data.actionContent,
       actionType: data.actionType,
-      speakerName: data.speakerName,
+      speakerName: data.speakerName ?? undefined,
       generationConfidence: data.generationConfidence,
     });
 

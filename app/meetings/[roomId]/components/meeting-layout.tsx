@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
   SheetContent,
+  SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
 import {
@@ -139,8 +140,19 @@ function MeetingLayoutInner({
   }, []);
 
   // Handle Gmail connection
-  const handleConnectGmail = useCallback(() => {
-    window.location.href = "/api/gmail/connect";
+  const handleConnectGmail = useCallback(async () => {
+    try {
+      const response = await fetch("/api/gmail/connect");
+      if (!response.ok) {
+        const data = await response.json();
+        console.error("Failed to initiate Gmail connection:", data.error);
+        return;
+      }
+      const { authUrl } = await response.json();
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error("Failed to connect Gmail:", error);
+    }
   }, []);
 
   // Block-based notes management
@@ -374,6 +386,7 @@ function MeetingLayoutInner({
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-[400px] sm:w-[450px] p-0">
+          <SheetTitle className="sr-only">Email Drafts</SheetTitle>
           <EmailDraftPanel
             isGmailConnected={isGmailConnected}
             onConnectGmail={handleConnectGmail}

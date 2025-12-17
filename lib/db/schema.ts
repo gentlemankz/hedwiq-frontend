@@ -853,14 +853,10 @@ export const emailDraft = pgTable(
   {
     /** Unique identifier */
     id: text("id").primaryKey(),
-    /** Link to source action */
-    actionId: text("action_id")
-      .notNull()
-      .references(() => actionItem.id, { onDelete: "cascade" }),
-    /** Meeting this draft belongs to */
-    meetingId: text("meeting_id")
-      .notNull()
-      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** Link to source action (not FK enforced - actions may be transient) */
+    actionId: text("action_id").notNull(),
+    /** Meeting this draft belongs to (not FK enforced - may use roomId as fallback) */
+    meetingId: text("meeting_id").notNull(),
     /** User who will send this email */
     userId: text("user_id")
       .notNull()
@@ -934,10 +930,8 @@ export const emailSent = pgTable(
     id: text("id").primaryKey(),
     /** Reference to original draft (nullable - draft may be deleted) */
     draftId: text("draft_id"),
-    /** Meeting this email relates to */
-    meetingId: text("meeting_id")
-      .notNull()
-      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** Meeting this email relates to (not FK enforced - may use roomId as fallback) */
+    meetingId: text("meeting_id").notNull(),
     /** User who sent the email */
     userId: text("user_id")
       .notNull()

@@ -10,6 +10,7 @@ import React, {
   useState,
 } from "react";
 import { useRoomContext } from "@livekit/components-react";
+import { useSession } from "@/lib/auth-client";
 import type {
   EmailDraft,
   DraftStatus,
@@ -100,6 +101,7 @@ export function EmailDraftsProvider({
   children: React.ReactNode;
 }) {
   const room = useRoomContext();
+  const { data: session } = useSession();
   const isMountedRef = useRef(true);
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
@@ -108,6 +110,9 @@ export function EmailDraftsProvider({
   const draftIdMapRef = useRef<Map<string, EmailDraft>>(new Map());
   const actionIdMapRef = useRef<Map<string, EmailDraft>>(new Map());
 
+  // Track which drafts are currently being persisted to avoid duplicates
+  const persistingActionIdsRef = useRef<Set<string>>(new Set());
+
   // Track mounted state to prevent state updates after unmount
   useEffect(() => {
     isMountedRef.current = true;
@@ -115,6 +120,100 @@ export function EmailDraftsProvider({
       isMountedRef.current = false;
     };
   }, []);
+
+  /**
+   * Persist a draft to the database via API.
+   * This ensures the draft can be retrieved by the send endpoint.
+   * Returns the persisted draft with the database-assigned ID, or null on failure.
+   */
+  const persistDraftToDatabase = useCallback(
+    async (draft: EmailDraft): Promise<EmailDraft | null> => {
+      // Skip if no session (user not authenticated)
+      if (!session?.user?.id) {
+        console.warn("[EmailDraftsContext] Cannot persist draft: no session");
+        return null;
+      }
+
+      // Skip if already persisting this action
+      if (persistingActionIdsRef.current.has(draft.actionId)) {
+        console.log(
+          "[EmailDraftsContext] Already persisting draft for action:",
+          draft.actionId
+        );
+        return null;
+      }
+
+      persistingActionIdsRef.current.add(draft.actionId);
+
+      try {
+        // Prepare payload with fallbacks for optional fields
+        const payload = {
+          actionId: draft.actionId,
+          meetingId: draft.meetingId || draft.roomId || undefined,
+          roomId: draft.roomId || draft.meetingContext?.roomId || "",
+          originalInsightId: draft.originalInsightId || draft.actionId,
+          suggestedTo: draft.suggestedTo || [],
+          subject: draft.subject,
+          body: draft.body,
+          meetingContext: draft.meetingContext || {
+            meetingTitle: null,
+            meetingDate: null,
+            participants: [],
+            agendaTopics: [],
+            roomId: null,
+          },
+          transcriptContext: draft.transcriptContext || null,
+          actionContent: draft.actionContent || draft.subject,
+          actionType: draft.actionType || "email_followup",
+          speakerName: draft.speakerName || null,
+          generationConfidence: draft.generationConfidence,
+        };
+
+        // Validate roomId is present (required field)
+        if (!payload.roomId) {
+          console.error(
+            "[EmailDraftsContext] Cannot persist draft: missing roomId",
+            { draft }
+          );
+          return null;
+        }
+
+        const response = await fetch("/api/email-drafts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error(
+            "[EmailDraftsContext] Failed to persist draft:",
+            response.status,
+            errorData,
+            { payload }
+          );
+          return null;
+        }
+
+        const { draft: persistedDraft } = await response.json();
+
+        console.log(
+          "[EmailDraftsContext] Draft persisted to database:",
+          persistedDraft.id
+        );
+
+        return persistedDraft as EmailDraft;
+      } catch (error) {
+        console.error("[EmailDraftsContext] Error persisting draft:", error);
+        return null;
+      } finally {
+        persistingActionIdsRef.current.delete(draft.actionId);
+      }
+    },
+    [session?.user?.id]
+  );
 
   /**
    * Parse and validate draft data from the agent stream.
@@ -239,11 +338,19 @@ export function EmailDraftsProvider({
           status: draft.status,
         });
 
+        // Persist draft to database first (so it can be found by send endpoint)
+        const persistedDraft = await persistDraftToDatabase(draft);
+
+        // Use persisted draft if available (has database ID), otherwise use stream draft
+        const finalDraft = persistedDraft || draft;
+
+        if (!isMountedRef.current) return;
+
         setDrafts((prev) => {
           // Check for existing draft by ID or action ID
-          const existingByIdIndex = prev.findIndex((d) => d.id === draft.id);
+          const existingByIdIndex = prev.findIndex((d) => d.id === finalDraft.id);
           const existingByActionIndex = prev.findIndex(
-            (d) => d.actionId === draft.actionId
+            (d) => d.actionId === finalDraft.actionId
           );
 
           // If draft exists, update it (preserving any local edits if newer)
@@ -252,13 +359,13 @@ export function EmailDraftsProvider({
             // Only update if new draft is newer or existing is still generating
             if (
               existing.status === "generating" ||
-              draft.generatedAt > existing.generatedAt
+              finalDraft.generatedAt > existing.generatedAt
             ) {
               const updated = [...prev];
-              updated[existingByIdIndex] = draft;
+              updated[existingByIdIndex] = finalDraft;
               // Update lookup maps
-              draftIdMapRef.current.set(draft.id, draft);
-              actionIdMapRef.current.set(draft.actionId, draft);
+              draftIdMapRef.current.set(finalDraft.id, finalDraft);
+              actionIdMapRef.current.set(finalDraft.actionId, finalDraft);
               return updated;
             }
             return prev;
@@ -269,24 +376,28 @@ export function EmailDraftsProvider({
             const existing = prev[existingByActionIndex];
             if (
               existing.status === "generating" ||
-              draft.generatedAt > existing.generatedAt
+              finalDraft.generatedAt > existing.generatedAt
             ) {
               const updated = [...prev];
-              updated[existingByActionIndex] = draft;
-              // Update lookup maps
-              draftIdMapRef.current.set(draft.id, draft);
-              actionIdMapRef.current.set(draft.actionId, draft);
+              // Use the database ID for existing draft
+              updated[existingByActionIndex] = finalDraft;
+              // Update lookup maps - remove old ID if different
+              if (prev[existingByActionIndex].id !== finalDraft.id) {
+                draftIdMapRef.current.delete(prev[existingByActionIndex].id);
+              }
+              draftIdMapRef.current.set(finalDraft.id, finalDraft);
+              actionIdMapRef.current.set(finalDraft.actionId, finalDraft);
               return updated;
             }
             return prev;
           }
 
           // Add new draft at the beginning (newest first)
-          const updated = [draft, ...prev];
+          const updated = [finalDraft, ...prev];
 
           // Update lookup maps
-          draftIdMapRef.current.set(draft.id, draft);
-          actionIdMapRef.current.set(draft.actionId, draft);
+          draftIdMapRef.current.set(finalDraft.id, finalDraft);
+          actionIdMapRef.current.set(finalDraft.actionId, finalDraft);
 
           // Trim to max size and clean up maps for removed items
           if (updated.length > MAX_DRAFTS) {
@@ -303,7 +414,7 @@ export function EmailDraftsProvider({
         console.error("[EmailDraftsContext] Failed to process draft:", err);
       }
     },
-    [parseDraftData]
+    [parseDraftData, persistDraftToDatabase]
   );
 
   // Register text stream handler
