@@ -9,7 +9,7 @@
  * - Notes (user-created notes)
  */
 
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, isNull } from "drizzle-orm";
 import { db } from "./index";
 import {
   meetingSession,
@@ -698,7 +698,8 @@ export async function getMeetingHistory(
 export async function getUserMeetingHistory(
   userId: string,
   limit = 20,
-  offset = 0
+  offset = 0,
+  folderId?: string | null
 ): Promise<Array<{
   id: string;
   roomId: string;
@@ -706,11 +707,19 @@ export async function getUserMeetingHistory(
   status: string;
   endedAt: Date | null;
   durationMinutes: number | null;
+  folderId: string | null;
   participantCount: number;
   transcriptionCount: number;
   insightCount: number;
   noteCount: number;
 }>> {
+  // Build folder filter condition
+  const folderCondition = folderId !== undefined
+    ? folderId === null
+      ? isNull(meeting.folderId)
+      : eq(meeting.folderId, folderId)
+    : undefined;
+
   // Get ended meetings where user participated
   const meetings = await db
     .selectDistinct({
@@ -720,14 +729,21 @@ export async function getUserMeetingHistory(
       status: meeting.status,
       endedAt: meeting.endedAt,
       durationMinutes: meeting.durationMinutes,
+      folderId: meeting.folderId,
     })
     .from(meeting)
     .innerJoin(meetingSession, eq(meeting.id, meetingSession.meetingId))
     .where(
-      and(
-        eq(meetingSession.userId, userId),
-        eq(meeting.status, "ended")
-      )
+      folderCondition
+        ? and(
+            eq(meetingSession.userId, userId),
+            eq(meeting.status, "ended"),
+            folderCondition
+          )
+        : and(
+            eq(meetingSession.userId, userId),
+            eq(meeting.status, "ended")
+          )
     )
     .orderBy(desc(meeting.endedAt))
     .limit(limit)

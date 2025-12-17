@@ -12,6 +12,7 @@ import {
   createAgenda,
   upsertAgenda,
 } from "@/lib/db/agenda";
+import { isFolderOwner } from "@/lib/db/folder";
 import { validateUpdateMeetingRequest } from "@/lib/validation/meeting";
 import { validateAgendaItems } from "@/lib/validation/agenda";
 import {
@@ -82,6 +83,7 @@ export async function GET(
  * - timezone: string
  * - status: MeetingStatus
  * - settings: MeetingSettings
+ * - folderId: string | null (for organization)
  */
 export async function PATCH(
   request: NextRequest,
@@ -120,6 +122,7 @@ export async function PATCH(
     status?: string;
     settings?: MeetingSettings;
     agendaItems?: AgendaItemInput[];
+    folderId?: string | null;
   };
 
   try {
@@ -134,6 +137,17 @@ export async function PATCH(
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
+  // Validate folder ownership if folderId is provided (and not null/clearing)
+  if (body.folderId) {
+    const ownsFolder = await isFolderOwner(body.folderId, session.user.id);
+    if (!ownsFolder) {
+      return NextResponse.json(
+        { error: "Invalid folder ID" },
+        { status: 400 }
+      );
+    }
+  }
+
   try {
     // Build update object with automatic timestamp handling for status changes
     const updates: Parameters<typeof updateMeeting>[2] = {
@@ -144,6 +158,7 @@ export async function PATCH(
       timezone: body.timezone,
       status: body.status as MeetingStatus | undefined,
       settings: body.settings,
+      folderId: body.folderId,
     };
 
     // Automatically set timestamps when status changes

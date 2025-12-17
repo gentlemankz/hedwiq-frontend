@@ -3,8 +3,10 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { createMeeting, listMeetingsByHost } from "@/lib/db/meeting";
 import { createAgenda } from "@/lib/db/agenda";
+import { isFolderOwner } from "@/lib/db/folder";
 import { validateCreateMeetingRequest } from "@/lib/validation/meeting";
 import { validateAgendaItems } from "@/lib/validation/agenda";
+import { parseFolderIdParam } from "@/lib/validation/folder";
 import { syncMeetingToCalendar } from "@/lib/calendar-sync";
 import type { MeetingType, MeetingSettings } from "@/types/meeting";
 import type { AgendaItemInput } from "@/types/agenda";
@@ -15,6 +17,7 @@ import type { AgendaItemInput } from "@/types/agenda";
  * List meetings for the authenticated user.
  * Query params:
  * - status: "upcoming" | "past" | "all" (default: "all")
+ * - folderId: string (optional, filter by folder)
  * - limit: number (default: 50, max: 100)
  * - offset: number (default: 0)
  */
@@ -29,6 +32,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const statusParam = searchParams.get("status");
+  const folderIdParam = searchParams.get("folderId");
   const limitParam = searchParams.get("limit");
   const offsetParam = searchParams.get("offset");
 
@@ -46,6 +50,9 @@ export async function GET(request: NextRequest) {
     }
     status = statusParam as ValidStatus;
   }
+
+  // Parse folderId (can be a string or "null" for unassigned meetings)
+  const folderId = parseFolderIdParam(folderIdParam);
 
   // Parse and validate limit
   let limit = 50;
@@ -76,6 +83,7 @@ export async function GET(request: NextRequest) {
   try {
     const meetings = await listMeetingsByHost(session.user.id, {
       status: status || "all",
+      folderId,
       limit,
       offset,
     });
@@ -103,6 +111,7 @@ export async function GET(request: NextRequest) {
  * - timezone: string (optional, default: "UTC")
  * - settings: MeetingSettings (optional)
  * - addToCalendar: boolean (optional, default: false)
+ * - folderId: string (optional, for organization)
  */
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({
@@ -124,6 +133,7 @@ export async function POST(request: NextRequest) {
     settings?: MeetingSettings;
     addToCalendar?: boolean;
     agendaItems?: AgendaItemInput[];
+    folderId?: string;
   };
 
   try {
@@ -138,6 +148,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
+  // Validate folder ownership if folderId is provided
+  if (body.folderId) {
+    const ownsFolder = await isFolderOwner(body.folderId, session.user.id);
+    if (!ownsFolder) {
+      return NextResponse.json(
+        { error: "Invalid folder ID" },
+        { status: 400 }
+      );
+    }
+  }
+
   try {
     const meeting = await createMeeting({
       hostId: session.user.id,
@@ -148,6 +169,7 @@ export async function POST(request: NextRequest) {
       durationMinutes: body.durationMinutes,
       timezone: body.timezone,
       settings: body.settings,
+      folderId: body.folderId,
     });
 
     // Create agenda if items were provided

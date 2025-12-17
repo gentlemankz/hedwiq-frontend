@@ -48,6 +48,8 @@ export interface Meeting {
   roomId: string;
   /** Host user ID */
   hostId: string;
+  /** Folder ID for organization (null if not assigned) */
+  folderId: string | null;
   /** Meeting title */
   title: string;
   /** Meeting description (optional) */
@@ -108,6 +110,8 @@ export interface CreateMeetingRequest {
   timezone?: string;
   /** Meeting settings */
   settings?: MeetingSettings;
+  /** Optional folder ID for organization */
+  folderId?: string;
 }
 
 /**
@@ -128,6 +132,8 @@ export interface UpdateMeetingRequest {
   status?: MeetingStatus;
   /** Meeting settings */
   settings?: MeetingSettings;
+  /** Optional folder ID for organization */
+  folderId?: string | null;
 }
 
 /**

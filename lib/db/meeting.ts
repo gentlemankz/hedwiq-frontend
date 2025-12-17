@@ -6,7 +6,7 @@
 
 import { db } from "@/lib/db";
 import { meeting, user } from "@/lib/db/schema";
-import { eq, and, gte, desc, or, lte } from "drizzle-orm";
+import { eq, and, gte, desc, or, lte, isNull } from "drizzle-orm";
 import type {
   Meeting,
   MeetingType,
@@ -62,6 +62,7 @@ function rowToMeeting(row: typeof meeting.$inferSelect): Meeting {
     id: row.id,
     roomId: row.roomId,
     hostId: row.hostId,
+    folderId: row.folderId,
     title: row.title,
     description: row.description,
     type: row.type as MeetingType,
@@ -93,6 +94,7 @@ export async function createMeeting(params: {
   durationMinutes?: number;
   timezone?: string;
   settings?: MeetingSettings;
+  folderId?: string;
 }): Promise<Meeting> {
   const meetingId = generateMeetingId();
   const roomId = generateRoomId();
@@ -103,6 +105,7 @@ export async function createMeeting(params: {
       id: meetingId,
       roomId,
       hostId: params.hostId,
+      folderId: params.folderId ?? null,
       title: params.title.trim(),
       description: params.description?.trim() || null,
       type: params.type,
@@ -181,22 +184,34 @@ export async function listMeetingsByHost(
   hostId: string,
   options: {
     status?: "upcoming" | "past" | "all";
+    folderId?: string | null;
     limit?: number;
     offset?: number;
   } = {}
 ): Promise<Meeting[]> {
-  const { status = "all", limit = 50, offset = 0 } = options;
+  const { status = "all", folderId, limit = 50, offset = 0 } = options;
   const now = new Date();
 
   // Build the where clause based on status filter
   const buildWhereClause = () => {
     const hostFilter = eq(meeting.hostId, hostId);
 
+    // Build folder filter
+    const folderFilter = folderId !== undefined
+      ? folderId === null
+        ? isNull(meeting.folderId) // Meetings with no folder
+        : eq(meeting.folderId, folderId)
+      : undefined;
+
+    const baseFilters = folderFilter
+      ? and(hostFilter, folderFilter)
+      : hostFilter;
+
     switch (status) {
       case "upcoming":
         // Upcoming: scheduled for the future OR currently live
         return and(
-          hostFilter,
+          baseFilters,
           or(
             and(gte(meeting.scheduledAt, now), eq(meeting.status, "scheduled")),
             eq(meeting.status, "live")
@@ -206,7 +221,7 @@ export async function listMeetingsByHost(
       case "past":
         // Past: ended or cancelled, or scheduled in the past
         return and(
-          hostFilter,
+          baseFilters,
           or(
             eq(meeting.status, "ended"),
             eq(meeting.status, "cancelled"),
@@ -216,7 +231,7 @@ export async function listMeetingsByHost(
 
       default:
         // All meetings for this host
-        return hostFilter;
+        return baseFilters;
     }
   };
 
@@ -253,6 +268,7 @@ export async function updateMeeting(
     startedAt?: Date;
     endedAt?: Date;
     settings?: MeetingSettings;
+    folderId?: string | null;
   }
 ): Promise<Meeting | null> {
   const updateData: Partial<typeof meeting.$inferInsert> = {
@@ -285,6 +301,9 @@ export async function updateMeeting(
   }
   if (updates.settings !== undefined) {
     updateData.settings = updates.settings;
+  }
+  if (updates.folderId !== undefined) {
+    updateData.folderId = updates.folderId;
   }
 
   const [row] = await db

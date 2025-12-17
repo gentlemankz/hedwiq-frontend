@@ -306,6 +306,42 @@ export const gmailIntegration = pgTable(
 );
 
 // ============================================================================
+// Meeting Folder Tables
+// ============================================================================
+
+/**
+ * Meeting Folder - Folders for organizing user's meetings.
+ * Each user can have multiple folders, with one default "General" folder.
+ */
+export const meetingFolder = pgTable(
+  "meeting_folder",
+  {
+    /** Unique folder identifier (e.g., folder-{userId}-{timestamp}) */
+    id: text("id").primaryKey(),
+    /** User who owns this folder */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Folder name (e.g., "General", "Project Alpha") */
+    name: text("name").notNull(),
+    /** Optional hex color for folder display (e.g., #3B82F6) */
+    color: text("color"),
+    /** Optional icon identifier for folder display */
+    icon: text("icon"),
+    /** Display order (0-based, lower = higher priority) */
+    orderIndex: integer("order_index").notNull().default(0),
+    /** Whether this is the default "General" folder */
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_meeting_folder_user").on(table.userId),
+    index("idx_meeting_folder_order").on(table.userId, table.orderIndex),
+  ]
+);
+
+// ============================================================================
 // Meeting Scheduling Tables
 // ============================================================================
 
@@ -329,6 +365,10 @@ export const meeting = pgTable(
     hostId: text("host_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    /** Optional folder for meeting organization */
+    folderId: text("folder_id").references(() => meetingFolder.id, {
+      onDelete: "set null",
+    }),
 
     // Meeting details
     /** Meeting title/name */
@@ -365,6 +405,7 @@ export const meeting = pgTable(
     index("idx_meeting_host").on(table.hostId),
     index("idx_meeting_scheduled").on(table.scheduledAt),
     index("idx_meeting_status").on(table.status),
+    index("idx_meeting_folder").on(table.folderId),
     // Note: room_id unique index is auto-created by .unique() constraint
     // Composite index for listing meetings by host with status filter
     index("idx_meeting_host_status").on(table.hostId, table.status),

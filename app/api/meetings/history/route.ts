@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { getUserMeetingHistory } from "@/lib/db/meeting-data";
+import { parseFolderIdParam } from "@/lib/validation/folder";
 
 /**
  * GET /api/meetings/history
@@ -12,6 +13,7 @@ import { getUserMeetingHistory } from "@/lib/db/meeting-data";
  * Query params:
  * - limit: number (default 20, max 50)
  * - offset: number (default 0)
+ * - folderId: string (optional, filter by folder; "null" for unassigned)
  */
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({
@@ -25,16 +27,21 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const rawLimit = parseInt(searchParams.get("limit") ?? "20", 10);
   const rawOffset = parseInt(searchParams.get("offset") ?? "0", 10);
+  const folderIdParam = searchParams.get("folderId");
 
   // Validate and sanitize pagination params
   const limit = Math.min(Math.max(isNaN(rawLimit) ? 20 : rawLimit, 1), 50);
   const offset = Math.max(isNaN(rawOffset) ? 0 : rawOffset, 0);
 
+  // Parse folderId (can be a string or "null" for unassigned meetings)
+  const folderId = parseFolderIdParam(folderIdParam);
+
   try {
     const meetings = await getUserMeetingHistory(
       session.user.id,
       limit,
-      offset
+      offset,
+      folderId
     );
 
     return NextResponse.json({

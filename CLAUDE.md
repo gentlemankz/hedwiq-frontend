@@ -54,6 +54,10 @@ frontend/
 │   │   ├── email-drafts/             # AI-generated email draft management
 │   │   │   ├── route.ts              # List/create email drafts
 │   │   │   └── [draftId]/route.ts    # Get/update/delete email draft
+│   │   ├── folders/                  # Meeting folder organization
+│   │   │   ├── route.ts              # List/create folders
+│   │   │   ├── reorder/route.ts      # Bulk reorder folders
+│   │   │   └── [folderId]/route.ts   # Get/update/delete folder
 │   │   ├── gmail/                    # Gmail OAuth for Real-Time Actions
 │   │   │   ├── connect/route.ts      # Start Gmail OAuth flow
 │   │   │   ├── callback/route.ts     # OAuth callback handler
@@ -199,17 +203,19 @@ frontend/
 │   │   ├── calendar-event.ts
 │   │   ├── calendar.ts
 │   │   ├── email-draft.ts            # Email draft CRUD operations (upsert, update, send tracking)
+│   │   ├── folder.ts                 # Meeting folder CRUD operations
 │   │   ├── gmail.ts                  # Gmail integration CRUD operations
 │   │   ├── invitee.ts
-│   │   ├── meeting.ts
+│   │   ├── meeting.ts                # Meeting CRUD (includes folderId support)
 │   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
 │   │   ├── room-access.ts
-│   │   ├── schema.ts                 # Includes gmail_integration, email_draft, email_sent tables
+│   │   ├── schema.ts                 # Includes meeting_folder, gmail_integration, email_draft tables
 │   │   ├── index.ts
 │   │   └── migrations/               # SQL + meta snapshots
 │   │       ├── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
 │   │       ├── 0013_add_gmail_integration.sql    # Gmail OAuth integration table
-│   │       └── 0014_add_email_draft_table.sql    # Email draft + sent audit tables
+│   │       ├── 0014_add_email_draft_table.sql    # Email draft + sent audit tables
+│   │       └── 0016_add_meeting_folder_table.sql # Meeting folder organization
 │   ├── email/
 │   │   ├── index.ts
 │   │   └── templates/{meeting-invitation.tsx, meeting-updated.tsx, meeting-cancelled.tsx}
@@ -217,16 +223,17 @@ frontend/
 │   ├── utils.ts                      # Includes formatDurationCompact, formatMeetingDate, formatMeetingTime
 │   ├── utils/meeting-form.ts
 │   ├── validation.ts
-│   └── validation/{agenda.ts, invitee.ts, meeting.ts}
+│   └── validation/{agenda.ts, folder.ts, invitee.ts, meeting.ts}
 ├── types/
 │   ├── agenda.ts
 │   ├── calendar.ts
 │   ├── document.ts
 │   ├── email-draft.ts                # Email draft types, status config, helper functions
+│   ├── folder.ts                     # Meeting folder types, colors, limits
 │   ├── gmail.ts                      # Gmail integration types + OAuth constants
 │   ├── insight.ts
 │   ├── invitee.ts
-│   ├── meeting.ts
+│   ├── meeting.ts                    # Meeting types (includes folderId)
 │   ├── meeting-history.ts            # Types for meeting history (sessions, transcripts, insights, notes, stats)
 │   ├── persistence.ts                # Shared persistence types (TranscriptionEntry)
 │   ├── transcript-note.ts
