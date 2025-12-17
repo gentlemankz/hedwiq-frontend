@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
@@ -12,6 +13,9 @@ import {
   Plus,
   LogOut,
   Loader2,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -43,9 +47,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSidebarContext } from "@/contexts/sidebar-context";
-import { FolderColorDot } from "@/components/folders";
+import { FolderColorDot, EditFolderDialog, DeleteFolderDialog } from "@/components/folders";
 import { getInitials } from "@/lib/utils";
 import type { User } from "@/types/user";
+import type { Folder } from "@/types/folder";
 
 // ============================================================================
 // Types
@@ -83,7 +88,13 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
     foldersLoading,
     expandedSections,
     toggleSection,
+    updateFolder,
+    deleteFolder,
   } = useSidebarContext();
+
+  // Folder dialog state
+  const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
+  const [deletingFolder, setDeletingFolder] = useState<Folder | null>(null);
 
   const isPastMeetingsExpanded = expandedSections.has("past-meetings");
 
@@ -217,7 +228,7 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
                       ) : (
                         <>
                           {folders.map((folder) => (
-                            <SidebarMenuSubItem key={folder.id}>
+                            <SidebarMenuSubItem key={folder.id} className="group/folder">
                               <SidebarMenuSubButton
                                 asChild
                                 isActive={
@@ -227,6 +238,7 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
                               >
                                 <Link
                                   href={`/dashboard/past-meetings/${folder.id}`}
+                                  className="pr-6"
                                 >
                                   <FolderColorDot color={folder.color} size="xs" />
                                   <span className="flex-1 truncate">
@@ -239,6 +251,34 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
                                   )}
                                 </Link>
                               </SidebarMenuSubButton>
+                              {/* Folder Actions Dropdown */}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button
+                                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover/folder:opacity-100 hover:bg-sidebar-accent transition-opacity"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <MoreHorizontal className="size-3" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" side="right">
+                                  <DropdownMenuItem
+                                    onClick={() => setEditingFolder(folder)}
+                                    disabled={folder.isDefault}
+                                  >
+                                    <Pencil className="mr-2 size-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => setDeletingFolder(folder)}
+                                    disabled={folder.isDefault}
+                                    className="text-destructive focus:text-destructive"
+                                  >
+                                    <Trash2 className="mr-2 size-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </SidebarMenuSubItem>
                           ))}
 
@@ -285,6 +325,35 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
         </SidebarGroup>
       </SidebarContent>
 
+      {/* Edit Folder Dialog */}
+      {editingFolder && (
+        <EditFolderDialog
+          open={!!editingFolder}
+          onOpenChange={(open) => !open && setEditingFolder(null)}
+          folder={editingFolder}
+          updateFolder={updateFolder}
+          onFolderUpdated={() => {
+            // Context's updateFolder already updates local state
+            // No need to call refreshFolders() - avoids redundant API call
+            setEditingFolder(null);
+          }}
+        />
+      )}
+
+      {/* Delete Folder Dialog */}
+      {deletingFolder && (
+        <DeleteFolderDialog
+          open={!!deletingFolder}
+          onOpenChange={(open) => !open && setDeletingFolder(null)}
+          folder={deletingFolder}
+          deleteFolder={deleteFolder}
+          onFolderDeleted={() => {
+            // Context's deleteFolder already updates local state
+            // No need to call refreshFolders() - avoids redundant API call
+            setDeletingFolder(null);
+          }}
+        />
+      )}
     </Sidebar>
   );
 }

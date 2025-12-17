@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar, Info } from "lucide-react";
+import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar, Info, FolderClosed } from "lucide-react";
+import { FolderSelect } from "@/components/folders";
+import { useSidebarContext } from "@/contexts/sidebar-context";
 import Link from "next/link";
 import { useMediaDevices } from "@/hooks/use-media-devices";
 import { sanitizeUsername } from "@/lib/validation";
@@ -66,6 +68,8 @@ export interface UserChoices extends LocalUserChoices {
   meetingName?: string;
   /** Scheduled meeting time */
   scheduledAt?: Date;
+  /** Folder ID for organizing the meeting */
+  folderId?: string;
 }
 
 /**
@@ -112,6 +116,9 @@ export function PreJoinScreen({
   error,
   meetingData,
 }: PreJoinScreenProps) {
+  // Folder context for organizing meetings
+  const { folders, foldersLoading, defaultFolderId } = useSidebarContext();
+
   // Use custom hook for media device management
   const {
     videoEnabled,
@@ -135,9 +142,49 @@ export function PreJoinScreen({
   const [meetingName, setMeetingName] = useState("");
   // Initialize with current date, but store as stable reference
   const [scheduledAt, setScheduledAt] = useState<Date | null>(() => new Date());
+  // Folder for organizing the meeting
+  const [folderId, setFolderId] = useState<string | null>(null);
 
   // Track if we've initialized from meeting data
   const [initializedFromMeetingData, setInitializedFromMeetingData] = useState(false);
+  // Track if default folder has been applied (to prevent overriding meeting folder)
+  const [defaultFolderApplied, setDefaultFolderApplied] = useState(false);
+
+  // Initialize folderId when defaultFolderId becomes available (for instant meetings only)
+  // Only apply default if: we haven't already applied it, there's no folder set,
+  // AND we've confirmed this is not a scheduled meeting with its own folder
+  useEffect(() => {
+    // Skip if already applied default or folder is already set
+    if (defaultFolderApplied || folderId) return;
+
+    // Skip if loading meeting data - wait to see if meeting has its own folder
+    if (isLoadingMeetingData) return;
+
+    // For scheduled meetings, wait for meeting data initialization
+    if (meetingData?.meeting?.folderId) return;
+
+    // Apply default folder for instant meetings or meetings without folder
+    if (defaultFolderId && initializedFromMeetingData) {
+      // Meeting data loaded but no folder - apply default
+      startTransition(() => {
+        setFolderId(defaultFolderId);
+        setDefaultFolderApplied(true);
+      });
+    } else if (defaultFolderId && !meetingData) {
+      // Instant meeting (no meeting data) - apply default immediately
+      startTransition(() => {
+        setFolderId(defaultFolderId);
+        setDefaultFolderApplied(true);
+      });
+    }
+  }, [
+    defaultFolderId,
+    folderId,
+    defaultFolderApplied,
+    isLoadingMeetingData,
+    meetingData,
+    initializedFromMeetingData,
+  ]);
 
   // Memoize formatted date for input to prevent unnecessary re-renders
   const formattedScheduledAt = useMemo(
@@ -183,6 +230,11 @@ export function PreJoinScreen({
           setScheduledAt(new Date(meetingData.meeting.scheduledAt));
         } else if (meetingData.agenda?.scheduledAt) {
           setScheduledAt(new Date(meetingData.agenda.scheduledAt));
+        }
+
+        // Set folder from meeting
+        if (meetingData.meeting?.folderId) {
+          setFolderId(meetingData.meeting.folderId);
         }
 
         // Set agenda items if they exist
@@ -240,6 +292,7 @@ export function PreJoinScreen({
         agendaItems: agendaItems.length > 0 ? agendaItems : undefined,
         meetingName: meetingName.trim() || undefined,
         scheduledAt: scheduledAt ?? undefined,
+        folderId: folderId || undefined,
       });
     },
     [
@@ -255,6 +308,7 @@ export function PreJoinScreen({
       agendaItems,
       meetingName,
       scheduledAt,
+      folderId,
     ]
   );
 
@@ -332,35 +386,60 @@ export function PreJoinScreen({
                 </div>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="meeting-name">Meeting Name</Label>
-                  <Input
-                    id="meeting-name"
-                    placeholder="e.g., Marketing Team Standup"
-                    value={meetingName}
-                    onChange={(e) => handleMeetingNameChange(e.target.value)}
-                    disabled={isConnecting || !!meetingData?.meeting}
-                    maxLength={MAX_MEETING_NAME_LENGTH}
-                  />
-                  {meetingName.length > 0 && !meetingData?.meeting && (
-                    <p className="text-xs text-muted-foreground text-right">
-                      {meetingName.length}/{MAX_MEETING_NAME_LENGTH}
-                    </p>
-                  )}
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="meeting-name">Meeting Name</Label>
+                    <Input
+                      id="meeting-name"
+                      placeholder="e.g., Marketing Team Standup"
+                      value={meetingName}
+                      onChange={(e) => handleMeetingNameChange(e.target.value)}
+                      disabled={isConnecting || !!meetingData?.meeting}
+                      maxLength={MAX_MEETING_NAME_LENGTH}
+                    />
+                    {meetingName.length > 0 && !meetingData?.meeting && (
+                      <p className="text-xs text-muted-foreground text-right">
+                        {meetingName.length}/{MAX_MEETING_NAME_LENGTH}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="scheduled-time">Scheduled Time</Label>
+                    <Input
+                      id="scheduled-time"
+                      type="datetime-local"
+                      value={formattedScheduledAt}
+                      onChange={(e) => handleScheduledAtChange(e.target.value)}
+                      disabled={isConnecting || !!meetingData?.meeting}
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="scheduled-time">Scheduled Time</Label>
-                  <Input
-                    id="scheduled-time"
-                    type="datetime-local"
-                    value={formattedScheduledAt}
-                    onChange={(e) => handleScheduledAtChange(e.target.value)}
-                    disabled={isConnecting || !!meetingData?.meeting}
-                  />
-                </div>
-              </div>
+                {/* Folder Selection - only for instant meetings */}
+                {!meetingData?.meeting && (
+                  <div className="space-y-2 mt-4">
+                    <Label htmlFor="meeting-folder" className="flex items-center gap-2">
+                      <FolderClosed className="size-4" />
+                      Folder
+                    </Label>
+                    <FolderSelect
+                      id="meeting-folder"
+                      value={folderId}
+                      onChange={setFolderId}
+                      folders={folders}
+                      loading={foldersLoading}
+                      disabled={isConnecting}
+                      placeholder="Select folder"
+                      aria-label="Meeting folder"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Organize this meeting into a folder for easier access later
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

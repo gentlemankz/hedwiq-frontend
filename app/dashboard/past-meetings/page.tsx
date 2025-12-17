@@ -27,17 +27,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PastMeetingsList } from "@/components/meetings";
-import { FolderColorDot } from "@/components/folders";
+import { FolderColorDot, EditFolderDialog, DeleteFolderDialog } from "@/components/folders";
 import { useSidebarContext } from "@/contexts/sidebar-context";
-import { FolderClosed, Plus, Loader2 } from "lucide-react";
-import { FOLDER_COLORS, FOLDER_LIMITS } from "@/types/folder";
+import { FolderClosed, Plus, Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { FOLDER_COLORS, FOLDER_LIMITS, type Folder } from "@/types/folder";
 
 function PastMeetingsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { folders, createFolder, foldersLoading, refreshFolders } =
+  const { folders, createFolder, updateFolder, deleteFolder, foldersLoading } =
     useSidebarContext();
 
   // New folder dialog state
@@ -48,6 +54,10 @@ function PastMeetingsContent() {
   const [newFolderColor, setNewFolderColor] = useState<string>(FOLDER_COLORS[0].value);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
+
+  // Edit/Delete folder dialog state
+  const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
+  const [deletingFolder, setDeletingFolder] = useState<Folder | null>(null);
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
@@ -75,8 +85,7 @@ function PastMeetingsContent() {
       setNewFolderColor(FOLDER_COLORS[0].value);
       // Clean up URL params
       router.replace("/dashboard/past-meetings", { scroll: false });
-      // Refresh folders to update meeting counts
-      refreshFolders();
+      // Context's createFolder already updates local state
     } else {
       setFolderError("Failed to create folder. Please try again.");
     }
@@ -119,7 +128,7 @@ function PastMeetingsContent() {
             {folders.map((folder) => (
               <Card
                 key={folder.id}
-                className="cursor-pointer transition-colors hover:bg-muted/50"
+                className="group relative cursor-pointer transition-colors hover:bg-muted/50"
                 onClick={() =>
                   router.push(`/dashboard/past-meetings/${folder.id}`)
                 }
@@ -127,9 +136,9 @@ function PastMeetingsContent() {
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <FolderColorDot color={folder.color} />
-                    {folder.name}
+                    <span className="flex-1 truncate">{folder.name}</span>
                     {folder.isDefault && (
-                      <span className="ml-auto text-xs font-normal text-muted-foreground">
+                      <span className="text-xs font-normal text-muted-foreground">
                         Default
                       </span>
                     )}
@@ -141,6 +150,42 @@ function PastMeetingsContent() {
                     {folder.meetingCount !== 1 ? "s" : ""}
                   </p>
                 </CardContent>
+                {/* Folder Actions Dropdown */}
+                {!folder.isDefault && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-2 top-2 size-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingFolder(folder);
+                        }}
+                      >
+                        <Pencil className="mr-2 size-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingFolder(folder);
+                        }}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="mr-2 size-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </Card>
             ))}
           </div>
@@ -244,6 +289,34 @@ function PastMeetingsContent() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Edit Folder Dialog */}
+        {editingFolder && (
+          <EditFolderDialog
+            open={!!editingFolder}
+            onOpenChange={(open) => !open && setEditingFolder(null)}
+            folder={editingFolder}
+            updateFolder={updateFolder}
+            onFolderUpdated={() => {
+              // Context's updateFolder already updates local state
+              setEditingFolder(null);
+            }}
+          />
+        )}
+
+        {/* Delete Folder Dialog */}
+        {deletingFolder && (
+          <DeleteFolderDialog
+            open={!!deletingFolder}
+            onOpenChange={(open) => !open && setDeletingFolder(null)}
+            folder={deletingFolder}
+            deleteFolder={deleteFolder}
+            onFolderDeleted={() => {
+              // Context's deleteFolder already updates local state
+              setDeletingFolder(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );

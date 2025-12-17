@@ -130,7 +130,10 @@ frontend/
 │   │   ├── calendar-status-card.tsx
 │   │   └── index.ts
 │   ├── folders/                      # Meeting folder UI components
+│   │   ├── delete-folder-dialog.tsx  # Confirmation dialog for folder deletion
+│   │   ├── edit-folder-dialog.tsx    # Dialog for editing folder name/color
 │   │   ├── folder-color-dot.tsx      # Reusable folder color indicator
+│   │   ├── folder-select.tsx         # Dropdown select for choosing folders
 │   │   └── index.ts
 │   ├── layout/                       # Layout components
 │   │   ├── dashboard-sidebar.tsx     # Dashboard sidebar with folders nav

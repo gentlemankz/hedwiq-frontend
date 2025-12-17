@@ -11,6 +11,7 @@ import {
   ChevronUp,
   ListTodo,
   AlertCircle,
+  FolderClosed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +60,8 @@ import {
 import type { Meeting } from "@/types/meeting";
 import type { DraftAgendaItem } from "@/types/agenda";
 import { AgendaBuilder } from "@/app/meetings/[roomId]/components/agenda-builder";
+import { FolderSelect } from "@/components/folders";
+import { useSidebarContext } from "@/contexts/sidebar-context";
 
 interface EditMeetingDialogProps {
   open: boolean;
@@ -74,6 +77,7 @@ export function EditMeetingDialog({
   onUpdated,
 }: EditMeetingDialogProps) {
   const router = useRouter();
+  const { folders, foldersLoading } = useSidebarContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -102,6 +106,7 @@ export function EditMeetingDialog({
     meeting.scheduledAt ? getTimeFromDate(new Date(meeting.scheduledAt)) : "10:00"
   );
   const [duration, setDuration] = useState(meeting.durationMinutes || 30);
+  const [folderId, setFolderId] = useState<string | null>(meeting.folderId || null);
 
   // Agenda state
   const [agendaItems, setAgendaItems] = useState<DraftAgendaItem[]>([]);
@@ -150,6 +155,7 @@ export function EditMeetingDialog({
           setTitle(data.meeting.title);
           setDescription(data.meeting.description || "");
           setDuration(data.meeting.durationMinutes || 30);
+          setFolderId(data.meeting.folderId || null);
           if (data.meeting.scheduledAt) {
             const scheduledDate = new Date(data.meeting.scheduledAt);
             setDate(scheduledDate);
@@ -242,6 +248,7 @@ export function EditMeetingDialog({
           scheduledAt: scheduledAt.toISOString(),
           durationMinutes: duration,
           agendaItems: agendaItemsInput,
+          folderId: folderId,
         }),
       });
 
@@ -470,6 +477,24 @@ export function EditMeetingDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Folder */}
+              <div className="grid gap-2">
+                <Label htmlFor="edit-meeting-folder" className="flex items-center gap-2">
+                  <FolderClosed className="size-4" />
+                  Folder
+                </Label>
+                <FolderSelect
+                  id="edit-meeting-folder"
+                  value={folderId}
+                  onChange={setFolderId}
+                  folders={folders}
+                  loading={foldersLoading}
+                  disabled={isSubmitting}
+                  placeholder="Select folder"
+                  aria-label="Meeting folder"
+                />
               </div>
 
               {/* Description */}

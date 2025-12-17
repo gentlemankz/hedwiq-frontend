@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { format, addDays } from "date-fns";
 import {
@@ -12,6 +12,7 @@ import {
   ListTodo,
   Mail,
   Users,
+  FolderClosed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,8 @@ import type { CalendarIntegrationPublic } from "@/types/calendar";
 import type { DraftAgendaItem } from "@/types/agenda";
 import { AgendaBuilder } from "@/app/meetings/[roomId]/components/agenda-builder";
 import { InviteeInput, type InviteeEntry } from "@/components/meetings/invitee-input";
+import { FolderSelect } from "@/components/folders";
+import { useSidebarContext } from "@/contexts/sidebar-context";
 
 interface ScheduleMeetingDialogProps {
   open: boolean;
@@ -72,6 +75,7 @@ export function ScheduleMeetingDialog({
   calendarStatus: initialCalendarStatus,
 }: ScheduleMeetingDialogProps) {
   const router = useRouter();
+  const { folders, foldersLoading, defaultFolderId } = useSidebarContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -106,6 +110,17 @@ export function ScheduleMeetingDialog({
   const [date, setDate] = useState<Date | undefined>(addDays(new Date(), 1));
   const [time, setTime] = useState("10:00");
   const [duration, setDuration] = useState(30);
+  const [folderId, setFolderId] = useState<string | null>(null);
+  // Track if folder has been initialized to prevent re-initialization
+  const [folderInitialized, setFolderInitialized] = useState(false);
+
+  // Initialize folderId once when defaultFolderId becomes available
+  useEffect(() => {
+    if (defaultFolderId && !folderInitialized) {
+      setFolderId(defaultFolderId);
+      setFolderInitialized(true);
+    }
+  }, [defaultFolderId, folderInitialized]);
 
   // Agenda state
   const [agendaItems, setAgendaItems] = useState<DraftAgendaItem[]>([]);
@@ -204,6 +219,7 @@ export function ScheduleMeetingDialog({
           durationMinutes: duration,
           addToCalendar: addToCalendar && calendarStatus?.connected,
           agendaItems: agendaItemsInput,
+          folderId: folderId || undefined,
         }),
       });
 
@@ -288,12 +304,13 @@ export function ScheduleMeetingDialog({
     }
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setTitle("");
     setDescription("");
     setDate(addDays(new Date(), 1));
     setTime("10:00");
     setDuration(30);
+    setFolderId(defaultFolderId); // Reset to default folder (uses latest value via dependency)
     setAgendaItems([]);
     setAgendaExpanded(false);
     setInvitees([]);
@@ -308,7 +325,7 @@ export function ScheduleMeetingDialog({
     if (!calendarStatus?.connected) {
       setAddToCalendar(false);
     }
-  };
+  }, [defaultFolderId, calendarStatus?.connected]);
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
@@ -484,6 +501,27 @@ export function ScheduleMeetingDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Folder */}
+          <div className="grid gap-2">
+            <Label htmlFor="meeting-folder" className="flex items-center gap-2">
+              <FolderClosed className="size-4" />
+              Folder
+            </Label>
+            <FolderSelect
+              id="meeting-folder"
+              value={folderId}
+              onChange={setFolderId}
+              folders={folders}
+              loading={foldersLoading}
+              disabled={isSubmitting}
+              placeholder="Select folder"
+              aria-label="Meeting folder"
+            />
+            <p className="text-xs text-muted-foreground">
+              Organize this meeting into a folder for easier access later
+            </p>
           </div>
 
           {/* Description (optional) */}
