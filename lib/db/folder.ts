@@ -8,21 +8,13 @@
 import { db } from "@/lib/db";
 import { meetingFolder, meeting } from "@/lib/db/schema";
 import { eq, and, desc, sql, ne } from "drizzle-orm";
+import { secureRandomString } from "@/lib/utils";
 import type { Folder } from "@/types/folder";
 import { DEFAULT_FOLDER_NAME } from "@/types/folder";
 
 // ============================================================================
 // ID Generation
 // ============================================================================
-
-/**
- * Generates a cryptographically secure random string.
- */
-function secureRandomString(length: number, charset: string): string {
-  const array = new Uint32Array(length);
-  crypto.getRandomValues(array);
-  return Array.from(array, (num) => charset[num % charset.length]).join("");
-}
 
 /**
  * Generates a unique folder ID.
@@ -107,24 +99,41 @@ export async function createFolder(params: {
 /**
  * Gets or creates the default folder for a user.
  * This ensures every user has a "General" folder for uncategorized meetings.
+ * RACE-SAFE: Uses INSERT ... ON CONFLICT DO NOTHING followed by SELECT
+ * to handle concurrent requests atomically.
  */
 export async function getOrCreateDefaultFolder(userId: string): Promise<Folder> {
-  // Try to find existing default folder
-  const [existing] = await db
-    .select()
-    .from(meetingFolder)
-    .where(and(eq(meetingFolder.userId, userId), eq(meetingFolder.isDefault, true)))
-    .limit(1);
+  const folderId = generateFolderId(userId);
 
-  if (existing) {
-    return rowToFolder(existing);
-  }
+  // Use transaction for atomicity
+  return db.transaction(async (tx) => {
+    // Attempt to insert with conflict handling
+    // If another concurrent request already created the default folder,
+    // this will do nothing due to the unique constraint on (userId, isDefault=true)
+    await tx
+      .insert(meetingFolder)
+      .values({
+        id: folderId,
+        userId,
+        name: DEFAULT_FOLDER_NAME,
+        isDefault: true,
+        orderIndex: 0,
+      })
+      .onConflictDoNothing();
 
-  // Create default folder
-  return createFolder({
-    userId,
-    name: DEFAULT_FOLDER_NAME,
-    isDefault: true,
+    // Now fetch the default folder (either just created or existing)
+    const [folder] = await tx
+      .select()
+      .from(meetingFolder)
+      .where(and(eq(meetingFolder.userId, userId), eq(meetingFolder.isDefault, true)))
+      .limit(1);
+
+    if (!folder) {
+      // This should never happen if the unique constraint exists
+      throw new Error("Failed to create or retrieve default folder");
+    }
+
+    return rowToFolder(folder);
   });
 }
 
@@ -169,14 +178,17 @@ export async function listFoldersByUser(
   let folders: Folder[];
 
   if (options.includeMeetingCounts) {
-    // Query with meeting counts
+    // Query with meeting counts - only count meetings owned by this user
     const rows = await db
       .select({
         folder: meetingFolder,
         meetingCount: sql<number>`COUNT(${meeting.id})::int`,
       })
       .from(meetingFolder)
-      .leftJoin(meeting, eq(meeting.folderId, meetingFolder.id))
+      .leftJoin(
+        meeting,
+        and(eq(meeting.folderId, meetingFolder.id), eq(meeting.hostId, userId))
+      )
       .where(eq(meetingFolder.userId, userId))
       .groupBy(meetingFolder.id)
       .orderBy(meetingFolder.orderIndex, desc(meetingFolder.createdAt));
@@ -286,11 +298,12 @@ export async function deleteFolder(
         .returning();
     }
 
-    // Move all meetings from this folder to the default folder
+    // Move all meetings owned by this user from this folder to the default folder
+    // SECURITY: Only move meetings where hostId matches to prevent cross-tenant data issues
     const moveResult = await tx
       .update(meeting)
       .set({ folderId: defaultFolder.id, updatedAt: new Date() })
-      .where(eq(meeting.folderId, folderId))
+      .where(and(eq(meeting.folderId, folderId), eq(meeting.hostId, userId)))
       .returning({ id: meeting.id });
 
     // Delete the folder
@@ -310,12 +323,14 @@ export async function deleteFolder(
 
 /**
  * Reorders folders by updating their orderIndex values.
- * Uses a transaction to ensure atomicity of all updates.
+ * OPTIMIZED: Uses single SQL UPDATE with CASE expression instead of N updates.
  */
 export async function reorderFolders(
   userId: string,
   folderIds: string[]
 ): Promise<boolean> {
+  if (folderIds.length === 0) return true;
+
   // Verify all folders belong to this user
   const userFolders = await db
     .select({ id: meetingFolder.id })
@@ -331,18 +346,24 @@ export async function reorderFolders(
     }
   }
 
-  // Update order indexes within a transaction for atomicity
-  await db.transaction(async (tx) => {
-    const now = new Date();
-    for (let index = 0; index < folderIds.length; index++) {
-      await tx
-        .update(meetingFolder)
-        .set({ orderIndex: index, updatedAt: now })
-        .where(
-          and(eq(meetingFolder.id, folderIds[index]), eq(meetingFolder.userId, userId))
-        );
-    }
-  });
+  // OPTIMIZED: Build a single UPDATE with CASE expression
+  // UPDATE meeting_folder SET order_index = CASE
+  //   WHEN id = 'id1' THEN 0
+  //   WHEN id = 'id2' THEN 1
+  //   ...
+  // END, updated_at = NOW()
+  // WHERE id IN ('id1', 'id2', ...) AND user_id = userId
+  const caseClause = folderIds
+    .map((id, index) => `WHEN id = '${id}' THEN ${index}`)
+    .join(" ");
+
+  await db.execute(sql`
+    UPDATE meeting_folder
+    SET order_index = CASE ${sql.raw(caseClause)} END,
+        updated_at = NOW()
+    WHERE id IN ${folderIds}
+      AND user_id = ${userId}
+  `);
 
   return true;
 }
@@ -378,13 +399,17 @@ export async function folderNameExists(
 }
 
 /**
- * Gets the count of meetings in a specific folder.
+ * Gets the count of meetings in a specific folder for a user.
+ * SECURITY: Only counts meetings owned by the specified user.
  */
-export async function getMeetingCountInFolder(folderId: string): Promise<number> {
+export async function getMeetingCountInFolder(
+  folderId: string,
+  userId: string
+): Promise<number> {
   const [result] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(meeting)
-    .where(eq(meeting.folderId, folderId));
+    .where(and(eq(meeting.folderId, folderId), eq(meeting.hostId, userId)));
 
   return result?.count ?? 0;
 }

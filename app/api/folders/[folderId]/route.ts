@@ -94,6 +94,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Folder not found" }, { status: 404 });
     }
 
+    // SECURITY: Prevent renaming the default folder
+    if (existingFolder.isDefault && body.name !== undefined) {
+      return NextResponse.json(
+        { error: "Cannot rename the default folder" },
+        { status: 400 }
+      );
+    }
+
     // If updating name, check for duplicate
     if (body.name !== undefined) {
       const nameExists = await folderNameExists(

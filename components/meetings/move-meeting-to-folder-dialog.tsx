@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -64,6 +64,17 @@ export function MoveMeetingToFolderDialog({
     total: number;
   } | null>(null);
 
+  // Track if component is mounted to prevent state updates after unmount
+  const mountedRef = useRef(true);
+
+  // Clean up on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const isBulkMove = meetingIds.length > 1;
   const dialogTitle = isBulkMove
     ? `Move ${meetingIds.length} Meetings`
@@ -125,6 +136,9 @@ export function MoveMeetingToFolderDialog({
         }),
       });
 
+      // Check if component is still mounted before updating state
+      if (!mountedRef.current) return;
+
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error || "Failed to move meetings");
@@ -134,10 +148,12 @@ export function MoveMeetingToFolderDialog({
 
       // Check for partial success and inform user
       if (data.movedCount < meetingIds.length) {
-        setPartialSuccess({
-          moved: data.movedCount,
-          total: meetingIds.length,
-        });
+        if (mountedRef.current) {
+          setPartialSuccess({
+            moved: data.movedCount,
+            total: meetingIds.length,
+          });
+        }
         // Still call onMoved to refresh the list
         onMoved();
         // Don't close dialog so user can see the warning
@@ -148,9 +164,13 @@ export function MoveMeetingToFolderDialog({
       onOpenChange(false);
     } catch (err) {
       console.error("Failed to move meetings:", err);
-      setError(err instanceof Error ? err.message : "Failed to move meetings");
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to move meetings");
+      }
     } finally {
-      setIsMoving(false);
+      if (mountedRef.current) {
+        setIsMoving(false);
+      }
     }
   };
 

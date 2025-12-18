@@ -221,9 +221,14 @@ export function SidebarProvider({
         const data = await response.json();
         const updatedFolder = data.folder as Folder;
 
-        // Update local state
+        // Update local state - preserve meetingCount from previous state
+        // since API response may not include it
         setFolders((prev) =>
-          prev.map((f) => (f.id === id ? updatedFolder : f))
+          prev.map((f) =>
+            f.id === id
+              ? { ...updatedFolder, meetingCount: f.meetingCount ?? updatedFolder.meetingCount }
+              : f
+          )
         );
 
         return updatedFolder;
@@ -270,8 +275,10 @@ export function SidebarProvider({
 
       // Build a map for O(1) lookup instead of O(n) .find() calls
       const folderMap = new Map(currentFolders.map((f) => [f.id, f]));
+      const includedIds = new Set(folderIds);
 
       // Optimistic update with O(n) complexity
+      // FIXED: Preserve folders that weren't included in the reorder payload
       const reorderedFolders = folderIds
         .map((id, index) => {
           const folder = folderMap.get(id);
@@ -279,7 +286,12 @@ export function SidebarProvider({
         })
         .filter((f): f is Folder => f !== null);
 
-      setFolders(reorderedFolders);
+      // Append any folders that weren't in the payload (preserves them instead of dropping)
+      const missingFolders = currentFolders
+        .filter((f) => !includedIds.has(f.id))
+        .map((f, i) => ({ ...f, orderIndex: reorderedFolders.length + i }));
+
+      setFolders([...reorderedFolders, ...missingFolders]);
 
       try {
         const response = await fetch("/api/folders/reorder", {

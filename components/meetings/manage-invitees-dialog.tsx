@@ -237,7 +237,7 @@ export function ManageInviteesDialog({
               Manage Invitees
             </DialogTitle>
             <DialogDescription>
-              Add or remove invitees for "{meeting.title}"
+              Add or remove invitees for &quot;{meeting.title}&quot;
             </DialogDescription>
           </DialogHeader>
 

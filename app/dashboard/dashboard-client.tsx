@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Users, Plus, Loader2, AlertCircle } from "lucide-react";
+import { Users, Plus, Loader2, AlertCircle, FolderClosed } from "lucide-react";
 import { validateRoomId, sanitizeRoomId } from "@/lib/validation";
 import {
   MeetingTypeSelector,
@@ -31,6 +31,8 @@ import {
   MeetingList,
   ManageInviteesDialog,
 } from "@/components/meetings";
+import { FolderSelect } from "@/components/folders";
+import { useSidebarContext } from "@/contexts/sidebar-context";
 import type { Meeting } from "@/types/meeting";
 import type { CalendarEventPublic } from "@/types/calendar";
 
@@ -42,6 +44,7 @@ export function DashboardClient({
   initialMeetings = [],
 }: DashboardClientProps) {
   const router = useRouter();
+  const { folders, foldersLoading, defaultFolderId } = useSidebarContext();
   const [joinRoomId, setJoinRoomId] = useState("");
   const [roomIdError, setRoomIdError] = useState<string | null>(null);
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
@@ -58,10 +61,18 @@ export function DashboardClient({
   const [instantMeetingError, setInstantMeetingError] = useState<string | null>(
     null
   );
+  const [instantMeetingFolderId, setInstantMeetingFolderId] = useState<string | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
   const [calendarEvents, setCalendarEvents] = useState<
     Record<string, CalendarEventPublic>
   >({});
+
+  // Initialize instant meeting folder when default folder becomes available
+  useEffect(() => {
+    if (defaultFolderId && instantMeetingFolderId === null) {
+      setInstantMeetingFolderId(defaultFolderId);
+    }
+  }, [defaultFolderId, instantMeetingFolderId]);
 
   // Mounted state for hydration safety with Radix UI Dialog
   const isMounted = useSyncExternalStore(
@@ -83,6 +94,7 @@ export function DashboardClient({
         body: JSON.stringify({
           title: "Instant Meeting",
           type: "instant",
+          folderId: instantMeetingFolderId || undefined,
         }),
       });
 
@@ -95,6 +107,8 @@ export function DashboardClient({
       const meeting = data.meeting as Meeting;
 
       setIsNewMeetingDialogOpen(false);
+      // Reset folder to default after creating meeting
+      setInstantMeetingFolderId(defaultFolderId);
       router.push(`/meetings/${meeting.roomId}`);
     } catch (error) {
       console.error("Failed to create instant meeting:", error);
@@ -276,7 +290,7 @@ export function DashboardClient({
                         Choose how you want to start your meeting
                       </DialogDescription>
                     </DialogHeader>
-                    <div className="py-4">
+                    <div className="py-4 space-y-4">
                       {instantMeetingError && (
                         <Alert variant="destructive" className="mb-4">
                           <AlertCircle className="size-4" />
@@ -285,6 +299,25 @@ export function DashboardClient({
                           </AlertDescription>
                         </Alert>
                       )}
+
+                      {/* Folder Selection */}
+                      <div className="grid gap-2">
+                        <Label htmlFor="instant-meeting-folder" className="flex items-center gap-2">
+                          <FolderClosed className="size-4" />
+                          Save to Folder
+                        </Label>
+                        <FolderSelect
+                          id="instant-meeting-folder"
+                          value={instantMeetingFolderId}
+                          onChange={setInstantMeetingFolderId}
+                          folders={folders}
+                          loading={foldersLoading}
+                          disabled={isCreatingInstant}
+                          placeholder="Select folder"
+                          aria-label="Meeting folder"
+                        />
+                      </div>
+
                       <MeetingTypeSelector
                         onSelectInstant={handleInstantMeeting}
                         onSelectScheduled={handleScheduleMeeting}

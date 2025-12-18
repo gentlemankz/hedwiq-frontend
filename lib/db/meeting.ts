@@ -7,6 +7,7 @@
 import { db } from "@/lib/db";
 import { meeting, user } from "@/lib/db/schema";
 import { eq, and, gte, desc, or, lte, isNull } from "drizzle-orm";
+import { secureRandomString } from "@/lib/utils";
 import type {
   Meeting,
   MeetingType,
@@ -18,16 +19,6 @@ import type {
 // ============================================================================
 // ID Generation
 // ============================================================================
-
-/**
- * Generates a cryptographically secure random string.
- * Uses crypto.getRandomValues for security.
- */
-function secureRandomString(length: number, charset: string): string {
-  const array = new Uint32Array(length);
-  crypto.getRandomValues(array);
-  return Array.from(array, (num) => charset[num % charset.length]).join("");
-}
 
 /**
  * Generates a unique meeting ID using crypto-secure randomness.

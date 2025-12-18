@@ -200,6 +200,9 @@ export function PastMeetingsList({
     setOffset(0);
     setHasMore(false);
     setIsLoading(true);
+    // FIXED: Reset selection state when folder changes to avoid stale selections
+    setSelectedIds(new Set());
+    setSelectionMode(false);
     fetchMeetings(false, controller.signal);
 
     // Cleanup: abort on unmount or when folderId changes

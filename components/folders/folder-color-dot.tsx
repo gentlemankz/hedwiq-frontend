@@ -17,7 +17,7 @@ const sizeClasses = {
   md: "size-4",
 } as const;
 
-const DEFAULT_COLOR = "#6B7280";
+const DEFAULT_COLOR = "#3B82F6"; // Blue
 
 /**
  * A colored dot indicator for folders.

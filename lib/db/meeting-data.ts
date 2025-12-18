@@ -9,7 +9,7 @@
  * - Notes (user-created notes)
  */
 
-import { eq, and, desc, asc, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   meetingSession,
@@ -693,7 +693,9 @@ export async function getMeetingHistory(
 
 /**
  * Get meeting history list for a user (past meetings with basic stats)
- * Optimized to minimize N+1 queries by using batch fetching with Promise.all
+ * OPTIMIZED: Uses grouped COUNT queries instead of N+1 individual queries
+ * Previous version ran ~4 queries per meeting (~200 queries for 50 meetings)
+ * New version runs 5 queries total regardless of meeting count
  */
 export async function getUserMeetingHistory(
   userId: string,
@@ -751,24 +753,66 @@ export async function getUserMeetingHistory(
 
   if (meetings.length === 0) return [];
 
-  // Fetch counts for all meetings in parallel (batched by meeting, but parallel across meetings)
-  const countsPromises = meetings.map(async (m) => {
-    const [sessions, transcripts, insights, notes] = await Promise.all([
-      db.select({ id: meetingSession.id }).from(meetingSession).where(eq(meetingSession.meetingId, m.id)),
-      db.select({ id: transcriptionSegment.id }).from(transcriptionSegment).where(eq(transcriptionSegment.meetingId, m.id)),
-      db.select({ id: meetingInsight.id }).from(meetingInsight).where(eq(meetingInsight.meetingId, m.id)),
-      db.select({ id: meetingNote.id }).from(meetingNote).where(eq(meetingNote.meetingId, m.id)),
-    ]);
-    return {
-      ...m,
-      participantCount: sessions.length,
-      transcriptionCount: transcripts.length,
-      insightCount: insights.length,
-      noteCount: notes.length,
-    };
-  });
+  // Collect meeting IDs for batched count queries
+  const meetingIds = meetings.map((m) => m.id);
 
-  return Promise.all(countsPromises);
+  // OPTIMIZED: Fetch all counts in 4 grouped queries instead of N*4 queries
+  const [sessionCounts, transcriptCounts, insightCounts, noteCounts] = await Promise.all([
+    // Session counts grouped by meeting
+    db
+      .select({
+        meetingId: meetingSession.meetingId,
+        count: sql<number>`COUNT(DISTINCT ${meetingSession.userId})::int`,
+      })
+      .from(meetingSession)
+      .where(sql`${meetingSession.meetingId} IN ${meetingIds}`)
+      .groupBy(meetingSession.meetingId),
+
+    // Transcription counts grouped by meeting
+    db
+      .select({
+        meetingId: transcriptionSegment.meetingId,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(transcriptionSegment)
+      .where(sql`${transcriptionSegment.meetingId} IN ${meetingIds}`)
+      .groupBy(transcriptionSegment.meetingId),
+
+    // Insight counts grouped by meeting
+    db
+      .select({
+        meetingId: meetingInsight.meetingId,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(meetingInsight)
+      .where(sql`${meetingInsight.meetingId} IN ${meetingIds}`)
+      .groupBy(meetingInsight.meetingId),
+
+    // Note counts grouped by meeting
+    db
+      .select({
+        meetingId: meetingNote.meetingId,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(meetingNote)
+      .where(sql`${meetingNote.meetingId} IN ${meetingIds}`)
+      .groupBy(meetingNote.meetingId),
+  ]);
+
+  // Build lookup maps for O(1) access
+  const sessionMap = new Map(sessionCounts.map((s) => [s.meetingId, s.count]));
+  const transcriptMap = new Map(transcriptCounts.map((t) => [t.meetingId, t.count]));
+  const insightMap = new Map(insightCounts.map((i) => [i.meetingId, i.count]));
+  const noteMap = new Map(noteCounts.map((n) => [n.meetingId, n.count]));
+
+  // Merge counts with meetings
+  return meetings.map((m) => ({
+    ...m,
+    participantCount: sessionMap.get(m.id) ?? 0,
+    transcriptionCount: transcriptMap.get(m.id) ?? 0,
+    insightCount: insightMap.get(m.id) ?? 0,
+    noteCount: noteMap.get(m.id) ?? 0,
+  }));
 }
 
 /**

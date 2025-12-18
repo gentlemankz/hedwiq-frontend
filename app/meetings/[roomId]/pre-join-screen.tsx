@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar, Info, FolderClosed } from "lucide-react";
 import { FolderSelect } from "@/components/folders";
-import { useSidebarContext } from "@/contexts/sidebar-context";
+import { useFolders } from "@/hooks/use-folders";
 import Link from "next/link";
 import { useMediaDevices } from "@/hooks/use-media-devices";
 import { sanitizeUsername } from "@/lib/validation";
@@ -116,8 +116,8 @@ export function PreJoinScreen({
   error,
   meetingData,
 }: PreJoinScreenProps) {
-  // Folder context for organizing meetings
-  const { folders, foldersLoading, defaultFolderId } = useSidebarContext();
+  // Folder data for organizing meetings (standalone fetch, works outside SidebarProvider)
+  const { folders, foldersLoading, defaultFolderId } = useFolders();
 
   // Use custom hook for media device management
   const {

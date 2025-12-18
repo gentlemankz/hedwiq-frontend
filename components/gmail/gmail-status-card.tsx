@@ -45,7 +45,10 @@ export function GmailStatusCard({
 
   // Fetch status on mount if not provided
   useEffect(() => {
-    if (initialIntegration !== undefined) {
+    // Skip fetch only if initial data was explicitly provided
+    // (initialIntegration is not null OR initialConnected is true)
+    if (initialIntegration !== null || initialConnected) {
+      setIsLoading(false);
       return;
     }
 
@@ -81,7 +84,7 @@ export function GmailStatusCard({
     return () => {
       abortController.abort();
     };
-  }, [initialIntegration]);
+  }, [initialIntegration, initialConnected]);
 
   const handleConnect = async () => {
     setIsConnecting(true);

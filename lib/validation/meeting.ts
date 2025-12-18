@@ -174,6 +174,42 @@ export function validateDurationMinutes(duration: unknown): ValidationResult {
 }
 
 /**
+ * Folder ID validation regex.
+ * Format: folder-{8 char userId prefix}-{base36 timestamp}-{6 alphanumeric}
+ */
+const FOLDER_ID_REGEX = /^folder-[a-z0-9]{8}-[a-z0-9]{7,10}-[a-z0-9]{6}$/;
+
+/**
+ * Maximum folder ID length to prevent abuse.
+ */
+const MAX_FOLDER_ID_LENGTH = 40;
+
+/**
+ * Validates a folder ID (optional field).
+ * Accepts null to clear the folder assignment.
+ */
+export function validateFolderId(folderId: unknown): ValidationResult {
+  // Allow undefined, null, or empty string (clearing the folder)
+  if (folderId === undefined || folderId === null || folderId === "") {
+    return { isValid: true };
+  }
+
+  if (typeof folderId !== "string") {
+    return { isValid: false, error: "folderId must be a string or null" };
+  }
+
+  if (folderId.length > MAX_FOLDER_ID_LENGTH) {
+    return { isValid: false, error: "Invalid folder ID" };
+  }
+
+  if (!FOLDER_ID_REGEX.test(folderId)) {
+    return { isValid: false, error: "Invalid folder ID format" };
+  }
+
+  return { isValid: true };
+}
+
+/**
  * Validates a complete create meeting request.
  */
 export function validateCreateMeetingRequest(body: {
@@ -182,6 +218,7 @@ export function validateCreateMeetingRequest(body: {
   type?: unknown;
   scheduledAt?: unknown;
   durationMinutes?: unknown;
+  folderId?: unknown;
 }): ValidationResult & { parsedDate?: Date } {
   // Validate title (required)
   const titleValidation = validateMeetingTitle(body.title);
@@ -214,6 +251,12 @@ export function validateCreateMeetingRequest(body: {
     return durationValidation;
   }
 
+  // Validate folderId (optional)
+  const folderValidation = validateFolderId(body.folderId);
+  if (!folderValidation.isValid) {
+    return folderValidation;
+  }
+
   return { isValid: true, parsedDate: scheduledValidation.parsedDate };
 }
 
@@ -226,6 +269,7 @@ export function validateUpdateMeetingRequest(body: {
   scheduledAt?: unknown;
   durationMinutes?: unknown;
   status?: unknown;
+  folderId?: unknown;
 }): ValidationResult & { parsedDate?: Date } {
   // Validate title if provided
   if (body.title !== undefined) {
@@ -266,6 +310,14 @@ export function validateUpdateMeetingRequest(body: {
     const statusValidation = validateMeetingStatus(body.status);
     if (!statusValidation.isValid) {
       return statusValidation;
+    }
+  }
+
+  // Validate folderId if provided (can be null to clear)
+  if (body.folderId !== undefined) {
+    const folderValidation = validateFolderId(body.folderId);
+    if (!folderValidation.isValid) {
+      return folderValidation;
     }
   }
 
