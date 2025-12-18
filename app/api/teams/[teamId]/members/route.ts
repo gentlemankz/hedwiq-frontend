@@ -5,10 +5,9 @@ import {
   listTeamMembers,
   inviteUserToTeam,
   inviteUserByEmail,
-  isTeamMember,
-  isTeamAdmin,
   countActiveMembers,
   getTeamMembership,
+  getEffectivePermissions,
 } from "@/lib/db/team";
 import { validateInviteMembersRequest } from "@/lib/validation/team";
 import { TEAM_LIMITS, type TeamRole } from "@/types/team";
@@ -23,6 +22,7 @@ interface RouteContext {
  * GET /api/teams/[teamId]/members
  *
  * List all members of a team.
+ * Uses permission inheritance - parent team admins/owners can view sub-team members.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   const session = await auth.api.getSession({
@@ -36,9 +36,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { teamId } = await context.params;
 
   try {
-    // Check user is a member of the team
-    const isMember = await isTeamMember(teamId, session.user.id);
-    if (!isMember) {
+    // Get effective permissions (optimized: single call for access check)
+    const permissions = await getEffectivePermissions(teamId, session.user.id);
+
+    // Check user has access
+    if (!permissions.effectiveRole) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
@@ -57,7 +59,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
  * POST /api/teams/[teamId]/members
  *
  * Invite members to a team.
- * Requires admin or owner role.
+ * Requires admin or owner role (direct or inherited from parent team).
  * Body:
  * - invites: Array<{ email?: string; userId?: string }>
  * - role: TeamRole (optional, default: member)
@@ -92,9 +94,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    // Check user has admin role
-    const hasPermission = await isTeamAdmin(teamId, session.user.id);
-    if (!hasPermission) {
+    // Get effective permissions (optimized: single call for admin check)
+    const permissions = await getEffectivePermissions(teamId, session.user.id);
+    const isAdmin = permissions.effectiveRole === "owner" || permissions.effectiveRole === "admin";
+
+    if (!isAdmin) {
       return NextResponse.json(
         { error: "Not authorized to invite members" },
         { status: 403 }

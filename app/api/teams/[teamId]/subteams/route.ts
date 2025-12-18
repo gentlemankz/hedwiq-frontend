@@ -4,10 +4,9 @@ import { headers } from "next/headers";
 import {
   createTeam,
   listSubteams,
-  isTeamMember,
-  isTeamAdmin,
   teamNameExists,
   countTeamsOwnedByUser,
+  getEffectivePermissions,
 } from "@/lib/db/team";
 import { validateCreateTeamRequest } from "@/lib/validation/team";
 import { TEAM_LIMITS } from "@/types/team";
@@ -22,6 +21,8 @@ interface RouteContext {
  * GET /api/teams/[teamId]/subteams
  *
  * List sub-teams of a team.
+ * Uses permission inheritance - parent team admins/owners can view sub-teams.
+ * Also returns current depth info for UI warnings.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   const session = await auth.api.getSession({
@@ -35,14 +36,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { teamId } = await context.params;
 
   try {
-    // Check user is a member of the parent team
-    const isMember = await isTeamMember(teamId, session.user.id);
-    if (!isMember) {
+    // Get effective permissions (optimized: single call for role, depth, ancestorIds)
+    const permissions = await getEffectivePermissions(teamId, session.user.id);
+
+    // Check user has access
+    if (!permissions.effectiveRole) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
     const subteams = await listSubteams(teamId);
-    return NextResponse.json({ subteams });
+
+    // Use pre-computed depth from permissions
+    const canCreateSubteam = permissions.depth < TEAM_LIMITS.MAX_SUB_TEAM_DEPTH;
+
+    return NextResponse.json({
+      subteams,
+      currentDepth: permissions.depth,
+      maxDepth: TEAM_LIMITS.MAX_SUB_TEAM_DEPTH,
+      canCreateSubteam,
+    });
   } catch (error) {
     console.error("List subteams error:", error);
     return NextResponse.json(
@@ -56,7 +68,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
  * POST /api/teams/[teamId]/subteams
  *
  * Create a sub-team under the specified parent team.
- * Requires admin or owner role in the parent team.
+ * Requires admin or owner role in the parent team (direct or inherited).
  * Body:
  * - name: string (required, 3-50 chars)
  * - description: string (optional)
@@ -98,12 +110,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    // Check user has admin role in parent team
-    const hasPermission = await isTeamAdmin(teamId, session.user.id);
-    if (!hasPermission) {
+    // Get effective permissions (optimized: single call for role and depth check)
+    const permissions = await getEffectivePermissions(teamId, session.user.id);
+    const isAdmin = permissions.effectiveRole === "owner" || permissions.effectiveRole === "admin";
+
+    if (!isAdmin) {
       return NextResponse.json(
         { error: "Not authorized to create sub-team" },
         { status: 403 }
+      );
+    }
+
+    // Check depth limit using pre-computed depth (sub-team will be depth + 1)
+    if (permissions.depth >= TEAM_LIMITS.MAX_SUB_TEAM_DEPTH) {
+      return NextResponse.json(
+        { error: `Maximum sub-team depth of ${TEAM_LIMITS.MAX_SUB_TEAM_DEPTH} exceeded` },
+        { status: 400 }
       );
     }
 

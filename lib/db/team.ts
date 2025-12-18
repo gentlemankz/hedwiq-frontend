@@ -1183,3 +1183,228 @@ export async function teamNameExists(
 
   return !!existing;
 }
+
+// ============================================================================
+// Permission Inheritance (Sub-team Hierarchy)
+// ============================================================================
+
+/**
+ * Result of computing effective permissions for a user in a team.
+ * Includes all inherited access data to avoid redundant queries.
+ */
+export interface EffectivePermissions {
+  /** User's effective role (highest of direct or inherited) */
+  effectiveRole: TeamRole | null;
+  /** Whether the role comes from inheritance (not direct membership) */
+  isInherited: boolean;
+  /** Direct membership if exists */
+  directMembership: TeamMember | null;
+  /** Ancestor team IDs (parent first) */
+  ancestorIds: string[];
+  /** Team depth in hierarchy (0 = root) */
+  depth: number;
+}
+
+/**
+ * Gets all ancestor team IDs for a given team using recursive CTE.
+ * Returns array from immediate parent to root (oldest ancestor).
+ * PERFORMANCE: Single query using WITH RECURSIVE.
+ */
+export async function getAncestorTeamIds(teamId: string): Promise<string[]> {
+  const result = await db.execute<{ id: string; depth: number }>(sql`
+    WITH RECURSIVE ancestors AS (
+      SELECT parent_team_id as id, 1 as depth
+      FROM team
+      WHERE id = ${teamId} AND parent_team_id IS NOT NULL
+      UNION ALL
+      SELECT t.parent_team_id, a.depth + 1
+      FROM team t
+      INNER JOIN ancestors a ON t.id = a.id
+      WHERE t.parent_team_id IS NOT NULL
+    )
+    SELECT id, depth FROM ancestors ORDER BY depth ASC
+  `);
+
+  return result.map((row) => row.id);
+}
+
+/**
+ * Gets the full ancestor chain with team details.
+ * Useful for breadcrumb navigation.
+ * Accepts pre-fetched ancestorIds to avoid duplicate queries.
+ */
+export async function getAncestorTeams(
+  teamId: string,
+  ancestorIds?: string[]
+): Promise<Team[]> {
+  const ids = ancestorIds ?? (await getAncestorTeamIds(teamId));
+  if (ids.length === 0) return [];
+
+  const rows = await db
+    .select()
+    .from(team)
+    .where(inArray(team.id, ids));
+
+  // Reorder to match ancestor order (parent first, then grandparent, etc.)
+  const teamMap = new Map(rows.map((r) => [r.id, r]));
+  return ids
+    .map((id) => teamMap.get(id))
+    .filter((t): t is typeof team.$inferSelect => t !== undefined)
+    .map(rowToTeam);
+}
+
+/**
+ * Gets the team depth in hierarchy (0 = root, 1 = first level sub-team, etc.)
+ * Accepts pre-fetched ancestorIds to avoid duplicate queries.
+ */
+export async function getTeamDepth(
+  teamId: string,
+  ancestorIds?: string[]
+): Promise<number> {
+  if (ancestorIds !== undefined) {
+    return ancestorIds.length;
+  }
+  const ids = await getAncestorTeamIds(teamId);
+  return ids.length;
+}
+
+/**
+ * Computes all effective permissions for a user in a team in a single optimized call.
+ * This is the preferred method for getting permission data as it minimizes database queries.
+ *
+ * PERFORMANCE: Only 3 queries max (ancestors, direct membership, inherited check)
+ * instead of 5+ queries when calling individual functions.
+ */
+export async function getEffectivePermissions(
+  teamId: string,
+  userId: string
+): Promise<EffectivePermissions> {
+  // 1. Get ancestor IDs (single query with CTE)
+  const ancestorIds = await getAncestorTeamIds(teamId);
+  const depth = ancestorIds.length;
+
+  // 2. Get direct membership (single query)
+  const directMembership = await getTeamMembership(teamId, userId);
+  const hasActiveDirect = directMembership?.status === "active";
+
+  // If direct owner, return early - no need to check inheritance
+  if (hasActiveDirect && directMembership.role === "owner") {
+    return {
+      effectiveRole: "owner",
+      isInherited: false,
+      directMembership,
+      ancestorIds,
+      depth,
+    };
+  }
+
+  // 3. Check inherited access (single query if ancestors exist)
+  let inheritedAdminAccess = false;
+  let inheritedViewAccess = false;
+
+  if (ancestorIds.length > 0) {
+    // Single query to check both admin and view access
+    const [ancestorMembership] = await db
+      .select({
+        teamId: teamMember.teamId,
+        role: teamMember.role,
+      })
+      .from(teamMember)
+      .where(
+        and(
+          inArray(teamMember.teamId, ancestorIds),
+          eq(teamMember.userId, userId),
+          eq(teamMember.status, "active"),
+          inArray(teamMember.role, ["owner", "admin"])
+        )
+      )
+      .limit(1);
+
+    if (ancestorMembership) {
+      inheritedViewAccess = true;
+      // Only owner of ancestor gets admin access in sub-teams
+      inheritedAdminAccess = ancestorMembership.role === "owner";
+    }
+  }
+
+  // Determine effective role
+  let effectiveRole: TeamRole | null = null;
+  let isInherited = false;
+
+  if (inheritedAdminAccess) {
+    // Ancestor owner gets admin in sub-teams
+    effectiveRole = "admin";
+    // Only mark as inherited if user doesn't have equal or better direct role
+    isInherited = !hasActiveDirect || directMembership.role === "member";
+  }
+
+  if (hasActiveDirect) {
+    // Direct admin or member
+    if (directMembership.role === "admin") {
+      effectiveRole = "admin";
+      isInherited = false; // Direct admin takes precedence
+    } else if (!effectiveRole) {
+      effectiveRole = directMembership.role;
+      isInherited = false;
+    }
+  } else if (inheritedViewAccess && !effectiveRole) {
+    // Parent admin can view (member-level access)
+    effectiveRole = "member";
+    isInherited = true;
+  }
+
+  return {
+    effectiveRole,
+    isInherited,
+    directMembership,
+    ancestorIds,
+    depth,
+  };
+}
+
+/**
+ * Gets user's effective role in a team, considering inheritance.
+ * Returns the highest privilege level from direct membership or inheritance.
+ *
+ * Inheritance rules:
+ * - Owner of ancestor team = "admin" role in sub-team (not owner, since they don't own it)
+ * - Direct membership role takes precedence if higher than inherited
+ *
+ * PERFORMANCE: Use getEffectivePermissions() when you need multiple pieces of data
+ * to avoid redundant queries.
+ */
+export async function getEffectiveRole(
+  teamId: string,
+  userId: string
+): Promise<TeamRole | null> {
+  const permissions = await getEffectivePermissions(teamId, userId);
+  return permissions.effectiveRole;
+}
+
+/**
+ * Enhanced version of isTeamAdmin that considers inheritance.
+ * Use this for permission checks that should consider parent team ownership.
+ *
+ * PERFORMANCE: Use getEffectivePermissions() when you need multiple permission checks.
+ */
+export async function isTeamAdminWithInheritance(
+  teamId: string,
+  userId: string
+): Promise<boolean> {
+  const permissions = await getEffectivePermissions(teamId, userId);
+  return permissions.effectiveRole === "owner" || permissions.effectiveRole === "admin";
+}
+
+/**
+ * Enhanced version of isTeamMember that considers inheritance.
+ * Use this for permission checks that should consider parent team access.
+ *
+ * PERFORMANCE: Use getEffectivePermissions() when you need multiple permission checks.
+ */
+export async function isTeamMemberWithInheritance(
+  teamId: string,
+  userId: string
+): Promise<boolean> {
+  const permissions = await getEffectivePermissions(teamId, userId);
+  return permissions.effectiveRole !== null;
+}

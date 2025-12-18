@@ -5,11 +5,11 @@ import {
   getTeamWithMembers,
   updateTeam,
   deleteTeam,
-  isTeamMember,
-  isTeamAdmin,
   isTeamOwner,
   teamNameExists,
   getTeamById,
+  getAncestorTeams,
+  getEffectivePermissions,
 } from "@/lib/db/team";
 import { validateUpdateTeamRequest } from "@/lib/validation/team";
 
@@ -23,6 +23,8 @@ interface RouteContext {
  * GET /api/teams/[teamId]
  *
  * Get a specific team by ID with members.
+ * Also returns ancestor teams for breadcrumb navigation and effective role.
+ * Uses permission inheritance - parent team admins/owners can view sub-teams.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   const session = await auth.api.getSession({
@@ -36,19 +38,31 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { teamId } = await context.params;
 
   try {
-    // Check user is a member of the team
-    const isMember = await isTeamMember(teamId, session.user.id);
-    if (!isMember) {
+    // Get effective permissions (optimized: single call for role, depth, ancestorIds)
+    const permissions = await getEffectivePermissions(teamId, session.user.id);
+
+    // Check user has access
+    if (!permissions.effectiveRole) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    const team = await getTeamWithMembers(teamId);
+    // Fetch team and ancestors in parallel (use pre-fetched ancestorIds)
+    const [team, ancestors] = await Promise.all([
+      getTeamWithMembers(teamId),
+      getAncestorTeams(teamId, permissions.ancestorIds),
+    ]);
 
     if (!team) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ team });
+    return NextResponse.json({
+      team,
+      ancestors,
+      effectiveRole: permissions.effectiveRole,
+      isInheritedRole: permissions.isInherited,
+      depth: permissions.depth,
+    });
   } catch (error) {
     console.error("Get team error:", error);
     return NextResponse.json(
@@ -62,7 +76,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
  * PATCH /api/teams/[teamId]
  *
  * Update a team's name, description, color, or icon.
- * Requires admin or owner role.
+ * Requires admin or owner role (direct or inherited from parent team).
  * Body:
  * - name: string (optional)
  * - description: string | null (optional)
@@ -101,9 +115,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    // Check user has admin role
-    const hasPermission = await isTeamAdmin(teamId, session.user.id);
-    if (!hasPermission) {
+    // Check user has admin role (direct or inherited from parent)
+    const permissions = await getEffectivePermissions(teamId, session.user.id);
+    const isAdmin = permissions.effectiveRole === "owner" || permissions.effectiveRole === "admin";
+    if (!isAdmin) {
       return NextResponse.json(
         { error: "Not authorized to update team" },
         { status: 403 }

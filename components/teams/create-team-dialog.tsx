@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Loader2, Users } from "lucide-react";
+import { Loader2, Users, AlertTriangle, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,6 +46,8 @@ interface CreateTeamDialogProps {
   parentTeam: TeamWithSubteams | null;
   createTeam: (params: CreateTeamRequest) => Promise<Team | null>;
   onTeamCreated?: (team: Team) => void;
+  /** Current depth of the parent team (for depth warning) */
+  parentDepth?: number;
 }
 
 // ============================================================================
@@ -58,6 +60,7 @@ export function CreateTeamDialog({
   parentTeam,
   createTeam,
   onTeamCreated,
+  parentDepth,
 }: CreateTeamDialogProps) {
   const mountedRef = useRef(true);
 
@@ -73,6 +76,11 @@ export function CreateTeamDialog({
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Calculate if the new team will be at max depth (and won't be able to have sub-teams)
+  const newTeamDepth = parentTeam ? (parentDepth ?? 0) + 1 : 0;
+  const willBeAtMaxDepth = newTeamDepth >= TEAM_LIMITS.MAX_SUB_TEAM_DEPTH;
+  const isNearMaxDepth = newTeamDepth === TEAM_LIMITS.MAX_SUB_TEAM_DEPTH - 1;
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -155,6 +163,28 @@ export function CreateTeamDialog({
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
+          {/* Depth Warning */}
+          {parentTeam && willBeAtMaxDepth && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
+              <AlertTriangle className="size-4 shrink-0" />
+              <span>
+                This sub-team will be at the maximum hierarchy depth ({TEAM_LIMITS.MAX_SUB_TEAM_DEPTH} levels).
+                You won&apos;t be able to create further sub-teams under it.
+              </span>
+            </div>
+          )}
+
+          {/* Near Max Depth Info */}
+          {parentTeam && isNearMaxDepth && !willBeAtMaxDepth && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 text-sm">
+              <Info className="size-4 shrink-0" />
+              <span>
+                This sub-team will be at depth {newTeamDepth} of {TEAM_LIMITS.MAX_SUB_TEAM_DEPTH}.
+                One more level of sub-teams will be allowed.
+              </span>
+            </div>
+          )}
+
           {/* Team Name */}
           <div className="grid gap-2">
             <Label htmlFor="team-name">Team Name</Label>

@@ -273,7 +273,7 @@ frontend/
 │   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
 │   │   ├── room-access.ts
 │   │   ├── schema.ts                 # Includes team, team_member, team_meeting tables
-│   │   ├── team.ts                   # Team CRUD, members, hierarchy, permissions
+│   │   ├── team.ts                   # Team CRUD, members, hierarchy, permissions, inheritance
 │   │   └── migrations/               # SQL + meta snapshots (0000-0017)
 │   │       ├── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
 │   │       ├── 0012_add_action_item_table.sql    # Action items table for meeting actions

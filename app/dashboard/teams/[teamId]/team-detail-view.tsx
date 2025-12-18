@@ -57,6 +57,8 @@ import {
   X,
   Loader2,
   ChevronRight,
+  AlertTriangle,
+  Home,
 } from "lucide-react";
 import type {
   Team,
@@ -74,6 +76,18 @@ interface TeamDetailViewProps {
   team: Team;
   members: TeamMemberWithUser[];
   userId: string;
+  /** Ancestor teams for breadcrumb navigation (parent first) */
+  ancestors?: Team[];
+  /** User's effective role considering inheritance */
+  effectiveRole?: TeamRole;
+  /** Whether the effective role comes from inheritance (not direct membership) */
+  isInheritedRole?: boolean;
+  /** Current team depth in hierarchy (0 = root) */
+  currentDepth?: number;
+  /** Maximum allowed sub-team depth */
+  maxDepth?: number;
+  /** Whether more sub-teams can be created under this team */
+  canCreateMoreSubteams?: boolean;
 }
 
 // ============================================================================
@@ -106,6 +120,12 @@ export function TeamDetailView({
   team,
   members: initialMembers,
   userId,
+  ancestors = [],
+  effectiveRole: serverEffectiveRole,
+  isInheritedRole: serverIsInheritedRole = false,
+  currentDepth = 0,
+  maxDepth = 3,
+  canCreateMoreSubteams = true,
 }: TeamDetailViewProps) {
   const router = useRouter();
   const mountedRef = useRef(true);
@@ -153,11 +173,13 @@ export function TeamDetailView({
 
   const subteams = teamWithSubteams?.subteams || [];
 
-  // Permission checks
-  const userRole = getUserRoleInTeam(team.id, userId) as TeamRole;
+  // Permission checks - use server-provided effective role if available
+  const userRole = serverEffectiveRole ?? (getUserRoleInTeam(team.id, userId) as TeamRole);
   const canEdit = canPerformAction(userRole, "canEditTeam");
-  const canDeleteTeam = canPerformAction(userRole, "canDeleteTeam");
-  const canCreateSubteam = canPerformAction(userRole, "canCreateSubteam");
+  // Only direct owner can delete (inherited admin cannot delete sub-teams they don't own)
+  const canDeleteTeam = canPerformAction(userRole, "canDeleteTeam") && !serverIsInheritedRole;
+  // Can create sub-team only if under depth limit
+  const canCreateSubteam = canPerformAction(userRole, "canCreateSubteam") && canCreateMoreSubteams;
   const canInviteMembers = canPerformAction(userRole, "canInviteMembers");
   const canRemoveMembers = canPerformAction(userRole, "canRemoveMembers");
   const canChangeRoles = canPerformAction(userRole, "canChangeRoles");
@@ -341,6 +363,51 @@ export function TeamDetailView({
   return (
     <div className="p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
+        {/* Breadcrumb Navigation */}
+        {ancestors.length > 0 && (
+          <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/dashboard/teams")}
+              className="h-6 px-2 gap-1"
+            >
+              <Home className="size-3" />
+              Teams
+            </Button>
+            {/* Reverse ancestors to show root first, then down to parent */}
+            {[...ancestors].reverse().map((ancestor) => (
+              <span key={ancestor.id} className="flex items-center gap-1">
+                <ChevronRight className="size-3" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push(`/dashboard/teams/${ancestor.id}`)}
+                  className="h-6 px-2 gap-1"
+                >
+                  <TeamColorDot color={ancestor.color} size="xs" />
+                  {ancestor.name}
+                </Button>
+              </span>
+            ))}
+            <ChevronRight className="size-3" />
+            <span className="flex items-center gap-1 font-medium text-foreground">
+              <TeamColorDot color={team.color} size="xs" />
+              {team.name}
+            </span>
+          </nav>
+        )}
+
+        {/* Depth Warning */}
+        {!canCreateMoreSubteams && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span>
+              Maximum hierarchy depth reached ({maxDepth} levels). No more sub-teams can be created under this team.
+            </span>
+          </div>
+        )}
+
         {/* Back Button & Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
@@ -359,6 +426,20 @@ export function TeamDetailView({
                 <Badge variant={roleBadgeVariants[userRole]}>
                   {roleLabels[userRole]}
                 </Badge>
+                {serverIsInheritedRole && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300">
+                          Inherited
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Role inherited from parent team ownership</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </div>
               {team.description && (
                 <p className="text-muted-foreground mt-1 ml-10">
@@ -407,7 +488,7 @@ export function TeamDetailView({
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -444,6 +525,21 @@ export function TeamDetailView({
               <div className="flex items-center gap-2">
                 <ChevronRight className="size-5 text-primary" />
                 <span className="text-2xl font-bold">{subteams.length}</span>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Hierarchy Depth
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <span className={`text-2xl font-bold ${currentDepth >= maxDepth ? "text-amber-600" : ""}`}>
+                  {currentDepth}
+                </span>
+                <span className="text-sm text-muted-foreground">/ {maxDepth}</span>
               </div>
             </CardContent>
           </Card>
@@ -561,6 +657,41 @@ export function TeamDetailView({
           </CardContent>
         </Card>
 
+        {/* Parent Team */}
+        {ancestors.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ArrowLeft className="size-5" />
+                Parent Team
+              </CardTitle>
+              <CardDescription>
+                This team is a sub-team of the following team
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Card
+                className="cursor-pointer transition-colors hover:bg-muted/50"
+                onClick={() => router.push(`/dashboard/teams/${ancestors[0].id}`)}
+              >
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <TeamColorDot color={ancestors[0].color} />
+                    <span className="truncate">{ancestors[0].name}</span>
+                  </CardTitle>
+                </CardHeader>
+                {ancestors[0].description && (
+                  <CardContent className="pt-0">
+                    <p className="text-sm text-muted-foreground truncate">
+                      {ancestors[0].description}
+                    </p>
+                  </CardContent>
+                )}
+              </Card>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Sub-teams */}
         {subteams.length > 0 && (
           <Card>
@@ -611,6 +742,7 @@ export function TeamDetailView({
           parentTeam={teamAsSubteams}
           createTeam={createTeam}
           onTeamCreated={() => setCreateSubteamDialogOpen(false)}
+          parentDepth={currentDepth}
         />
 
         <EditTeamDialog

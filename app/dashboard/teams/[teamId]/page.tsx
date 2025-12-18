@@ -1,8 +1,14 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { getTeamById, getTeamMembers } from "@/lib/db/team";
+import {
+  getTeamById,
+  getTeamMembers,
+  getAncestorTeams,
+  getEffectivePermissions,
+} from "@/lib/db/team";
 import { TeamDetailView } from "./team-detail-view";
+import { TEAM_LIMITS } from "@/types/team";
 
 interface TeamDetailPageProps {
   params: Promise<{ teamId: string }>;
@@ -19,21 +25,41 @@ export default async function TeamDetailPage({ params }: TeamDetailPageProps) {
 
   const { teamId } = await params;
 
-  // Fetch team details
-  const team = await getTeamById(teamId, session.user.id);
+  // Get effective permissions first (optimized: single call for role, depth, ancestors IDs)
+  // This also serves as access check before fetching team details
+  const permissions = await getEffectivePermissions(teamId, session.user.id);
+
+  // Check if user has access (effective role is not null)
+  if (!permissions.effectiveRole) {
+    notFound();
+  }
+
+  // Fetch team details, members, and ancestor teams in parallel
+  // Use pre-fetched ancestorIds from permissions to avoid duplicate queries
+  const [team, members, ancestors] = await Promise.all([
+    getTeamById(teamId),
+    getTeamMembers(teamId, session.user.id),
+    getAncestorTeams(teamId, permissions.ancestorIds),
+  ]);
 
   if (!team) {
     notFound();
   }
 
-  // Fetch team members
-  const members = await getTeamMembers(teamId, session.user.id);
+  // Calculate if sub-teams can be created
+  const canCreateMoreSubteams = permissions.depth < TEAM_LIMITS.MAX_SUB_TEAM_DEPTH;
 
   return (
     <TeamDetailView
       team={team}
       members={members}
       userId={session.user.id}
+      ancestors={ancestors}
+      effectiveRole={permissions.effectiveRole}
+      isInheritedRole={permissions.isInherited}
+      currentDepth={permissions.depth}
+      maxDepth={TEAM_LIMITS.MAX_SUB_TEAM_DEPTH}
+      canCreateMoreSubteams={canCreateMoreSubteams}
     />
   );
 }
