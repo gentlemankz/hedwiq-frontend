@@ -432,8 +432,11 @@ export function DashboardClient({
               setIsScheduleDialogOpen(open);
               if (!open) {
                 fetchMeetings();
+                // Reset folder to default when closing (so next open starts fresh)
+                setInstantMeetingFolderId(defaultFolderId);
               }
             }}
+            initialFolderId={instantMeetingFolderId}
           />
         )}
 

@@ -76,12 +76,15 @@ interface ScheduleMeetingDialogProps {
     connected: boolean;
     integration: CalendarIntegrationPublic | null;
   } | null;
+  /** Initial folder ID to pre-populate (from parent dialog selection) */
+  initialFolderId?: string | null;
 }
 
 export function ScheduleMeetingDialog({
   open,
   onOpenChange,
   calendarStatus: initialCalendarStatus,
+  initialFolderId,
 }: ScheduleMeetingDialogProps) {
   const router = useRouter();
   const { folders, foldersLoading, defaultFolderId } = useSidebarContext();
@@ -121,16 +124,27 @@ export function ScheduleMeetingDialog({
   const [time, setTime] = useState("10:00");
   const [duration, setDuration] = useState(30);
   const [folderId, setFolderId] = useState<string | null>(null);
-  // Track if folder has been initialized to prevent re-initialization
-  const [folderInitialized, setFolderInitialized] = useState(false);
+  // Track last applied initialFolderId to detect when parent changes folder selection
+  const [appliedInitialFolderId, setAppliedInitialFolderId] = useState<string | null | undefined>(undefined);
 
-  // Initialize folderId once when defaultFolderId becomes available
+  // Initialize/update folderId when initialFolderId changes or on first load
+  // Priority: initialFolderId (from parent) > defaultFolderId (from context)
   useEffect(() => {
-    if (defaultFolderId && !folderInitialized) {
+    // If initialFolderId changed (parent selected a different folder), apply it
+    if (initialFolderId !== appliedInitialFolderId) {
+      setAppliedInitialFolderId(initialFolderId);
+      if (initialFolderId) {
+        setFolderId(initialFolderId);
+      } else if (defaultFolderId && folderId === null) {
+        // Only set default if no folder is currently set and no initial was provided
+        setFolderId(defaultFolderId);
+      }
+    } else if (folderId === null && defaultFolderId && appliedInitialFolderId === undefined) {
+      // Initial mount: set default folder if no initialFolderId was provided
       setFolderId(defaultFolderId);
-      setFolderInitialized(true);
+      setAppliedInitialFolderId(null); // Mark as initialized with no initial folder
     }
-  }, [defaultFolderId, folderInitialized]);
+  }, [defaultFolderId, initialFolderId, appliedInitialFolderId, folderId]);
 
   // Agenda state
   const [agendaItems, setAgendaItems] = useState<DraftAgendaItem[]>([]);
@@ -365,7 +379,10 @@ export function ScheduleMeetingDialog({
     setDate(addDays(new Date(), 1));
     setTime("10:00");
     setDuration(30);
-    setFolderId(defaultFolderId); // Reset to default folder (uses latest value via dependency)
+    // Reset to initialFolderId if provided, otherwise default folder
+    setFolderId(initialFolderId || defaultFolderId);
+    // Reset tracking state so next open can detect new initialFolderId
+    setAppliedInitialFolderId(undefined);
     setAgendaItems([]);
     setAgendaExpanded(false);
     setInvitees([]);
@@ -383,7 +400,7 @@ export function ScheduleMeetingDialog({
     if (!calendarStatus?.connected) {
       setAddToCalendar(false);
     }
-  }, [defaultFolderId, calendarStatus?.connected]);
+  }, [defaultFolderId, initialFolderId, calendarStatus?.connected]);
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
