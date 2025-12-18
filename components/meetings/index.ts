@@ -8,3 +8,5 @@ export { ManageInviteesDialog } from "./manage-invitees-dialog";
 export { PastMeetingCard } from "./past-meeting-card";
 export { PastMeetingsList } from "./past-meetings-list";
 export { MoveMeetingToFolderDialog } from "./move-meeting-to-folder-dialog";
+export { TeamInviteeSelector, type SelectedTeam } from "./team-invitee-selector";
+export { TeamInviteBadge, TeamInvitesSummary } from "./team-invite-badge";

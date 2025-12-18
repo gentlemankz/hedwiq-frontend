@@ -13,6 +13,7 @@ import {
   Mail,
   Users,
   FolderClosed,
+  UsersRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { TIME_OPTIONS, draftItemsToApiInput } from "@/lib/utils/meeting-form";
 import { DURATION_OPTIONS, MEETING_LIMITS } from "@/types/meeting";
@@ -56,8 +63,10 @@ import type { CalendarIntegrationPublic } from "@/types/calendar";
 import type { DraftAgendaItem } from "@/types/agenda";
 import { AgendaBuilder } from "@/app/meetings/[roomId]/components/agenda-builder";
 import { InviteeInput, type InviteeEntry } from "@/components/meetings/invitee-input";
+import { TeamInviteeSelector, type SelectedTeam } from "@/components/meetings/team-invitee-selector";
 import { FolderSelect } from "@/components/folders";
 import { useSidebarContext } from "@/contexts/sidebar-context";
+import { useTeamContext } from "@/contexts/team-context";
 
 interface ScheduleMeetingDialogProps {
   open: boolean;
@@ -76,6 +85,7 @@ export function ScheduleMeetingDialog({
 }: ScheduleMeetingDialogProps) {
   const router = useRouter();
   const { folders, foldersLoading, defaultFolderId } = useSidebarContext();
+  const { teamHierarchy, teamsLoading } = useTeamContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -133,6 +143,14 @@ export function ScheduleMeetingDialog({
   const [invitationResult, setInvitationResult] = useState<{
     sent: number;
     failed: number;
+  } | null>(null);
+
+  // Team invitee state
+  const [selectedTeams, setSelectedTeams] = useState<SelectedTeam[]>([]);
+  const [inviteTab, setInviteTab] = useState<"email" | "teams">("email");
+  const [teamInvitationResult, setTeamInvitationResult] = useState<{
+    teamsInvited: number;
+    membersInvited: number;
   } | null>(null);
 
   // Validation state
@@ -239,7 +257,7 @@ export function ScheduleMeetingDialog({
         }
       }
 
-      // Send invitations if there are invitees
+      // Send individual invitations if there are invitees
       if (invitees.length > 0 && sendInvitations) {
         try {
           const inviteResponse = await fetch(
@@ -274,10 +292,47 @@ export function ScheduleMeetingDialog({
         }
       }
 
+      // Send team invitations if there are selected teams (in parallel for performance)
+      if (selectedTeams.length > 0 && sendInvitations) {
+        const teamInvitePromises = selectedTeams.map(async (team) => {
+          try {
+            const response = await fetch(
+              `/api/meetings/${data.meeting.id}/invite-team`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  teamId: team.teamId,
+                  sendEmails: true,
+                }),
+              }
+            );
+
+            if (response.ok) {
+              const responseData = await response.json();
+              return { success: true, membersInvited: responseData.membersInvited || 0 };
+            }
+            return { success: false, membersInvited: 0 };
+          } catch (err) {
+            console.error("Failed to send team invitation:", err);
+            return { success: false, membersInvited: 0 };
+          }
+        });
+
+        const results = await Promise.all(teamInvitePromises);
+        const teamsInvited = results.filter((r) => r.success).length;
+        const membersInvited = results.reduce((sum, r) => sum + r.membersInvited, 0);
+
+        if (teamsInvited > 0) {
+          setTeamInvitationResult({ teamsInvited, membersInvited });
+        }
+      }
+
       // Show success state briefly if calendar was synced with a link or invitations sent
       const showSuccess =
         (data.calendarSync?.synced && data.calendarSync?.eventLink) ||
-        invitees.length > 0;
+        invitees.length > 0 ||
+        selectedTeams.length > 0;
 
       if (showSuccess) {
         setIsSuccess(true);
@@ -317,6 +372,9 @@ export function ScheduleMeetingDialog({
     setInviteesExpanded(false);
     setSendInvitations(true);
     setInvitationResult(null);
+    setSelectedTeams([]);
+    setInviteTab("email");
+    setTeamInvitationResult(null);
     setTouched({});
     setApiError(null);
     setCalendarSyncResult(null);
@@ -372,7 +430,16 @@ export function ScheduleMeetingDialog({
                     {invitationResult.failed !== 1 ? "s" : ""} failed to send
                   </p>
                 )}
-                {!calendarSyncResult?.synced && !invitationResult && (
+                {teamInvitationResult && teamInvitationResult.teamsInvited > 0 && (
+                  <p className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+                    <UsersRound className="size-4 text-green-600" />
+                    {teamInvitationResult.teamsInvited} team
+                    {teamInvitationResult.teamsInvited !== 1 ? "s" : ""} invited
+                    ({teamInvitationResult.membersInvited} member
+                    {teamInvitationResult.membersInvited !== 1 ? "s" : ""})
+                  </p>
+                )}
+                {!calendarSyncResult?.synced && !invitationResult && !teamInvitationResult && (
                   <p className="text-sm text-muted-foreground">
                     Meeting created
                   </p>
@@ -606,10 +673,11 @@ export function ScheduleMeetingDialog({
                     <Users className="size-4 text-muted-foreground" />
                     <span className="text-sm font-medium">
                       Invite Participants
-                      {invitees.length > 0 && (
+                      {(invitees.length > 0 || selectedTeams.length > 0) && (
                         <span className="ml-2 text-muted-foreground font-normal">
-                          ({invitees.length} invitee
-                          {invitees.length !== 1 ? "s" : ""})
+                          ({invitees.length > 0 && `${invitees.length} email${invitees.length !== 1 ? "s" : ""}`}
+                          {invitees.length > 0 && selectedTeams.length > 0 && ", "}
+                          {selectedTeams.length > 0 && `${selectedTeams.length} team${selectedTeams.length !== 1 ? "s" : ""}`})
                         </span>
                       )}
                     </span>
@@ -623,13 +691,46 @@ export function ScheduleMeetingDialog({
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="border-t px-4 pb-4 pt-3 space-y-3">
-                  <InviteeInput
-                    invitees={invitees}
-                    onChange={setInvitees}
-                    disabled={isSubmitting}
-                    placeholder="Enter email to invite"
-                  />
-                  {invitees.length > 0 && (
+                  <Tabs value={inviteTab} onValueChange={(v) => setInviteTab(v as "email" | "teams")}>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="email" className="gap-1.5">
+                        <Mail className="size-3.5" />
+                        Email
+                        {invitees.length > 0 && (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({invitees.length})
+                          </span>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="teams" className="gap-1.5">
+                        <UsersRound className="size-3.5" />
+                        Teams
+                        {selectedTeams.length > 0 && (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({selectedTeams.length})
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="email" className="mt-3">
+                      <InviteeInput
+                        invitees={invitees}
+                        onChange={setInvitees}
+                        disabled={isSubmitting}
+                        placeholder="Enter email to invite"
+                      />
+                    </TabsContent>
+                    <TabsContent value="teams" className="mt-3">
+                      <TeamInviteeSelector
+                        teams={teamHierarchy}
+                        selectedTeams={selectedTeams}
+                        onChange={setSelectedTeams}
+                        disabled={isSubmitting}
+                        loading={teamsLoading}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                  {(invitees.length > 0 || selectedTeams.length > 0) && (
                     <div className="flex items-start gap-3 pt-2">
                       <Checkbox
                         id="send-invitations"

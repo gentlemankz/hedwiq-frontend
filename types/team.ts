@@ -328,6 +328,8 @@ export interface InviteTeamToMeetingResponse {
   invite: TeamMeetingInvite;
   /** Number of individual invites created for team members */
   membersInvited: number;
+  /** Number of invitation emails successfully sent */
+  emailsSent: number;
 }
 
 /**

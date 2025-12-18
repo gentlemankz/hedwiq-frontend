@@ -72,7 +72,10 @@ frontend/
 │   │   │   └── [meetingId]/
 │   │   │       ├── route.ts          # Get/update/delete a meeting
 │   │   │       ├── calendar.ics/route.ts # ICS download
-│   │   │       ├── invite/route.ts   # Send invitations
+│   │   │       ├── invite/route.ts   # Send individual invitations
+│   │   │       ├── invite-team/      # Team invitation APIs
+│   │   │       │   ├── route.ts      # POST: invite team, GET: list team invites
+│   │   │       │   └── [teamId]/route.ts # DELETE: remove team invite
 │   │   │       ├── invitees/route.ts # List/remove invitees
 │   │   │       ├── session/route.ts  # Session tracking (join/leave)
 │   │   │       ├── data/route.ts     # Bulk save transcription/insights/refs
@@ -184,14 +187,16 @@ frontend/
 │   ├── meetings/
 │   │   ├── edit-meeting-dialog.tsx
 │   │   ├── invitee-input.tsx
-│   │   ├── manage-invitees-dialog.tsx
-│   │   ├── meeting-card.tsx
+│   │   ├── manage-invitees-dialog.tsx  # Manage invitees + team invites dialog
+│   │   ├── meeting-card.tsx            # Meeting card with team invite badges
 │   │   ├── meeting-list.tsx
 │   │   ├── meeting-type-selector.tsx
 │   │   ├── move-meeting-to-folder-dialog.tsx # Dialog for single/bulk meeting move
-│   │   ├── past-meeting-card.tsx     # Card with selection mode + move to folder action
-│   │   ├── past-meetings-list.tsx    # Paginated list with bulk selection + move
-│   │   ├── schedule-meeting-dialog.tsx
+│   │   ├── past-meeting-card.tsx       # Card with selection mode + move to folder action
+│   │   ├── past-meetings-list.tsx      # Paginated list with bulk selection + move
+│   │   ├── schedule-meeting-dialog.tsx # Schedule meeting with team invite support
+│   │   ├── team-invite-badge.tsx       # Team invite badge + summary components
+│   │   ├── team-invitee-selector.tsx   # Team selection for meeting invitations
 │   │   └── index.ts
 │   ├── participant/
 │   │   ├── custom-participant-tile.tsx

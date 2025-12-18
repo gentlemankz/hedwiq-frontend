@@ -56,6 +56,8 @@ import { cn } from "@/lib/utils";
 import type { Meeting } from "@/types/meeting";
 import type { CalendarEventPublic } from "@/types/calendar";
 import type { RSVPSummary } from "@/types/invitee";
+import type { TeamMeetingInviteWithTeam } from "@/types/team";
+import { TeamInvitesSummary } from "@/components/meetings/team-invite-badge";
 
 interface MeetingCardProps {
   meeting: Meeting;
@@ -63,6 +65,8 @@ interface MeetingCardProps {
   calendarEvent?: CalendarEventPublic | null;
   /** RSVP summary for meeting invitees */
   rsvpSummary?: RSVPSummary | null;
+  /** Team invitations for this meeting */
+  teamInvites?: TeamMeetingInviteWithTeam[] | null;
   onEdit?: (meeting: Meeting) => void;
   onDeleted?: () => void;
   onManageInvitees?: (meeting: Meeting) => void;
@@ -72,6 +76,7 @@ export function MeetingCard({
   meeting,
   calendarEvent,
   rsvpSummary,
+  teamInvites,
   onEdit,
   onDeleted,
   onManageInvitees,
@@ -338,6 +343,13 @@ export function MeetingCard({
                   ({rsvpSummary.pending} pending)
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Team Invites */}
+          {teamInvites && teamInvites.length > 0 && (
+            <div className="mb-3">
+              <TeamInvitesSummary invites={teamInvites} compact maxVisible={2} />
             </div>
           )}
 

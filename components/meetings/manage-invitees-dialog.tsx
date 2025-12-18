@@ -12,6 +12,7 @@ import {
   Clock,
   Users,
   Send,
+  UsersRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,10 +36,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { InviteeInput, type InviteeEntry } from "./invitee-input";
+import { TeamInviteeSelector, type SelectedTeam } from "./team-invitee-selector";
+import { TeamInviteBadge } from "./team-invite-badge";
+import { useTeamContext } from "@/contexts/team-context";
 import type { Meeting } from "@/types/meeting";
 import type { MeetingInvitee, RSVPStatus, RSVPSummary } from "@/types/invitee";
+import type { TeamMeetingInviteWithTeam } from "@/types/team";
 
 // ============================================================================
 // Types
@@ -99,6 +105,9 @@ export function ManageInviteesDialog({
   meeting,
   onInviteesUpdated,
 }: ManageInviteesDialogProps) {
+  // Team context
+  const { teamHierarchy, teamsLoading } = useTeamContext();
+
   // State
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -115,7 +124,17 @@ export function ManageInviteesDialog({
     failed: number;
   } | null>(null);
 
-  // Fetch invitees
+  // Team invite state
+  const [teamInvites, setTeamInvites] = useState<TeamMeetingInviteWithTeam[]>([]);
+  const [selectedTeams, setSelectedTeams] = useState<SelectedTeam[]>([]);
+  const [inviteTab, setInviteTab] = useState<"email" | "teams">("email");
+  const [teamToRemove, setTeamToRemove] = useState<TeamMeetingInviteWithTeam | null>(null);
+  const [teamSendResult, setTeamSendResult] = useState<{
+    teamsInvited: number;
+    membersInvited: number;
+  } | null>(null);
+
+  // Fetch invitees and team invites
   const fetchInvitees = useCallback(async () => {
     if (!meeting.id) return;
 
@@ -123,15 +142,26 @@ export function ManageInviteesDialog({
     setError(null);
 
     try {
-      const response = await fetch(`/api/meetings/${meeting.id}/invitees`);
-      const data = await response.json();
+      // Fetch individual invitees and team invites in parallel
+      const [inviteesResponse, teamInvitesResponse] = await Promise.all([
+        fetch(`/api/meetings/${meeting.id}/invitees`),
+        fetch(`/api/meetings/${meeting.id}/invite-team`),
+      ]);
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to load invitees");
+      const inviteesData = await inviteesResponse.json();
+      const teamInvitesData = await teamInvitesResponse.json();
+
+      if (!inviteesResponse.ok) {
+        throw new Error(inviteesData.error || "Failed to load invitees");
       }
 
-      setInvitees(data.invitees);
-      setSummary(data.summary);
+      setInvitees(inviteesData.invitees);
+      setSummary(inviteesData.summary);
+
+      // Team invites might fail if user is not the host - ignore that error
+      if (teamInvitesResponse.ok) {
+        setTeamInvites(teamInvitesData.invites || []);
+      }
     } catch (err) {
       console.error("Fetch invitees error:", err);
       setError(err instanceof Error ? err.message : "Failed to load invitees");
@@ -146,8 +176,14 @@ export function ManageInviteesDialog({
       fetchInvitees();
       setNewInvitees([]);
       setSendResult(null);
+      setSelectedTeams([]);
+      setTeamSendResult(null);
+      setInviteTab("email");
     }
   }, [open, fetchInvitees]);
+
+  // Get already invited team IDs
+  const alreadyInvitedTeamIds = new Set(teamInvites.map((inv) => inv.teamId));
 
   // Send invitations to new invitees
   const handleSendInvitations = async () => {
@@ -227,6 +263,82 @@ export function ManageInviteesDialog({
     }
   };
 
+  // Send team invitations (in parallel for performance)
+  const handleSendTeamInvitations = async () => {
+    if (selectedTeams.length === 0) return;
+
+    setIsSending(true);
+    setError(null);
+    setTeamSendResult(null);
+
+    try {
+      const invitePromises = selectedTeams.map(async (team) => {
+        try {
+          const response = await fetch(`/api/meetings/${meeting.id}/invite-team`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamId: team.teamId,
+              sendEmails: true,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            return { success: true, membersInvited: data.membersInvited || 0 };
+          }
+          return { success: false, membersInvited: 0 };
+        } catch {
+          return { success: false, membersInvited: 0 };
+        }
+      });
+
+      const results = await Promise.all(invitePromises);
+      const teamsInvited = results.filter((r) => r.success).length;
+      const membersInvited = results.reduce((sum, r) => sum + r.membersInvited, 0);
+
+      setTeamSendResult({ teamsInvited, membersInvited });
+      setSelectedTeams([]);
+      await fetchInvitees();
+      onInviteesUpdated?.();
+    } catch (err) {
+      console.error("Send team invitations error:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to send team invitations"
+      );
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // Remove a team invitation
+  const handleRemoveTeamInvite = async (invite: TeamMeetingInviteWithTeam) => {
+    setIsRemoving(invite.id);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `/api/meetings/${meeting.id}/invite-team/${invite.teamId}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to remove team invitation");
+      }
+
+      // Refresh list
+      await fetchInvitees();
+      onInviteesUpdated?.();
+    } catch (err) {
+      console.error("Remove team invite error:", err);
+      setError(err instanceof Error ? err.message : "Failed to remove team invitation");
+    } finally {
+      setIsRemoving(null);
+      setTeamToRemove(null);
+    }
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -263,6 +375,15 @@ export function ManageInviteesDialog({
               successfully
               {sendResult.failed > 0 &&
                 ` (${sendResult.failed} failed)`}
+            </div>
+          )}
+
+          {/* Team Success Result */}
+          {teamSendResult && teamSendResult.teamsInvited > 0 && (
+            <div className="rounded-md bg-green-50 dark:bg-green-900/20 p-3 text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
+              <UsersRound className="size-4" />
+              {teamSendResult.teamsInvited} team{teamSendResult.teamsInvited !== 1 ? "s" : ""} invited
+              ({teamSendResult.membersInvited} member{teamSendResult.membersInvited !== 1 ? "s" : ""})
             </div>
           )}
 
@@ -303,11 +424,44 @@ export function ManageInviteesDialog({
 
               <Separator />
 
+              {/* Team Invites */}
+              {teamInvites.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium flex items-center gap-2">
+                    <UsersRound className="size-4" />
+                    Invited Teams
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {teamInvites.map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="flex items-center gap-1"
+                      >
+                        <TeamInviteBadge invite={invite} />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          onClick={() => setTeamToRemove(invite)}
+                          disabled={isRemoving === invite.id}
+                        >
+                          {isRemoving === invite.id ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-3 text-muted-foreground hover:text-destructive" />
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Existing Invitees */}
               {invitees.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-sm font-medium">Current Invitees</h4>
-                  <ScrollArea className="h-[200px] rounded-md border">
+                  <h4 className="text-sm font-medium">Individual Invitees</h4>
+                  <ScrollArea className="h-[160px] rounded-md border">
                     <div className="p-2 space-y-1">
                       {invitees.map((invitee) => {
                         const status = statusConfig[invitee.status];
@@ -365,7 +519,7 @@ export function ManageInviteesDialog({
                 </div>
               )}
 
-              {invitees.length === 0 && (
+              {invitees.length === 0 && teamInvites.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-4">
                   No invitees yet. Add some below.
                 </p>
@@ -379,12 +533,36 @@ export function ManageInviteesDialog({
                   <UserPlus className="size-4" />
                   Add New Invitees
                 </h4>
-                <InviteeInput
-                  invitees={newInvitees}
-                  onChange={setNewInvitees}
-                  disabled={isSending}
-                  placeholder="Enter email to invite"
-                />
+                <Tabs value={inviteTab} onValueChange={(v) => setInviteTab(v as "email" | "teams")}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="email" className="gap-1.5">
+                      <Mail className="size-3.5" />
+                      Email
+                    </TabsTrigger>
+                    <TabsTrigger value="teams" className="gap-1.5">
+                      <UsersRound className="size-3.5" />
+                      Teams
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="email" className="mt-3">
+                    <InviteeInput
+                      invitees={newInvitees}
+                      onChange={setNewInvitees}
+                      disabled={isSending}
+                      placeholder="Enter email to invite"
+                    />
+                  </TabsContent>
+                  <TabsContent value="teams" className="mt-3">
+                    <TeamInviteeSelector
+                      teams={teamHierarchy}
+                      selectedTeams={selectedTeams}
+                      onChange={setSelectedTeams}
+                      disabled={isSending}
+                      loading={teamsLoading}
+                      alreadyInvitedTeamIds={alreadyInvitedTeamIds}
+                    />
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
           )}
@@ -397,7 +575,7 @@ export function ManageInviteesDialog({
             >
               Close
             </Button>
-            {newInvitees.length > 0 && (
+            {newInvitees.length > 0 && inviteTab === "email" && (
               <Button
                 onClick={handleSendInvitations}
                 disabled={isSending || newInvitees.length === 0}
@@ -411,11 +589,25 @@ export function ManageInviteesDialog({
                 {newInvitees.length !== 1 ? "s" : ""}
               </Button>
             )}
+            {selectedTeams.length > 0 && inviteTab === "teams" && (
+              <Button
+                onClick={handleSendTeamInvitations}
+                disabled={isSending || selectedTeams.length === 0}
+              >
+                {isSending ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <Send className="mr-2 size-4" />
+                )}
+                Invite {selectedTeams.length} Team
+                {selectedTeams.length !== 1 ? "s" : ""}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Remove Confirmation Dialog */}
+      {/* Remove Invitee Confirmation Dialog */}
       <AlertDialog
         open={!!inviteeToRemove}
         onOpenChange={(open) => !open && setInviteeToRemove(null)}
@@ -439,6 +631,34 @@ export function ManageInviteesDialog({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Remove Team Confirmation Dialog */}
+      <AlertDialog
+        open={!!teamToRemove}
+        onOpenChange={(open) => !open && setTeamToRemove(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Team Invitation</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove the team{" "}
+              <strong>{teamToRemove?.team.name}</strong> from this meeting?
+              Note: Individual invitees from this team will remain invited.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                teamToRemove && handleRemoveTeamInvite(teamToRemove)
+              }
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove Team
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
