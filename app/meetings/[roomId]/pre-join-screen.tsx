@@ -94,6 +94,8 @@ interface PreJoinScreenProps {
   error: string | null;
   /** Pre-loaded meeting data for scheduled meetings */
   meetingData?: MeetingData | null;
+  /** Folder ID from URL params for instant meetings */
+  instantMeetingFolderId?: string;
 }
 
 // ============================================================================
@@ -115,6 +117,7 @@ export function PreJoinScreen({
   isLoadingMeetingData = false,
   error,
   meetingData,
+  instantMeetingFolderId,
 }: PreJoinScreenProps) {
   // Folder data for organizing meetings (standalone fetch, works outside SidebarProvider)
   const { folders, foldersLoading, defaultFolderId } = useFolders();
@@ -150,9 +153,9 @@ export function PreJoinScreen({
   // Track if default folder has been applied (to prevent overriding meeting folder)
   const [defaultFolderApplied, setDefaultFolderApplied] = useState(false);
 
-  // Initialize folderId when defaultFolderId becomes available (for instant meetings only)
-  // Only apply default if: we haven't already applied it, there's no folder set,
-  // AND we've confirmed this is not a scheduled meeting with its own folder
+  // Initialize folderId for instant meetings
+  // Priority: URL param (instantMeetingFolderId) > defaultFolderId
+  // For scheduled meetings, the folder is set from meetingData in the other useEffect
   useEffect(() => {
     // Skip if already applied default or folder is already set
     if (defaultFolderApplied || folderId) return;
@@ -163,22 +166,27 @@ export function PreJoinScreen({
     // For scheduled meetings, wait for meeting data initialization
     if (meetingData?.meeting?.folderId) return;
 
-    // Apply default folder for instant meetings or meetings without folder
-    if (defaultFolderId && initializedFromMeetingData) {
-      // Meeting data loaded but no folder - apply default
+    // Determine which folder ID to use
+    // Priority: URL param from instant meeting > default folder
+    const folderToApply = instantMeetingFolderId || defaultFolderId;
+
+    // Apply folder for instant meetings or meetings without folder
+    if (folderToApply && initializedFromMeetingData) {
+      // Meeting data loaded but no folder - apply folder
       startTransition(() => {
-        setFolderId(defaultFolderId);
+        setFolderId(folderToApply);
         setDefaultFolderApplied(true);
       });
-    } else if (defaultFolderId && !meetingData) {
-      // Instant meeting (no meeting data) - apply default immediately
+    } else if (folderToApply && !meetingData) {
+      // Instant meeting (no meeting data) - apply folder immediately
       startTransition(() => {
-        setFolderId(defaultFolderId);
+        setFolderId(folderToApply);
         setDefaultFolderApplied(true);
       });
     }
   }, [
     defaultFolderId,
+    instantMeetingFolderId,
     folderId,
     defaultFolderApplied,
     isLoadingMeetingData,

@@ -176,8 +176,9 @@ export function validateDurationMinutes(duration: unknown): ValidationResult {
 /**
  * Folder ID validation regex.
  * Format: folder-{8 char userId prefix}-{base36 timestamp}-{6 alphanumeric}
+ * Note: Case-insensitive to support existing folders that may have uppercase userId prefixes.
  */
-const FOLDER_ID_REGEX = /^folder-[a-z0-9]{8}-[a-z0-9]{7,10}-[a-z0-9]{6}$/;
+const FOLDER_ID_REGEX = /^folder-[a-z0-9]{8}-[a-z0-9]{7,10}-[a-z0-9]{6}$/i;
 
 /**
  * Maximum folder ID length to prevent abuse.

@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Users, Plus, Loader2, AlertCircle, FolderClosed } from "lucide-react";
 import { validateRoomId, sanitizeRoomId } from "@/lib/validation";
+import { generateRoomId } from "@/lib/utils";
 import {
   MeetingTypeSelector,
   ScheduleMeetingDialog,
@@ -81,45 +82,38 @@ export function DashboardClient({
     () => false
   );
 
-  const handleInstantMeeting = async () => {
+  const handleInstantMeeting = () => {
     if (isCreatingInstant) return;
 
     setIsCreatingInstant(true);
     setInstantMeetingError(null);
 
     try {
-      const response = await fetch("/api/meetings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: "Instant Meeting",
-          type: "instant",
-          folderId: instantMeetingFolderId || undefined,
-        }),
-      });
+      // Generate room ID client-side - meeting will be created when user actually joins
+      const roomId = generateRoomId();
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to create meeting");
+      // Build URL with instant meeting preferences
+      // The meeting will be created in meeting-room.tsx when user clicks "Join Meeting"
+      const params = new URLSearchParams();
+      params.set("type", "instant");
+      if (instantMeetingFolderId) {
+        params.set("folderId", instantMeetingFolderId);
       }
 
-      const data = await response.json();
-      const meeting = data.meeting as Meeting;
-
       setIsNewMeetingDialogOpen(false);
-      // Reset folder to default after creating meeting
+      // Reset folder to default after navigating
       setInstantMeetingFolderId(defaultFolderId);
-      router.push(`/meetings/${meeting.roomId}`);
+      router.push(`/meetings/${roomId}?${params.toString()}`);
     } catch (error) {
-      console.error("Failed to create instant meeting:", error);
+      console.error("Failed to start instant meeting:", error);
       setInstantMeetingError(
         error instanceof Error
           ? error.message
-          : "Failed to create meeting. Please try again."
+          : "Failed to start meeting. Please try again."
       );
-    } finally {
       setIsCreatingInstant(false);
     }
+    // Note: isCreatingInstant will be reset when user navigates away
   };
 
   const handleScheduleMeeting = () => {

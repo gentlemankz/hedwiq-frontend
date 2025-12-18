@@ -18,11 +18,14 @@ import { DEFAULT_FOLDER_NAME } from "@/types/folder";
 
 /**
  * Generates a unique folder ID.
+ * Note: userId prefix is lowercased to ensure consistent format matching
+ * the validation regex (which only allows lowercase alphanumeric).
  */
 export function generateFolderId(userId: string): string {
   const timestamp = Date.now().toString(36);
   const random = secureRandomString(6, "abcdefghijklmnopqrstuvwxyz0123456789");
-  return `folder-${userId.slice(0, 8)}-${timestamp}-${random}`;
+  // Lowercase the userId slice to ensure it matches validation regex
+  return `folder-${userId.slice(0, 8).toLowerCase()}-${timestamp}-${random}`;
 }
 
 // ============================================================================
@@ -178,7 +181,8 @@ export async function listFoldersByUser(
   let folders: Folder[];
 
   if (options.includeMeetingCounts) {
-    // Query with meeting counts - only count meetings owned by this user
+    // Query with meeting counts - only count ENDED meetings owned by this user
+    // This ensures the count matches what's displayed in the past meetings list
     const rows = await db
       .select({
         folder: meetingFolder,
@@ -187,7 +191,11 @@ export async function listFoldersByUser(
       .from(meetingFolder)
       .leftJoin(
         meeting,
-        and(eq(meeting.folderId, meetingFolder.id), eq(meeting.hostId, userId))
+        and(
+          eq(meeting.folderId, meetingFolder.id),
+          eq(meeting.hostId, userId),
+          eq(meeting.status, "ended") // Only count ended meetings
+        )
       )
       .where(eq(meetingFolder.userId, userId))
       .groupBy(meetingFolder.id)

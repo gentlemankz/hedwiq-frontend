@@ -112,6 +112,7 @@ export async function GET(request: NextRequest) {
  * - settings: MeetingSettings (optional)
  * - addToCalendar: boolean (optional, default: false)
  * - folderId: string (optional, for organization)
+ * - roomId: string (optional, for instant meetings - use this room ID instead of generating a new one)
  */
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({
@@ -134,6 +135,7 @@ export async function POST(request: NextRequest) {
     addToCalendar?: boolean;
     agendaItems?: AgendaItemInput[];
     folderId?: string;
+    roomId?: string; // Optional: use this room ID instead of generating a new one
   };
 
   try {
@@ -170,6 +172,7 @@ export async function POST(request: NextRequest) {
       timezone: body.timezone,
       settings: body.settings,
       folderId: body.folderId,
+      roomId: body.roomId, // Optional: use provided room ID for instant meetings
     });
 
     // Create agenda if items were provided

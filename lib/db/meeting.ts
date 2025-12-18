@@ -86,9 +86,11 @@ export async function createMeeting(params: {
   timezone?: string;
   settings?: MeetingSettings;
   folderId?: string;
+  roomId?: string; // Optional: use this room ID instead of generating a new one
 }): Promise<Meeting> {
   const meetingId = generateMeetingId();
-  const roomId = generateRoomId();
+  // Use provided roomId or generate a new one
+  const roomId = params.roomId || generateRoomId();
 
   const [row] = await db
     .insert(meeting)
@@ -100,11 +102,13 @@ export async function createMeeting(params: {
       title: params.title.trim(),
       description: params.description?.trim() || null,
       type: params.type,
-      status: params.type === "instant" ? "live" : "scheduled",
+      // All meetings start as "scheduled" - status changes to "live" when host actually joins
+      status: "scheduled",
       scheduledAt: params.scheduledAt ?? null,
       durationMinutes: params.durationMinutes ?? 60,
       timezone: params.timezone ?? "UTC",
-      startedAt: params.type === "instant" ? new Date() : null,
+      // Don't set startedAt until meeting actually starts (when host joins)
+      startedAt: null,
       settings: params.settings ?? {},
     })
     .returning();

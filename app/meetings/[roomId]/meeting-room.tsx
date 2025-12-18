@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { LiveKitRoom } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { RoomOptions, VideoPresets } from "livekit-client";
@@ -14,13 +15,23 @@ import { MeetingPersistenceProvider } from "@/contexts/meeting-persistence-conte
 import { agendaItemsToDraft } from "@/lib/utils/meeting-form";
 import type { User } from "@/types/user";
 import type { AgendaItemInput, AgendaPublishResponse } from "@/types/agenda";
+import type { Meeting } from "@/types/meeting";
 
 interface MeetingRoomProps {
   roomId: string;
   user: User;
 }
 
+/**
+ * Instant meeting preferences passed via URL params from dashboard.
+ */
+interface InstantMeetingParams {
+  type: "instant";
+  folderId?: string;
+}
+
 export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
+  const searchParams = useSearchParams();
   const [token, setToken] = useState<string | null>(null);
   const [userChoices, setUserChoices] = useState<UserChoices | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -29,6 +40,18 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
   // Meeting data loaded from API
   const [meetingData, setMeetingData] = useState<MeetingData | null>(null);
   const [isLoadingMeetingData, setIsLoadingMeetingData] = useState(true);
+
+  // Parse instant meeting params from URL (set by dashboard when starting instant meeting)
+  const instantMeetingParams = useMemo((): InstantMeetingParams | null => {
+    const type = searchParams.get("type");
+    if (type === "instant") {
+      return {
+        type: "instant",
+        folderId: searchParams.get("folderId") || undefined,
+      };
+    }
+    return null;
+  }, [searchParams]);
 
   // Use AbortController to cancel in-flight requests and prevent race conditions
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -51,6 +74,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
               initialAgendaItems.length > 0 ? initialAgendaItems : undefined,
           });
         }
+        // If meeting doesn't exist (404), that's fine - it will be created on join for instant meetings
       } catch (err) {
         console.error("Failed to fetch meeting data:", err);
         // Don't set error - meeting data is optional
@@ -86,13 +110,52 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
       setError(null);
       setUserChoices(choices);
 
+      // Track the meeting data (may be created in this flow)
+      let currentMeetingData = meetingData;
+
       try {
         // Join Sequencing (Critical - see AGENDA_FEATURE_PLAN.md):
+        // 0. Create meeting if instant meeting (no meeting exists yet)
         // 1. Save agenda (if items exist)
         // 2. Publish agenda (lock it in)
         // 3. Request token (only after agenda is published)
-        // 4. Connect to LiveKit
+        // 4. Update meeting status to "live"
+        // 5. Connect to LiveKit
         // This order ensures the agent can fetch the agenda when it joins.
+
+        // Step 0: Create meeting if this is an instant meeting without existing meeting
+        // Instant meetings are created here (on join) instead of on dashboard
+        // This prevents orphaned meetings when user cancels at PreJoin
+        if (!currentMeetingData?.meeting && instantMeetingParams) {
+          const createResponse = await fetch("/api/meetings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: choices.meetingName || "Instant Meeting",
+              type: "instant",
+              folderId: choices.folderId || instantMeetingParams.folderId,
+              // Pass the roomId so the API uses it instead of generating a new one
+              roomId: roomId,
+            }),
+            signal: abortController.signal,
+          });
+
+          if (!createResponse.ok) {
+            const data = await createResponse.json().catch(() => ({}));
+            throw new Error(data.error || "Failed to create meeting");
+          }
+
+          const createData = await createResponse.json();
+          const newMeeting = createData.meeting as Meeting;
+
+          // Update meeting data with the newly created meeting
+          currentMeetingData = {
+            meeting: newMeeting,
+            agenda: null,
+            initialAgendaItems: undefined,
+          };
+          setMeetingData(currentMeetingData);
+        }
 
         // Track agenda version from server response (for cache invalidation)
         let agendaVersion: number | undefined;
@@ -169,7 +232,40 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
 
         const data = await response.json();
 
-        // Step 4: Only update state if this request wasn't aborted
+        // Step 4: Update meeting status to "live" if host is joining
+        // This ensures the meeting only shows as "live" when someone actually joins
+        if (
+          currentMeetingData?.meeting &&
+          currentMeetingData.meeting.hostId === user.id &&
+          currentMeetingData.meeting.status === "scheduled"
+        ) {
+          try {
+            await fetch(`/api/meetings/${currentMeetingData.meeting.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "live" }),
+              signal: abortController.signal,
+            });
+            // Update local meeting data to reflect the new status
+            setMeetingData((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    meeting: prev.meeting
+                      ? { ...prev.meeting, status: "live" }
+                      : null,
+                  }
+                : null
+            );
+          } catch (err) {
+            // Don't fail the join if status update fails, just log it
+            if (!(err instanceof Error && err.name === "AbortError")) {
+              console.error("Failed to update meeting status:", err);
+            }
+          }
+        }
+
+        // Step 5: Only update state if this request wasn't aborted
         // (LiveKit connection happens via state update triggering LiveKitRoom)
         if (!abortController.signal.aborted) {
           // Update choices with agenda version for cache invalidation
@@ -191,7 +287,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         setIsConnecting(false);
       }
     },
-    [roomId]
+    [roomId, meetingData, user.id, instantMeetingParams]
   );
 
   const handleDisconnect = useCallback(async () => {
@@ -270,6 +366,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         isLoadingMeetingData={isLoadingMeetingData}
         error={error}
         meetingData={meetingData}
+        instantMeetingFolderId={instantMeetingParams?.folderId}
       />
     );
   }

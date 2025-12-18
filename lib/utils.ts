@@ -96,6 +96,9 @@ export function secureRandomString(length: number, charset: string): string {
 /** Default charset for alphanumeric IDs */
 const ALPHANUMERIC_CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
+/** Lowercase letters only charset for room IDs */
+const LOWERCASE_LETTERS = "abcdefghijklmnopqrstuvwxyz";
+
 /**
  * Generates a unique ID with a prefix and timestamp.
  * Format: {prefix}-{timestamp_base36}-{random_8_chars}
@@ -106,6 +109,19 @@ export function generatePrefixedId(prefix: string): string {
   const timestamp = Date.now().toString(36);
   const random = secureRandomString(8, ALPHANUMERIC_CHARSET);
   return `${prefix}-${timestamp}-${random}`;
+}
+
+/**
+ * Generates a random room ID in the format "abc-defg-hij".
+ * Uses cryptographically secure random values.
+ * This function can be used client-side or server-side.
+ * @returns A random room ID string
+ */
+export function generateRoomId(): string {
+  const segments = [3, 4, 3];
+  return segments
+    .map((len) => secureRandomString(len, LOWERCASE_LETTERS))
+    .join("-");
 }
 
 // ============================================================================
