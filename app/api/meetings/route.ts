@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { createMeeting, listMeetingsByHost } from "@/lib/db/meeting";
+import { createMeeting, listMeetingsForUser } from "@/lib/db/meeting";
 import { createAgenda } from "@/lib/db/agenda";
 import { isFolderOwner } from "@/lib/db/folder";
 import { validateCreateMeetingRequest } from "@/lib/validation/meeting";
@@ -14,7 +14,7 @@ import type { AgendaItemInput } from "@/types/agenda";
 /**
  * GET /api/meetings
  *
- * List meetings for the authenticated user.
+ * List meetings visible to the authenticated user (hosted, invited, or team-invited).
  * Query params:
  * - status: "upcoming" | "past" | "all" (default: "all")
  * - folderId: string (optional, filter by folder)
@@ -81,12 +81,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const meetings = await listMeetingsByHost(session.user.id, {
-      status: status || "all",
-      folderId,
-      limit,
-      offset,
-    });
+    const meetings = await listMeetingsForUser(
+      { userId: session.user.id, userEmail: session.user.email },
+      {
+        status: status || "all",
+        folderId,
+        limit,
+        offset,
+      }
+    );
 
     return NextResponse.json({ meetings });
   } catch (error) {

@@ -5,8 +5,8 @@
  */
 
 import { db } from "@/lib/db";
-import { meeting, user } from "@/lib/db/schema";
-import { eq, and, gte, desc, or, lte, isNull } from "drizzle-orm";
+import { meeting, meetingInvitee, teamMeeting, teamMember, user } from "@/lib/db/schema";
+import { eq, and, gte, desc, or, lte, isNull, isNotNull, ne } from "drizzle-orm";
 import { secureRandomString } from "@/lib/utils";
 import type {
   Meeting,
@@ -15,6 +15,13 @@ import type {
   MeetingSettings,
   MeetingWithHost,
 } from "@/types/meeting";
+
+type MeetingListOptions = {
+  status?: "upcoming" | "past" | "all";
+  folderId?: string | null;
+  limit?: number;
+  offset?: number;
+};
 
 // ============================================================================
 // ID Generation
@@ -177,12 +184,7 @@ export async function getMeetingWithHost(meetingId: string): Promise<MeetingWith
  */
 export async function listMeetingsByHost(
   hostId: string,
-  options: {
-    status?: "upcoming" | "past" | "all";
-    folderId?: string | null;
-    limit?: number;
-    offset?: number;
-  } = {}
+  options: MeetingListOptions = {}
 ): Promise<Meeting[]> {
   const { status = "all", folderId, limit = 50, offset = 0 } = options;
   const now = new Date();
@@ -245,6 +247,99 @@ export async function listMeetingsByHost(
     .offset(offset);
 
   return rows.map(rowToMeeting);
+}
+
+/**
+ * Lists meetings that the user can see (hosted by them, invited directly, or invited via team).
+ *
+ * This is the correct query for dashboard "Upcoming meetings" and `/api/meetings`.
+ */
+export async function listMeetingsForUser(
+  params: { userId: string; userEmail?: string | null },
+  options: MeetingListOptions = {}
+): Promise<Meeting[]> {
+  const { status = "all", folderId, limit = 50, offset = 0 } = options;
+  const now = new Date();
+  const normalizedEmail = params.userEmail?.toLowerCase().trim() || null;
+
+  // Build folder filter
+  const folderFilter = folderId !== undefined
+    ? folderId === null
+      ? isNull(meeting.folderId)
+      : eq(meeting.folderId, folderId)
+    : undefined;
+
+  // Build status filter
+  const statusFilter = (() => {
+    switch (status) {
+      case "upcoming":
+        return or(
+          and(gte(meeting.scheduledAt, now), eq(meeting.status, "scheduled")),
+          eq(meeting.status, "live")
+        );
+      case "past":
+        return or(
+          eq(meeting.status, "ended"),
+          eq(meeting.status, "cancelled"),
+          and(lte(meeting.scheduledAt, now), eq(meeting.status, "scheduled"))
+        );
+      default:
+        return undefined;
+    }
+  })();
+
+  // Visibility:
+  // - host
+  // - direct invitee (unless declined)
+  // - active member of an invited team (only if there's no explicit invitee row;
+  //   this prevents team membership from overriding a "declined" RSVP)
+  const visibilityFilter = or(
+    eq(meeting.hostId, params.userId),
+    and(isNotNull(meetingInvitee.id), ne(meetingInvitee.status, "declined")),
+    and(isNotNull(teamMember.id), isNull(meetingInvitee.id))
+  );
+
+  const orderByClause =
+    status === "upcoming"
+      ? [meeting.scheduledAt, desc(meeting.createdAt)]
+      : [desc(meeting.scheduledAt), desc(meeting.createdAt)];
+
+  const rows = await db
+    .selectDistinct({ meeting })
+    .from(meeting)
+    .leftJoin(
+      meetingInvitee,
+      normalizedEmail
+        ? and(
+            eq(meetingInvitee.meetingId, meeting.id),
+            eq(meetingInvitee.email, normalizedEmail)
+          )
+        : and(
+            eq(meetingInvitee.meetingId, meeting.id),
+            eq(meetingInvitee.email, "__no_email__")
+          )
+    )
+    .leftJoin(teamMeeting, eq(teamMeeting.meetingId, meeting.id))
+    .leftJoin(
+      teamMember,
+      and(
+        eq(teamMember.teamId, teamMeeting.teamId),
+        eq(teamMember.userId, params.userId),
+        eq(teamMember.status, "active")
+      )
+    )
+    .where(
+      and(
+        ...(folderFilter ? [folderFilter] : []),
+        ...(statusFilter ? [statusFilter] : []),
+        visibilityFilter
+      )
+    )
+    .orderBy(...orderByClause)
+    .limit(limit)
+    .offset(offset);
+
+  return rows.map((row) => rowToMeeting(row.meeting));
 }
 
 /**

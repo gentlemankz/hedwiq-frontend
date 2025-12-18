@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useSession } from "@/lib/auth-client";
 import type { Meeting } from "@/types/meeting";
 import type { CalendarEventPublic } from "@/types/calendar";
 import type { RSVPSummary } from "@/types/invitee";
@@ -82,10 +83,12 @@ export function MeetingCard({
   onManageInvitees,
 }: MeetingCardProps) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [meetingUrl, setMeetingUrl] = useState(`/meetings/${meeting.roomId}`);
+  const isHost = session?.user?.id === meeting.hostId;
 
   // Build full URL on client side to avoid hydration mismatch
   useEffect(() => {
@@ -279,26 +282,30 @@ export function MeetingCard({
                     View in Calendar
                   </DropdownMenuItem>
                 )}
-                {onEdit && meeting.status === "scheduled" && (
+                {isHost && onEdit && meeting.status === "scheduled" && (
                   <DropdownMenuItem onClick={() => onEdit(meeting)}>
                     <Pencil className="mr-2 size-4" />
                     Edit
                   </DropdownMenuItem>
                 )}
-                {onManageInvitees && meeting.type === "scheduled" && (
+                {isHost && onManageInvitees && meeting.type === "scheduled" && (
                   <DropdownMenuItem onClick={() => onManageInvitees(meeting)}>
                     <UserPlus className="mr-2 size-4" />
                     Manage Invitees
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => setShowDeleteDialog(true)}
-                >
-                  <Trash2 className="mr-2 size-4" />
-                  Delete
-                </DropdownMenuItem>
+                {isHost && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="mr-2 size-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
