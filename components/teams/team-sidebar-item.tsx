@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
@@ -66,7 +67,11 @@ interface TeamSidebarItemProps {
 // Component
 // ============================================================================
 
-export function TeamSidebarItem({
+/**
+ * Memoized team sidebar item for performance with large team hierarchies.
+ * Only re-renders when team data, expansion state, or user role changes.
+ */
+export const TeamSidebarItem = memo(function TeamSidebarItem({
   team,
   userRole,
   isExpanded,
@@ -188,7 +193,10 @@ export function TeamSidebarItem({
       />
     </SidebarMenuSubItem>
   );
-}
+});
+
+// Display name for debugging
+TeamSidebarItem.displayName = "TeamSidebarItem";
 
 // ============================================================================
 // Context Menu Component
@@ -206,7 +214,7 @@ interface TeamContextMenuProps {
   onCreateSubteam: (team: TeamWithSubteams) => void;
 }
 
-function TeamContextMenu({
+const TeamContextMenu = memo(function TeamContextMenu({
   team,
   canEdit,
   canDelete,
@@ -261,4 +269,6 @@ function TeamContextMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+});
+
+TeamContextMenu.displayName = "TeamContextMenu";

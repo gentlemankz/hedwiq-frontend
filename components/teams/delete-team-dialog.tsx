@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Loader2, AlertTriangle, Users, FolderTree, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -56,17 +56,38 @@ export function DeleteTeamDialog({
     }
   }, [open]);
 
-  // Count total sub-teams recursively
-  const countSubteams = (t: TeamWithSubteams): number => {
-    if (!t.subteams || t.subteams.length === 0) return 0;
-    return t.subteams.reduce(
-      (count, sub) => count + 1 + countSubteams(sub),
-      0
-    );
-  };
+  // Calculate cascade impact
+  const cascadeImpact = useMemo(() => {
+    // Count total sub-teams and members recursively
+    const countAll = (
+      t: TeamWithSubteams
+    ): { subteams: number; members: number } => {
+      if (!t.subteams || t.subteams.length === 0) {
+        return { subteams: 0, members: 0 };
+      }
+      return t.subteams.reduce(
+        (acc, sub) => {
+          const subCounts = countAll(sub);
+          return {
+            subteams: acc.subteams + 1 + subCounts.subteams,
+            members: acc.members + sub.memberCount + subCounts.members,
+          };
+        },
+        { subteams: 0, members: 0 }
+      );
+    };
 
-  const subteamsCount = countSubteams(team);
-  const hasSubteams = subteamsCount > 0;
+    const { subteams, members } = countAll(team);
+    const totalMembers = team.memberCount + members;
+
+    return {
+      subteamsCount: subteams,
+      totalMembers,
+      hasSubteams: subteams > 0,
+    };
+  }, [team]);
+
+  const { subteamsCount, totalMembers, hasSubteams } = cascadeImpact;
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -115,33 +136,61 @@ export function DeleteTeamDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4">
-          <div className="flex items-center gap-2 mb-4 p-3 bg-muted rounded-lg">
+        <div className="py-4 space-y-4">
+          {/* Team being deleted */}
+          <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
             <TeamColorDot color={team.color} size="md" />
-            <div>
-              <p className="font-medium">{team.name}</p>
-              <p className="text-sm text-muted-foreground">
-                {team.memberCount} member{team.memberCount !== 1 ? "s" : ""}
-              </p>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{team.name}</p>
+              {team.description && (
+                <p className="text-xs text-muted-foreground line-clamp-1">
+                  {team.description}
+                </p>
+              )}
             </div>
           </div>
 
+          {/* Cascade impact details */}
+          <div className="p-3 bg-destructive/5 border border-destructive/20 rounded-lg space-y-2">
+            <p className="text-sm font-medium text-destructive">
+              The following will be permanently deleted:
+            </p>
+            <div className="grid gap-2 text-sm">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Users className="size-4 text-destructive/60" />
+                <span>
+                  {totalMembers} member{totalMembers !== 1 ? "s" : ""} will lose access
+                </span>
+              </div>
+              {hasSubteams && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <FolderTree className="size-4 text-destructive/60" />
+                  <span>
+                    {subteamsCount} sub-team{subteamsCount !== 1 ? "s" : ""} will be deleted
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Mail className="size-4 text-destructive/60" />
+                <span>All pending invitations will be cancelled</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Additional warning for sub-teams */}
           {hasSubteams && (
-            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg">
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg">
               <p className="text-sm text-amber-800 dark:text-amber-200">
-                <strong>Warning:</strong> This team has {subteamsCount} sub-team
-                {subteamsCount !== 1 ? "s" : ""} that will also be deleted.
+                <strong>Note:</strong> All sub-teams and their members will be deleted.
+                If you only want to delete this team, first move or reassign the sub-teams.
               </p>
             </div>
           )}
 
-          <p className="text-sm text-muted-foreground">
-            Deleting this team will remove all team members and any pending invitations.
-            Team meeting invitations will also be removed.
-          </p>
-
           {error && (
-            <p className="mt-4 text-sm text-destructive">{error}</p>
+            <p className="text-sm text-destructive bg-destructive/10 p-2 rounded">
+              {error}
+            </p>
           )}
         </div>
 

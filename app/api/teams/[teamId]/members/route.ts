@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { db } from "@/lib/db";
+import { user } from "@/lib/db/schema";
+import { inArray } from "drizzle-orm";
 import {
   listTeamMembers,
   inviteUserToTeam,
@@ -8,9 +11,15 @@ import {
   countActiveMembers,
   getTeamMembership,
   getEffectivePermissions,
+  getTeamWithMemberCount,
 } from "@/lib/db/team";
 import { validateInviteMembersRequest } from "@/lib/validation/team";
 import { TEAM_LIMITS, type TeamRole } from "@/types/team";
+import {
+  sendTeamInvitationEmails,
+  type TeamInvitationData,
+  type TeamEmailInvitee,
+} from "@/lib/email";
 
 interface RouteContext {
   params: Promise<{
@@ -197,7 +206,69 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     }
 
-    return NextResponse.json({ invited, failed }, { status: 201 });
+    // Send invitation emails to newly invited members (pending status only)
+    let emailsSent = 0;
+    const pendingInvites = invited.filter((inv) => inv.status === "pending");
+
+    if (pendingInvites.length > 0) {
+      try {
+        // Get team details for email
+        const teamDetails = await getTeamWithMemberCount(teamId);
+        if (teamDetails) {
+          // PERFORMANCE FIX: Fetch user info ONLY for pending invited members
+          // Instead of fetching all team members (N+1 query problem)
+          const pendingUserIds = pendingInvites.map((inv) => inv.userId);
+          const userInfos = await db
+            .select({
+              id: user.id,
+              email: user.email,
+              name: user.name,
+            })
+            .from(user)
+            .where(inArray(user.id, pendingUserIds));
+
+          // Create a map for quick lookup
+          const userInfoMap = new Map(userInfos.map((u) => [u.id, u]));
+
+          const inviteesToEmail: TeamEmailInvitee[] = pendingInvites
+            .map((inv) => {
+              const userInfo = userInfoMap.get(inv.userId);
+              return {
+                userId: inv.userId,
+                email: userInfo?.email || "",
+                name: userInfo?.name || null,
+              };
+            })
+            .filter((inv) => inv.email); // Only include invitees with email addresses
+
+          if (inviteesToEmail.length > 0) {
+            const teamData: TeamInvitationData = {
+              teamId: teamDetails.id,
+              teamName: teamDetails.name,
+              teamDescription: teamDetails.description,
+              teamColor: teamDetails.color,
+              role: body.role ?? "member",
+              memberCount: teamDetails.memberCount,
+              inviterName: session.user.name || session.user.email || "A team member",
+              inviterEmail: session.user.email || "",
+            };
+
+            const emailResult = await sendTeamInvitationEmails(teamData, inviteesToEmail);
+            emailsSent = emailResult.sent.length;
+
+            // Log any email failures (don't fail the request)
+            if (emailResult.failed.length > 0) {
+              console.warn("Some team invitation emails failed:", emailResult.failed);
+            }
+          }
+        }
+      } catch (emailError) {
+        // Log email error but don't fail the invitation
+        console.error("Error sending team invitation emails:", emailError);
+      }
+    }
+
+    return NextResponse.json({ invited, failed, emailsSent }, { status: 201 });
   } catch (error) {
     console.error("Invite members error:", error);
     return NextResponse.json(

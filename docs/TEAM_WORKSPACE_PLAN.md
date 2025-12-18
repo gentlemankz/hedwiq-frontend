@@ -59,17 +59,33 @@ Add team-based collaboration features to Hedwiq: team hierarchy in sidebar, team
 - `invitedAt`
 - **Unique constraint**: (`teamId`, `meetingId`)
 
+**`pending_external_team_invitation`** - Invitations for non-registered users (Phase 7)
+- `id` (PK): Invitation identifier (`peti-{timestamp}-{random}`)
+- `teamId` (FK → team.id)
+- `email`: Invitee's email (normalized lowercase)
+- `role`: `admin` | `member`
+- `invitedBy` (FK → user.id)
+- `invitedAt`, `expiresAt`
+- `token`: Secure acceptance token (32 chars)
+- `status`: `pending` | `accepted` | `expired` | `cancelled`
+- `acceptedAt`, `acceptedUserId` (FK → user.id, nullable)
+- `createdAt`, `updatedAt`
+- **Unique constraint**: (`teamId`, `email`) WHERE `status = 'pending'`
+
 ### Schema Relationships
 ```
 user ─┬─< team_member >── team ──< team (sub-teams via parentTeamId)
       │                     │
-      └─< meeting_invitee   └──< team_meeting >── meeting
+      │                     ├──< team_meeting >── meeting
+      │                     │
+      └─< meeting_invitee   └──< pending_external_team_invitation (Phase 7)
 ```
 
 ### Indexes
 - `team`: `parentTeamId`, `createdBy`, `(parentTeamId, orderIndex)`
 - `team_member`: `teamId`, `userId`, `(teamId, status)`, `(userId, status)`
 - `team_meeting`: `meetingId`, `teamId`
+- `pending_external_team_invitation`: `email`, `token`, `(teamId, status)`, `expiresAt`
 
 ---
 
@@ -256,6 +272,195 @@ TEAM_LIMITS, TEAM_COLORS, ROLE_PERMISSIONS
 4. Team deletion cascade behavior
 5. Performance optimization for large teams
 
+### Phase 7: External User Invitations
+**Goal**: Allow inviting users by email who don't have accounts yet. When they sign up, they automatically see/join their pending team invitations.
+
+#### 7.1 Database Schema
+
+**`pending_external_team_invitation`** - Invitations for non-registered users
+- `id` (PK): Invitation identifier (`peti-{timestamp}-{random}`)
+- `teamId` (FK → team.id): Target team
+- `email`: Invitee's email (normalized lowercase)
+- `role`: `admin` | `member` (not owner - can't pre-assign ownership)
+- `invitedBy` (FK → user.id): Who sent the invitation
+- `invitedAt`: When invitation was created
+- `expiresAt`: Invitation expiration (default: 30 days)
+- `token`: Secure token for direct-link acceptance
+- `status`: `pending` | `accepted` | `expired` | `cancelled`
+- `acceptedAt`: When user signed up and accepted
+- `acceptedUserId` (FK → user.id, nullable): The user who accepted
+- `createdAt`, `updatedAt`
+- **Unique constraint**: (`teamId`, `email`, `status='pending'`) - one pending invite per email per team
+- **Index**: `email` for signup lookup, `token` for direct acceptance
+
+#### 7.2 API Routes
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/teams/[teamId]/external-invites` | List pending external invites for team |
+| POST | `/api/teams/[teamId]/external-invites` | Create external invitation (sends email) |
+| DELETE | `/api/teams/[teamId]/external-invites/[inviteId]` | Cancel/revoke external invite |
+| POST | `/api/teams/external-invites/accept` | Accept invite via token (for logged-in users) |
+| GET | `/api/auth/pending-invitations` | Get pending invitations for current user's email |
+
+#### 7.3 Invitation Flow
+
+**Inviting a non-registered user:**
+```
+1. Admin enters email in invite input
+2. System checks: Does user exist?
+   - YES → Create team_member (existing flow)
+   - NO → Create pending_external_team_invitation
+3. Send invitation email with:
+   - Team details (name, description, member count)
+   - Inviter info
+   - "Join Team" button → signup page with token
+   - Direct link: /sign-up?team_invite={token}
+4. Show in UI as "Pending (external)" with email
+```
+
+**User signs up with pending invitation:**
+```
+1. User completes Google OAuth signup
+2. After auth callback, system checks pending_external_team_invitation
+   - Query: WHERE email = {user.email} AND status = 'pending' AND expiresAt > NOW()
+3. For each pending invitation:
+   - Create team_member record (status: 'pending' or 'active' based on setting)
+   - Update invitation: status = 'accepted', acceptedUserId = user.id
+4. Redirect to dashboard with toast: "You have X team invitations"
+```
+
+**Direct link acceptance (already logged in):**
+```
+1. User clicks link in email while logged in
+2. /sign-up?team_invite={token} redirects to /dashboard/teams?accept_token={token}
+3. System validates token and user's email matches
+4. Creates team_member, updates invitation status
+5. Shows success message
+```
+
+#### 7.4 Implementation Tasks
+
+**Database:**
+1. Create migration: `0018_add_external_team_invitation.sql`
+2. Add schema to `lib/db/schema.ts`
+3. Create `lib/db/external-team-invitation.ts` with CRUD operations:
+   - `createExternalInvitation(teamId, email, role, invitedBy)`
+   - `getExternalInvitationByToken(token)`
+   - `getExternalInvitationsForTeam(teamId)`
+   - `getPendingInvitationsForEmail(email)`
+   - `acceptExternalInvitation(token, userId)`
+   - `cancelExternalInvitation(inviteId)`
+   - `expireOldInvitations()` (cleanup job)
+
+**API Routes:**
+1. `POST /api/teams/[teamId]/members` - Update to handle external invites
+2. `GET /api/teams/[teamId]/external-invites` - List external invites
+3. `DELETE /api/teams/[teamId]/external-invites/[inviteId]` - Cancel invite
+4. `POST /api/teams/external-invites/accept` - Accept via token
+
+**Auth Integration:**
+1. Update Better Auth callback/signup hook
+2. Add `checkPendingTeamInvitations(userId, email)` function
+3. Auto-process invitations on signup
+
+**Email Template:**
+1. Create `lib/email/templates/external-team-invitation.tsx`
+   - Different from internal invite (includes signup CTA)
+   - Signup link with token parameter
+   - Expiration notice
+
+**Frontend Components:**
+1. Update `invite-team-member-input.tsx`:
+   - Show "Will send signup invitation" for unknown emails
+   - Different visual treatment for external invites
+2. Update `team-members-dialog.tsx`:
+   - New section: "Pending External Invitations"
+   - Show email, invited date, expiration, resend/cancel actions
+3. Add signup redirect handling in auth flow
+
+#### 7.5 Email Template Content
+
+```
+Subject: {inviterName} invited you to join {teamName} on Hedwiq
+
+Hi there,
+
+{inviterName} ({inviterEmail}) has invited you to join their team "{teamName}" on Hedwiq.
+
+[Team Details Box]
+- Team: {teamName}
+- Your Role: {role}
+- Members: {memberCount}
+- Description: {description}
+
+To join this team, create your Hedwiq account:
+
+[Create Account & Join Team] → /sign-up?team_invite={token}
+
+This invitation expires in {daysRemaining} days.
+
+---
+If you already have a Hedwiq account with a different email,
+you can ask {inviterName} to re-send the invitation to your account email.
+```
+
+#### 7.6 Security Considerations
+
+1. **Token security**: Use cryptographically secure random tokens (32+ chars)
+2. **Email verification**: Token is tied to specific email; user must sign up with that email
+3. **Expiration**: Default 30 days, configurable per organization
+4. **Rate limiting**: Max 10 external invites per team per hour
+5. **Spam prevention**: Don't reveal if email exists in system
+6. **Token single-use**: Mark as accepted immediately, prevent replay
+
+#### 7.7 UI States
+
+**In Team Members Dialog:**
+```
+Members (5)
+├── John Doe (Owner) - john@example.com
+├── Jane Smith (Admin) - jane@example.com
+└── Bob Wilson (Member) - bob@example.com
+
+Pending Invitations (2)
+├── alice@example.com (Member) - Invited 2 days ago [Resend] [Cancel]
+└── External: charlie@newuser.com (Admin) - Expires in 28 days [Resend] [Cancel]
+```
+
+**In Invite Input:**
+```
+[Email input: "newperson@gmail.com"]
+ℹ️ This person doesn't have a Hedwiq account yet.
+   They'll receive an invitation to sign up and join your team.
+[Send Invitation]
+```
+
+#### 7.8 Constants
+
+```typescript
+EXTERNAL_INVITE_LIMITS = {
+  DEFAULT_EXPIRATION_DAYS: 30,
+  MAX_PENDING_PER_TEAM: 50,
+  MAX_INVITES_PER_HOUR: 10,
+  TOKEN_LENGTH: 32,
+  MIN_RESEND_INTERVAL_HOURS: 24,
+}
+```
+
+#### 7.9 Testing Checklist
+
+- [ ] Create external invitation for non-existent email
+- [ ] Email sent with correct signup link
+- [ ] User signs up → auto-joins team
+- [ ] User signs up with different email → no auto-join
+- [ ] Expired invitation → rejected on signup
+- [ ] Cancel invitation → user can't join
+- [ ] Resend invitation → new token, reset expiration
+- [ ] Rate limiting works
+- [ ] Direct link acceptance for logged-in users
+- [ ] Multiple pending invitations processed on signup
+
 ---
 
 ## Permission Model
@@ -393,6 +598,8 @@ TEAM_LIMITS = {
 - Team-level meeting folders
 - Team calendar view
 - Team analytics dashboard
-- External team invitations (cross-organization)
+- Cross-organization team sharing (external team collaboration)
 - Team templates (pre-configured sub-teams)
 - SSO team provisioning (SCIM)
+- Organization-level team management
+- Team activity audit logs

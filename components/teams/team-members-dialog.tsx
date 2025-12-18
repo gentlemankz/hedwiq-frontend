@@ -8,6 +8,7 @@ import {
   Crown,
   Shield,
   User,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -37,12 +38,14 @@ import {
 import { TeamColorDot } from "./team-color-dot";
 import { InviteTeamMemberInput, type TeamInviteEntry } from "./invite-team-member-input";
 import { getInitials } from "@/lib/utils";
-import type {
-  TeamWithSubteams,
-  TeamMemberWithUser,
-  TeamRole,
+import {
+  canChangeRole,
+  canPerformAction,
+  ROLE_LABELS,
+  type TeamWithSubteams,
+  type TeamMemberWithUser,
+  type TeamRole,
 } from "@/types/team";
-import { canChangeRole, canPerformAction } from "@/types/team";
 
 // ============================================================================
 // Types
@@ -65,11 +68,7 @@ const roleIcons: Record<TeamRole, typeof Crown> = {
   member: User,
 };
 
-const roleLabels: Record<TeamRole, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  member: "Member",
-};
+// NOTE: Using shared ROLE_LABELS from types/team.ts instead of local definition
 
 // ============================================================================
 // Component
@@ -277,9 +276,10 @@ export function TeamMembersDialog({
     onOpenChange(newOpen);
   };
 
-  // Separate active and pending members
+  // Separate active, pending, and left members
   const activeMembers = members.filter((m) => m.status === "active");
   const pendingMembers = members.filter((m) => m.status === "pending");
+  const leftMembers = members.filter((m) => m.status === "left");
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -380,6 +380,46 @@ export function TeamMembersDialog({
                     </>
                   )}
 
+                  {/* Left/Removed Members - with re-invite option */}
+                  {leftMembers.length > 0 && canInvite && (
+                    <>
+                      <div className="pt-2 pb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Former Members
+                      </div>
+                      {leftMembers.map((member) => (
+                        <MemberRow
+                          key={member.id}
+                          member={member}
+                          currentUserRole={currentUserRole}
+                          currentUserId={userId}
+                          canRemove={false}
+                          onRoleChange={handleRoleChange}
+                          onRemove={handleRemove}
+                          isLeft
+                          onReInvite={async () => {
+                            try {
+                              const response = await fetch(`/api/teams/${team.id}/members`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  invites: [{ userId: member.userId }],
+                                  role: member.role,
+                                }),
+                              });
+                              if (!response.ok) {
+                                throw new Error("Failed to re-invite member");
+                              }
+                              await fetchMembers();
+                            } catch (err) {
+                              console.error("Failed to re-invite:", err);
+                              setError(err instanceof Error ? err.message : "Failed to re-invite");
+                            }
+                          }}
+                        />
+                      ))}
+                    </>
+                  )}
+
                   {members.length === 0 && !membersLoading && (
                     <div className="text-center py-8 text-muted-foreground text-sm">
                       No members found
@@ -407,6 +447,8 @@ interface MemberRowProps {
   onRoleChange: (memberId: string, newRole: TeamRole) => void;
   onRemove: (memberId: string) => void;
   isPending?: boolean;
+  isLeft?: boolean;
+  onReInvite?: () => Promise<void>;
 }
 
 function MemberRow({
@@ -417,7 +459,10 @@ function MemberRow({
   onRoleChange,
   onRemove,
   isPending,
+  isLeft,
+  onReInvite,
 }: MemberRowProps) {
+  const [isReInviting, setIsReInviting] = useState(false);
   const RoleIcon = roleIcons[member.role];
   const isCurrentUser = member.userId === currentUserId;
   const canChangeThisRole = canChangeRole(
@@ -426,6 +471,16 @@ function MemberRow({
     member.role
   );
   const canRemoveThis = canRemove && !isCurrentUser && member.role !== "owner";
+
+  const handleReInvite = async () => {
+    if (!onReInvite || isReInviting) return;
+    setIsReInviting(true);
+    try {
+      await onReInvite();
+    } finally {
+      setIsReInviting(false);
+    }
+  };
 
   return (
     <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50">
@@ -447,6 +502,11 @@ function MemberRow({
               Pending
             </Badge>
           )}
+          {isLeft && (
+            <Badge variant="outline" className="text-xs text-muted-foreground">
+              Left
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground truncate">
           {member.user.email}
@@ -459,7 +519,7 @@ function MemberRow({
             <div className="flex items-center gap-1">
               <RoleIcon className="size-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">
-                {roleLabels[member.role]}
+                {ROLE_LABELS[member.role]}
               </span>
             </div>
           </TooltipTrigger>
@@ -498,6 +558,26 @@ function MemberRow({
           onClick={() => onRemove(member.id)}
         >
           <X className="size-4" />
+        </Button>
+      )}
+
+      {/* Re-invite Button for left members */}
+      {isLeft && onReInvite && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={handleReInvite}
+          disabled={isReInviting}
+        >
+          {isReInviting ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <>
+              <UserPlus className="size-3 mr-1" />
+              Re-invite
+            </>
+          )}
         </Button>
       )}
     </div>

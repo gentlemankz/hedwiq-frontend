@@ -11,9 +11,12 @@ import { MeetingUpdatedEmail } from "./templates/meeting-updated";
 import type { MeetingUpdatedEmailProps } from "./templates/meeting-updated";
 import { MeetingCancelledEmail } from "./templates/meeting-cancelled";
 import type { MeetingCancelledEmailProps } from "./templates/meeting-cancelled";
+import { TeamInvitationEmail } from "./templates/team-invitation";
+import type { TeamInvitationEmailProps } from "./templates/team-invitation";
 import type { Meeting, MeetingWithHost } from "@/types/meeting";
 import type { AgendaWithItems } from "@/types/agenda";
 import type { MeetingInvitee } from "@/types/invitee";
+import type { TeamRole } from "@/types/team";
 import { generateCalendarLinks } from "@/lib/calendar/links";
 
 // ============================================================================
@@ -463,4 +466,166 @@ export async function previewInvitationEmail(
       </body>
     </html>
   `;
+}
+
+// ============================================================================
+// Team Invitation Emails
+// ============================================================================
+
+/**
+ * Team invitation data for sending emails.
+ */
+export interface TeamInvitationData {
+  /** Team ID */
+  teamId: string;
+  /** Team name */
+  teamName: string;
+  /** Team description */
+  teamDescription?: string | null;
+  /** Team color */
+  teamColor?: string | null;
+  /** Role being assigned */
+  role: TeamRole;
+  /** Number of current active members */
+  memberCount: number;
+  /** Inviter's name */
+  inviterName: string;
+  /** Inviter's email */
+  inviterEmail: string;
+}
+
+/**
+ * Invitee data for team invitation email.
+ */
+export interface TeamEmailInvitee {
+  /** User ID */
+  userId: string;
+  /** Invitee's email */
+  email: string;
+  /** Invitee's name */
+  name?: string | null;
+}
+
+/**
+ * Result of sending team invitation emails.
+ */
+export interface SendTeamInvitationsResult {
+  sent: Array<{ userId: string; email: string; messageId: string }>;
+  failed: Array<{ userId: string; email: string; error: string }>;
+}
+
+/**
+ * Send a team invitation email to a single user.
+ */
+export async function sendTeamInvitationEmail(
+  team: TeamInvitationData,
+  invitee: TeamEmailInvitee
+): Promise<SendInvitationResult> {
+  // Check if Resend API key is configured
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("RESEND_API_KEY not configured, skipping team invitation email");
+    return {
+      success: false,
+      error: "Email service not configured",
+    };
+  }
+
+  try {
+    // Generate accept/decline links
+    const acceptLink = `${APP_URL}/dashboard/teams?accept=${team.teamId}`;
+    const declineLink = `${APP_URL}/dashboard/teams?decline=${team.teamId}`;
+
+    // Prepare email props
+    const emailProps: TeamInvitationEmailProps = {
+      inviteeName: invitee.name || undefined,
+      inviterName: team.inviterName,
+      inviterEmail: team.inviterEmail,
+      teamName: team.teamName,
+      teamDescription: team.teamDescription || undefined,
+      teamColor: team.teamColor || undefined,
+      role: team.role,
+      memberCount: team.memberCount,
+      acceptLink,
+      declineLink,
+      appUrl: APP_URL,
+    };
+
+    // Send email
+    const { data, error } = await getResend()!.emails.send({
+      from: FROM_EMAIL,
+      to: invitee.email,
+      subject: `You've been invited to join ${team.teamName} on Hedwiq`,
+      react: TeamInvitationEmail(emailProps),
+    });
+
+    if (error) {
+      console.error("Failed to send team invitation email:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+
+    return {
+      success: true,
+      messageId: data?.id,
+    };
+  } catch (error) {
+    console.error("Error sending team invitation email:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Send team invitation emails to multiple users.
+ * Uses batched sending with concurrency limit.
+ */
+export async function sendTeamInvitationEmails(
+  team: TeamInvitationData,
+  invitees: TeamEmailInvitee[]
+): Promise<SendTeamInvitationsResult> {
+  const result: SendTeamInvitationsResult = {
+    sent: [],
+    failed: [],
+  };
+
+  if (invitees.length === 0) {
+    return result;
+  }
+
+  // Send emails in parallel with concurrency limit
+  const chunks: TeamEmailInvitee[][] = [];
+  for (let i = 0; i < invitees.length; i += EMAIL_CONCURRENCY_LIMIT) {
+    chunks.push(invitees.slice(i, i + EMAIL_CONCURRENCY_LIMIT));
+  }
+
+  for (const chunk of chunks) {
+    const results = await Promise.all(
+      chunk.map(async (invitee) => {
+        const sendResult = await sendTeamInvitationEmail(team, invitee);
+        return { invitee, sendResult };
+      })
+    );
+
+    for (const { invitee, sendResult } of results) {
+      if (sendResult.success && sendResult.messageId) {
+        result.sent.push({
+          userId: invitee.userId,
+          email: invitee.email,
+          messageId: sendResult.messageId,
+        });
+      } else {
+        result.failed.push({
+          userId: invitee.userId,
+          email: invitee.email,
+          error: sendResult.error || "Unknown error",
+        });
+      }
+    }
+  }
+
+  return result;
 }

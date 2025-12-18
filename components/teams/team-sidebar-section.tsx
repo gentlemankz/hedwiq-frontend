@@ -28,6 +28,7 @@ import { CreateTeamDialog } from "./create-team-dialog";
 import { EditTeamDialog } from "./edit-team-dialog";
 import { DeleteTeamDialog } from "./delete-team-dialog";
 import { TeamMembersDialog } from "./team-members-dialog";
+import { PendingTeamInvitations } from "./pending-team-invitations";
 import type { TeamWithSubteams } from "@/types/team";
 
 // ============================================================================
@@ -120,6 +121,11 @@ export function TeamSidebarSection({ userId }: TeamSidebarSectionProps) {
                 </SidebarMenuSubItem>
               ) : (
                 <>
+                  {/* Pending Invitations */}
+                  <SidebarMenuSubItem>
+                    <PendingTeamInvitations compact />
+                  </SidebarMenuSubItem>
+
                   {/* Team Hierarchy */}
                   {teamHierarchy.length === 0 ? (
                     <SidebarMenuSubItem>

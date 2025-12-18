@@ -26,6 +26,7 @@ import {
   EditTeamDialog,
   DeleteTeamDialog,
   TeamMembersDialog,
+  PendingTeamInvitations,
 } from "@/components/teams";
 import {
   Users,
@@ -131,6 +132,9 @@ function TeamsContent() {
             New Team
           </Button>
         </div>
+
+        {/* Pending Invitations */}
+        <PendingTeamInvitations />
 
         {/* Stats Overview */}
         {!teamsLoading && (

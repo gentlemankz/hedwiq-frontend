@@ -60,13 +60,15 @@ import {
   AlertTriangle,
   Home,
 } from "lucide-react";
-import type {
-  Team,
-  TeamMemberWithUser,
-  TeamWithSubteams,
-  TeamRole,
+import {
+  canPerformAction,
+  canChangeRole,
+  ROLE_LABELS,
+  type Team,
+  type TeamMemberWithUser,
+  type TeamWithSubteams,
+  type TeamRole,
 } from "@/types/team";
-import { canPerformAction, canChangeRole } from "@/types/team";
 
 // ============================================================================
 // Types
@@ -100,11 +102,7 @@ const roleIcons: Record<TeamRole, typeof Crown> = {
   member: User,
 };
 
-const roleLabels: Record<TeamRole, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  member: "Member",
-};
+// NOTE: Using shared ROLE_LABELS from types/team.ts
 
 const roleBadgeVariants: Record<TeamRole, "default" | "secondary" | "outline"> = {
   owner: "default",
@@ -424,7 +422,7 @@ export function TeamDetailView({
                 <TeamColorDot color={team.color} size="md" />
                 <h1 className="text-2xl font-bold tracking-tight">{team.name}</h1>
                 <Badge variant={roleBadgeVariants[userRole]}>
-                  {roleLabels[userRole]}
+                  {ROLE_LABELS[userRole]}
                 </Badge>
                 {serverIsInheritedRole && (
                   <TooltipProvider>
@@ -839,7 +837,7 @@ function MemberRow({
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <RoleIcon className="size-4" />
-              <span className="text-sm">{roleLabels[member.role]}</span>
+              <span className="text-sm">{ROLE_LABELS[member.role]}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent>

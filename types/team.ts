@@ -453,3 +453,52 @@ export function canChangeRole(
   // Admins can change admin <-> member
   return true;
 }
+
+// ============================================================================
+// Shared UI Labels & Constants
+// ============================================================================
+
+/**
+ * Human-readable role labels for UI display.
+ * Centralized to avoid duplication across components.
+ */
+export const ROLE_LABELS: Record<TeamRole, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  member: "Member",
+} as const;
+
+/**
+ * Role descriptions for tooltips and explanations.
+ */
+export const ROLE_DESCRIPTIONS: Record<TeamRole, string> = {
+  owner: "Full control over the team, including deletion and ownership transfer",
+  admin: "Can manage team members, settings, and create sub-teams",
+  member: "Can view team, see members, and invite the team to meetings",
+} as const;
+
+/**
+ * Pending team invitation data (shared between API and components).
+ */
+export interface PendingTeamInvitation {
+  /** Membership ID */
+  id: string;
+  /** Team ID */
+  teamId: string;
+  /** Team name */
+  teamName: string;
+  /** Team description */
+  teamDescription: string | null;
+  /** Team color */
+  teamColor: string | null;
+  /** Assigned role */
+  role: TeamRole;
+  /** Inviter name */
+  inviterName: string | null;
+  /** Inviter email */
+  inviterEmail: string | null;
+  /** When invited (ISO string) */
+  invitedAt: string;
+  /** Current team member count */
+  memberCount: number;
+}

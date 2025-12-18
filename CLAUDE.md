@@ -95,11 +95,13 @@ frontend/
 │   │   └── teams/                    # Team workspace APIs
 │   │       ├── route.ts              # List/create teams
 │   │       ├── reorder/route.ts      # Bulk reorder teams
+│   │       ├── invitations/route.ts  # User's pending invitations (GET/POST accept/decline)
+│   │       ├── search/route.ts       # Team search with relevance scoring
 │   │       └── [teamId]/
 │   │           ├── route.ts          # Get/update/delete team
 │   │           ├── subteams/route.ts # List/create sub-teams
 │   │           └── members/
-│   │               ├── route.ts      # List/invite team members
+│   │               ├── route.ts      # List/invite team members (+ email notifications)
 │   │               └── [memberId]/route.ts # Get/update/remove member
 │   ├── dashboard/                    # Dashboard with sidebar navigation
 │   │   ├── layout.tsx                # Dashboard layout with sidebar + auth check
@@ -205,13 +207,14 @@ frontend/
 │   │   └── index.ts
 │   ├── teams/                        # Team workspace UI components
 │   │   ├── create-team-dialog.tsx    # Dialog for creating new teams
-│   │   ├── delete-team-dialog.tsx    # Confirmation dialog for team deletion
+│   │   ├── delete-team-dialog.tsx    # Confirmation dialog with cascade impact
 │   │   ├── edit-team-dialog.tsx      # Dialog for editing team name/color
 │   │   ├── invite-team-member-input.tsx # Bulk email input with role selection
+│   │   ├── pending-team-invitations.tsx # Pending invitations banner/card component
 │   │   ├── team-color-dot.tsx        # Reusable team color indicator
-│   │   ├── team-members-dialog.tsx   # Dialog for managing team members
-│   │   ├── team-sidebar-item.tsx     # Individual team item in sidebar
-│   │   ├── team-sidebar-section.tsx  # Teams section in sidebar with CRUD
+│   │   ├── team-members-dialog.tsx   # Dialog for managing team members + re-invite
+│   │   ├── team-sidebar-item.tsx     # Individual team item in sidebar (memoized)
+│   │   ├── team-sidebar-section.tsx  # Teams section in sidebar with invitations
 │   │   └── index.ts
 │   ├── transcript-notes/
 │   │   ├── add-transcript-note-popover.tsx
@@ -283,8 +286,12 @@ frontend/
 │   │       ├── 0016_add_meeting_folder_table.sql # Meeting folder organization
 │   │       └── 0017_add_team_tables.sql          # Team workspace tables
 │   ├── email/
-│   │   ├── index.ts
-│   │   └── templates/{meeting-invitation.tsx, meeting-updated.tsx, meeting-cancelled.tsx}
+│   │   ├── index.ts                  # Email utilities + team invitation sender
+│   │   └── templates/
+│   │       ├── meeting-invitation.tsx
+│   │       ├── meeting-updated.tsx
+│   │       ├── meeting-cancelled.tsx
+│   │       └── team-invitation.tsx   # Team invitation email template
 │   ├── supabase/{client.ts, server.ts, index.ts}
 │   ├── utils.ts                      # Includes formatDurationCompact, formatMeetingDate, formatMeetingTime
 │   ├── utils/meeting-form.ts
@@ -303,7 +310,7 @@ frontend/
 │   ├── meeting.ts                    # Meeting types (includes folderId)
 │   ├── meeting-history.ts            # Types for meeting history (includes folderId, sessions, transcripts, insights, notes, stats)
 │   ├── persistence.ts                # Shared persistence types (TranscriptionEntry)
-│   ├── team.ts                       # Team types, roles, permissions, limits, API request/response types
+│   ├── team.ts                       # Team types, roles, permissions, limits, ROLE_LABELS, PendingTeamInvitation
 │   ├── transcript-note.ts
 │   └── user.ts
 ├── tests/
