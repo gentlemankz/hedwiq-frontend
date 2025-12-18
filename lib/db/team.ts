@@ -264,15 +264,46 @@ async function getTeamDepthCTE(
 
 /**
  * Gets a team by ID.
+ * If userId is provided, verifies the user is a member of the team.
  */
-export async function getTeamById(teamId: string): Promise<Team | null> {
+export async function getTeamById(
+  teamId: string,
+  userId?: string
+): Promise<Team | null> {
   const [row] = await db
     .select()
     .from(team)
     .where(eq(team.id, teamId))
     .limit(1);
 
-  return row ? rowToTeam(row) : null;
+  if (!row) return null;
+
+  // If userId provided, verify membership
+  if (userId) {
+    const membership = await getTeamMembership(teamId, userId);
+    if (!membership || membership.status !== "active") {
+      return null;
+    }
+  }
+
+  return rowToTeam(row);
+}
+
+/**
+ * Gets team members with user details.
+ * Verifies the requesting user is a member of the team.
+ */
+export async function getTeamMembers(
+  teamId: string,
+  userId: string
+): Promise<TeamMemberWithUser[]> {
+  // Verify user is a member
+  const membership = await getTeamMembership(teamId, userId);
+  if (!membership || membership.status !== "active") {
+    return [];
+  }
+
+  return listTeamMembers(teamId);
 }
 
 /**

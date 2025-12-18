@@ -1,0 +1,752 @@
+"use client";
+
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useTeamContext } from "@/contexts/team-context";
+import {
+  TeamColorDot,
+  CreateTeamDialog,
+  EditTeamDialog,
+  DeleteTeamDialog,
+  InviteTeamMemberInput,
+  type TeamInviteEntry,
+} from "@/components/teams";
+import { getInitials } from "@/lib/utils";
+import {
+  Users,
+  ArrowLeft,
+  Plus,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Crown,
+  Shield,
+  User,
+  X,
+  Loader2,
+  ChevronRight,
+} from "lucide-react";
+import type {
+  Team,
+  TeamMemberWithUser,
+  TeamWithSubteams,
+  TeamRole,
+} from "@/types/team";
+import { canPerformAction, canChangeRole } from "@/types/team";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface TeamDetailViewProps {
+  team: Team;
+  members: TeamMemberWithUser[];
+  userId: string;
+}
+
+// ============================================================================
+// Role Configuration
+// ============================================================================
+
+const roleIcons: Record<TeamRole, typeof Crown> = {
+  owner: Crown,
+  admin: Shield,
+  member: User,
+};
+
+const roleLabels: Record<TeamRole, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  member: "Member",
+};
+
+const roleBadgeVariants: Record<TeamRole, "default" | "secondary" | "outline"> = {
+  owner: "default",
+  admin: "secondary",
+  member: "outline",
+};
+
+// ============================================================================
+// Main Component
+// ============================================================================
+
+export function TeamDetailView({
+  team,
+  members: initialMembers,
+  userId,
+}: TeamDetailViewProps) {
+  const router = useRouter();
+  const mountedRef = useRef(true);
+
+  const {
+    teamHierarchy,
+    createTeam,
+    updateTeam,
+    deleteTeam,
+    getUserRoleInTeam,
+  } = useTeamContext();
+
+  // Local state for members (allows updates without full page refresh)
+  const [members, setMembers] = useState<TeamMemberWithUser[]>(initialMembers);
+  const [membersLoading, setMembersLoading] = useState(false);
+
+  // Dialog state
+  const [createSubteamDialogOpen, setCreateSubteamDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  // Invite state
+  const [pendingInvites, setPendingInvites] = useState<TeamInviteEntry[]>([]);
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // Member operation error state
+  const [memberError, setMemberError] = useState<string | null>(null);
+
+  // Get team from hierarchy for subteams display - memoized for performance
+  const teamWithSubteams = useMemo(() => {
+    const findTeamInHierarchy = (
+      teams: TeamWithSubteams[],
+      id: string
+    ): TeamWithSubteams | null => {
+      for (const t of teams) {
+        if (t.id === id) return t;
+        const found = findTeamInHierarchy(t.subteams || [], id);
+        if (found) return found;
+      }
+      return null;
+    };
+    return findTeamInHierarchy(teamHierarchy, team.id);
+  }, [teamHierarchy, team.id]);
+
+  const subteams = teamWithSubteams?.subteams || [];
+
+  // Permission checks
+  const userRole = getUserRoleInTeam(team.id, userId) as TeamRole;
+  const canEdit = canPerformAction(userRole, "canEditTeam");
+  const canDeleteTeam = canPerformAction(userRole, "canDeleteTeam");
+  const canCreateSubteam = canPerformAction(userRole, "canCreateSubteam");
+  const canInviteMembers = canPerformAction(userRole, "canInviteMembers");
+  const canRemoveMembers = canPerformAction(userRole, "canRemoveMembers");
+  const canChangeRoles = canPerformAction(userRole, "canChangeRoles");
+
+  // Active and pending members
+  const activeMembers = members.filter((m) => m.status === "active");
+  const pendingMembers = members.filter((m) => m.status === "pending");
+  const existingMemberEmails = members.map((m) => m.user.email);
+
+  // AbortController for fetch cleanup
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Cancel any ongoing fetch requests on unmount
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const refreshMembers = useCallback(async () => {
+    // Cancel any ongoing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setMembersLoading(true);
+    try {
+      const response = await fetch(`/api/teams/${team.id}/members`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("Failed to fetch members");
+      const data = await response.json();
+      if (mountedRef.current) {
+        setMembers(data.members ?? []);
+      }
+    } catch (error) {
+      // Ignore abort errors
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
+      console.error("Failed to refresh members:", error);
+    } finally {
+      if (mountedRef.current) {
+        setMembersLoading(false);
+      }
+    }
+  }, [team.id]);
+
+  // Handle invite submission - groups invites by role for batch processing
+  const handleInviteSubmit = async () => {
+    if (pendingInvites.length === 0) return;
+
+    setIsInviting(true);
+    setInviteError(null);
+
+    try {
+      // Group invites by role for batch processing
+      const invitesByRole = pendingInvites.reduce((acc, inv) => {
+        if (!acc[inv.role]) acc[inv.role] = [];
+        acc[inv.role].push(inv.email);
+        return acc;
+      }, {} as Record<TeamRole, string[]>);
+
+      let totalFailed: Array<{ identifier: string; reason: string }> = [];
+
+      // Send invites for each role group
+      for (const [role, emails] of Object.entries(invitesByRole)) {
+        const response = await fetch(`/api/teams/${team.id}/members`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            invites: emails.map((email) => ({ email })),
+            role,
+          }),
+        });
+
+        if (!mountedRef.current) return;
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to send invitations");
+        }
+
+        const data = await response.json();
+        if (data.failed && data.failed.length > 0) {
+          totalFailed = [...totalFailed, ...data.failed];
+        }
+      }
+
+      if (totalFailed.length > 0) {
+        setInviteError(
+          `${totalFailed.length} invitation(s) failed: ${totalFailed
+            .map((f) => f.reason)
+            .join(", ")}`
+        );
+      }
+
+      setPendingInvites([]);
+      await refreshMembers();
+    } catch (error) {
+      if (mountedRef.current) {
+        setInviteError(
+          error instanceof Error ? error.message : "Failed to send invitations"
+        );
+      }
+    } finally {
+      if (mountedRef.current) {
+        setIsInviting(false);
+      }
+    }
+  };
+
+  // Handle role change
+  const handleRoleChange = async (memberId: string, newRole: TeamRole) => {
+    setMemberError(null);
+    try {
+      const response = await fetch(`/api/teams/${team.id}/members/${memberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: newRole }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update role");
+      }
+
+      // Update local state
+      setMembers((prev) =>
+        prev.map((m) => (m.id === memberId ? { ...m, role: newRole } : m))
+      );
+    } catch (error) {
+      console.error("Failed to update role:", error);
+      if (mountedRef.current) {
+        setMemberError(
+          error instanceof Error ? error.message : "Failed to update member role"
+        );
+      }
+    }
+  };
+
+  // Handle member removal
+  const handleRemoveMember = async (memberId: string) => {
+    setMemberError(null);
+    try {
+      const response = await fetch(`/api/teams/${team.id}/members/${memberId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to remove member");
+      }
+
+      // Update local state
+      setMembers((prev) => prev.filter((m) => m.id !== memberId));
+    } catch (error) {
+      console.error("Failed to remove member:", error);
+      if (mountedRef.current) {
+        setMemberError(
+          error instanceof Error ? error.message : "Failed to remove member"
+        );
+      }
+    }
+  };
+
+  // Convert team to TeamWithSubteams for dialogs
+  const teamAsSubteams: TeamWithSubteams = {
+    ...team,
+    memberCount: activeMembers.length,
+    subteams: subteams,
+  };
+
+  return (
+    <div className="p-6 md:p-8">
+      <div className="mx-auto max-w-4xl space-y-6">
+        {/* Back Button & Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => router.push("/dashboard/teams")}
+              className="mt-1"
+            >
+              <ArrowLeft className="size-5" />
+            </Button>
+            <div>
+              <div className="flex items-center gap-3">
+                <TeamColorDot color={team.color} size="md" />
+                <h1 className="text-2xl font-bold tracking-tight">{team.name}</h1>
+                <Badge variant={roleBadgeVariants[userRole]}>
+                  {roleLabels[userRole]}
+                </Badge>
+              </div>
+              {team.description && (
+                <p className="text-muted-foreground mt-1 ml-10">
+                  {team.description}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Actions */}
+          {(canEdit || canDeleteTeam || canCreateSubteam) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <MoreHorizontal className="size-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canCreateSubteam && (
+                  <DropdownMenuItem onClick={() => setCreateSubteamDialogOpen(true)}>
+                    <Plus className="mr-2 size-4" />
+                    Add Sub-team
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>
+                    <Pencil className="mr-2 size-4" />
+                    Edit Team
+                  </DropdownMenuItem>
+                )}
+                {(canCreateSubteam || canEdit) && canDeleteTeam && (
+                  <DropdownMenuSeparator />
+                )}
+                {canDeleteTeam && (
+                  <DropdownMenuItem
+                    onClick={() => setDeleteDialogOpen(true)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="mr-2 size-4" />
+                    Delete Team
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Members
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <Users className="size-5 text-primary" />
+                <span className="text-2xl font-bold">{activeMembers.length}</span>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Pending Invites
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <User className="size-5 text-primary" />
+                <span className="text-2xl font-bold">{pendingMembers.length}</span>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Sub-teams
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <ChevronRight className="size-5 text-primary" />
+                <span className="text-2xl font-bold">{subteams.length}</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Invite Members */}
+        {canInviteMembers && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Invite Members</CardTitle>
+              <CardDescription>
+                Invite new people to join this team
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <InviteTeamMemberInput
+                invites={pendingInvites}
+                onChange={setPendingInvites}
+                disabled={isInviting}
+                existingMemberEmails={existingMemberEmails}
+              />
+              {inviteError && (
+                <p className="text-sm text-destructive">{inviteError}</p>
+              )}
+              {pendingInvites.length > 0 && (
+                <Button
+                  onClick={handleInviteSubmit}
+                  disabled={isInviting}
+                  className="w-full"
+                >
+                  {isInviting ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      Sending Invitations...
+                    </>
+                  ) : (
+                    `Send ${pendingInvites.length} Invitation${pendingInvites.length !== 1 ? "s" : ""}`
+                  )}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Members List */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="size-5" />
+              Team Members
+            </CardTitle>
+            <CardDescription>
+              {activeMembers.length} active member{activeMembers.length !== 1 ? "s" : ""}
+              {pendingMembers.length > 0 &&
+                `, ${pendingMembers.length} pending`}
+            </CardDescription>
+            {memberError && (
+              <p className="text-sm text-destructive mt-2">{memberError}</p>
+            )}
+          </CardHeader>
+          <CardContent>
+            {membersLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-16 rounded-lg" />
+                ))}
+              </div>
+            ) : (
+              <ScrollArea className="max-h-[400px]">
+                <div className="space-y-2">
+                  {/* Active Members */}
+                  {activeMembers.map((member) => (
+                    <MemberRow
+                      key={member.id}
+                      member={member}
+                      currentUserRole={userRole}
+                      currentUserId={userId}
+                      canChangeRoles={canChangeRoles}
+                      canRemove={canRemoveMembers}
+                      onRoleChange={handleRoleChange}
+                      onRemove={handleRemoveMember}
+                    />
+                  ))}
+
+                  {/* Pending Members */}
+                  {pendingMembers.length > 0 && (
+                    <>
+                      <div className="pt-4 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Pending Invitations
+                      </div>
+                      {pendingMembers.map((member) => (
+                        <MemberRow
+                          key={member.id}
+                          member={member}
+                          currentUserRole={userRole}
+                          currentUserId={userId}
+                          canChangeRoles={canChangeRoles}
+                          canRemove={canRemoveMembers}
+                          onRoleChange={handleRoleChange}
+                          onRemove={handleRemoveMember}
+                          isPending
+                        />
+                      ))}
+                    </>
+                  )}
+
+                  {members.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      No members found
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Sub-teams */}
+        {subteams.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ChevronRight className="size-5" />
+                Sub-teams
+              </CardTitle>
+              <CardDescription>
+                {subteams.length} sub-team{subteams.length !== 1 ? "s" : ""} under
+                this team
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {subteams.map((subteam) => (
+                  <Card
+                    key={subteam.id}
+                    className="cursor-pointer transition-colors hover:bg-muted/50"
+                    onClick={() => router.push(`/dashboard/teams/${subteam.id}`)}
+                  >
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <TeamColorDot color={subteam.color} />
+                        <span className="truncate">{subteam.name}</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <Users className="size-4" />
+                        <span>
+                          {subteam.memberCount} member
+                          {subteam.memberCount !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Dialogs */}
+        <CreateTeamDialog
+          open={createSubteamDialogOpen}
+          onOpenChange={setCreateSubteamDialogOpen}
+          parentTeam={teamAsSubteams}
+          createTeam={createTeam}
+          onTeamCreated={() => setCreateSubteamDialogOpen(false)}
+        />
+
+        <EditTeamDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          team={teamAsSubteams}
+          updateTeam={updateTeam}
+          onTeamUpdated={() => setEditDialogOpen(false)}
+        />
+
+        <DeleteTeamDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          team={teamAsSubteams}
+          deleteTeam={async (id) => {
+            const success = await deleteTeam(id);
+            if (success) {
+              router.push("/dashboard/teams");
+            }
+            return success;
+          }}
+          onTeamDeleted={() => {
+            setDeleteDialogOpen(false);
+            router.push("/dashboard/teams");
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Member Row Component
+// ============================================================================
+
+interface MemberRowProps {
+  member: TeamMemberWithUser;
+  currentUserRole: TeamRole;
+  currentUserId: string;
+  canChangeRoles: boolean;
+  canRemove: boolean;
+  onRoleChange: (memberId: string, newRole: TeamRole) => void;
+  onRemove: (memberId: string) => void;
+  isPending?: boolean;
+}
+
+function MemberRow({
+  member,
+  currentUserRole,
+  currentUserId,
+  canChangeRoles,
+  canRemove,
+  onRoleChange,
+  onRemove,
+  isPending,
+}: MemberRowProps) {
+  const RoleIcon = roleIcons[member.role];
+  const isCurrentUser = member.userId === currentUserId;
+  const canChangeThisRole =
+    canChangeRoles &&
+    canChangeRole(currentUserRole, member.role, member.role) &&
+    !isCurrentUser &&
+    member.role !== "owner";
+  const canRemoveThis = canRemove && !isCurrentUser && member.role !== "owner";
+
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 border">
+      <Avatar className="size-10">
+        <AvatarImage src={member.user.image ?? undefined} alt={member.user.name} />
+        <AvatarFallback>{getInitials(member.user.name)}</AvatarFallback>
+      </Avatar>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium truncate">{member.user.name}</span>
+          {isCurrentUser && (
+            <Badge variant="outline" className="text-xs">
+              You
+            </Badge>
+          )}
+          {isPending && (
+            <Badge variant="secondary" className="text-xs">
+              Pending
+            </Badge>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground truncate">
+          {member.user.email}
+        </p>
+      </div>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <RoleIcon className="size-4" />
+              <span className="text-sm">{roleLabels[member.role]}</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            {member.role === "owner"
+              ? "Team owner - full control"
+              : member.role === "admin"
+              ? "Admin - can manage members and settings"
+              : "Member - can view and participate"}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      {/* Role Selector */}
+      {canChangeThisRole && (
+        <Select
+          value={member.role}
+          onValueChange={(v) => onRoleChange(member.id, v as TeamRole)}
+        >
+          <SelectTrigger className="w-[100px] h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="member">Member</SelectItem>
+            <SelectItem value="admin">Admin</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
+
+      {/* Remove Button */}
+      {canRemoveThis && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-muted-foreground hover:text-destructive"
+          onClick={() => onRemove(member.id)}
+        >
+          <X className="size-4" />
+        </Button>
+      )}
+    </div>
+  );
+}

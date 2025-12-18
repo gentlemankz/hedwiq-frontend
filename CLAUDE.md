@@ -108,8 +108,13 @@ frontend/
 │   │   │   ├── page.tsx              # All folders overview + meetings list
 │   │   │   └── [folderId]/
 │   │   │       └── page.tsx          # Single folder view with meetings
-│   │   └── settings/
-│   │       └── page.tsx              # User preferences (stub)
+│   │   ├── settings/
+│   │   │   └── page.tsx              # User preferences (stub)
+│   │   └── teams/                    # Team workspace pages
+│   │       ├── page.tsx              # Teams overview with grid/stats
+│   │       └── [teamId]/
+│   │           ├── page.tsx          # Team detail server component
+│   │           └── team-detail-view.tsx # Team detail client view
 │   ├── meetings/[roomId]/            # Dynamic room routes
 │   │   ├── components/
 │   │   │   ├── agenda-builder/
@@ -132,21 +137,17 @@ frontend/
 │   ├── layout.tsx                    # Root layout
 │   └── page.tsx                      # Landing page
 ├── components/
+│   ├── actions/                      # Action items UI components
+│   │   ├── action-badge.tsx          # Status badge for action items
+│   │   ├── action-card.tsx           # Individual action item card
+│   │   └── index.ts
 │   ├── agenda/
 │   │   ├── agenda-progress-item.tsx
 │   │   ├── agenda-progress.tsx
-│   │   └── progress-indicator.tsx
+│   │   ├── progress-indicator.tsx
+│   │   └── index.ts
 │   ├── calendar/
 │   │   ├── calendar-status-card.tsx
-│   │   └── index.ts
-│   ├── folders/                      # Meeting folder UI components
-│   │   ├── delete-folder-dialog.tsx  # Confirmation dialog for folder deletion
-│   │   ├── edit-folder-dialog.tsx    # Dialog for editing folder name/color
-│   │   ├── folder-color-dot.tsx      # Reusable folder color indicator
-│   │   ├── folder-select.tsx         # Dropdown select for choosing folders
-│   │   └── index.ts
-│   ├── layout/                       # Layout components
-│   │   ├── dashboard-sidebar.tsx     # Dashboard sidebar with folders nav
 │   │   └── index.ts
 │   ├── documents/
 │   │   ├── document-reference-badge.tsx
@@ -155,8 +156,14 @@ frontend/
 │   │   ├── pdf-viewer.tsx
 │   │   └── index.ts
 │   ├── email-drafts/
-│   │   ├── email-draft-card.tsx    # Collapsible email draft card with inline editing
-│   │   ├── email-draft-panel.tsx   # Email drafts panel with tabs (Pending/Sent/Dismissed)
+│   │   ├── email-draft-card.tsx      # Collapsible email draft card with inline editing
+│   │   ├── email-draft-panel.tsx     # Email drafts panel with tabs (Pending/Sent/Dismissed)
+│   │   └── index.ts
+│   ├── folders/                      # Meeting folder UI components
+│   │   ├── delete-folder-dialog.tsx  # Confirmation dialog for folder deletion
+│   │   ├── edit-folder-dialog.tsx    # Dialog for editing folder name/color
+│   │   ├── folder-color-dot.tsx      # Reusable folder color indicator
+│   │   ├── folder-select.tsx         # Dropdown select for choosing folders
 │   │   └── index.ts
 │   ├── gmail/
 │   │   ├── gmail-status-card.tsx
@@ -165,6 +172,9 @@ frontend/
 │   │   ├── insight-badge.tsx
 │   │   ├── insight-card.tsx
 │   │   ├── insights-summary-panel.tsx
+│   │   └── index.ts
+│   ├── layout/                       # Layout components
+│   │   ├── dashboard-sidebar.tsx     # Dashboard sidebar with folders + teams nav
 │   │   └── index.ts
 │   ├── meeting/
 │   │   ├── custom-control-bar.tsx
@@ -178,15 +188,25 @@ frontend/
 │   │   ├── meeting-card.tsx
 │   │   ├── meeting-list.tsx
 │   │   ├── meeting-type-selector.tsx
-│   │   ├── schedule-meeting-dialog.tsx
+│   │   ├── move-meeting-to-folder-dialog.tsx # Dialog for single/bulk meeting move
 │   │   ├── past-meeting-card.tsx     # Card with selection mode + move to folder action
 │   │   ├── past-meetings-list.tsx    # Paginated list with bulk selection + move
-│   │   ├── move-meeting-to-folder-dialog.tsx # Dialog for single/bulk meeting move
+│   │   ├── schedule-meeting-dialog.tsx
 │   │   └── index.ts
 │   ├── participant/
 │   │   ├── custom-participant-tile.tsx
 │   │   ├── custom-video-conference.tsx
 │   │   ├── use-is-encrypted.ts
+│   │   └── index.ts
+│   ├── teams/                        # Team workspace UI components
+│   │   ├── create-team-dialog.tsx    # Dialog for creating new teams
+│   │   ├── delete-team-dialog.tsx    # Confirmation dialog for team deletion
+│   │   ├── edit-team-dialog.tsx      # Dialog for editing team name/color
+│   │   ├── invite-team-member-input.tsx # Bulk email input with role selection
+│   │   ├── team-color-dot.tsx        # Reusable team color indicator
+│   │   ├── team-members-dialog.tsx   # Dialog for managing team members
+│   │   ├── team-sidebar-item.tsx     # Individual team item in sidebar
+│   │   ├── team-sidebar-section.tsx  # Teams section in sidebar with CRUD
 │   │   └── index.ts
 │   ├── transcript-notes/
 │   │   ├── add-transcript-note-popover.tsx
@@ -196,12 +216,14 @@ frontend/
 │   │   ├── transcription-error-boundary.tsx
 │   │   ├── transcription-sidebar.tsx
 │   │   └── index.ts
-│   └── ui/                           # shadcn/ui components (50+ primitives)
+│   └── ui/                           # shadcn/ui components (60+ primitives)
 ├── contexts/
 │   ├── index.ts                      # Barrel export
+│   ├── actions-context.tsx           # Action items state management + LiveKit stream
 │   ├── agenda/
 │   │   ├── agenda-context.tsx        # Main provider orchestrating all hooks
 │   │   ├── constants.ts              # Agent prefix, retry settings, debug flag
+│   │   ├── index.ts                  # Barrel export for agenda context
 │   │   ├── types.ts                  # Context types + LiveKit interfaces
 │   │   ├── validators.ts             # Type guards for events + state attributes
 │   │   ├── use-agenda-api.ts         # API fetch with retry/backoff logic
@@ -213,10 +235,13 @@ frontend/
 │   ├── email-drafts-context.tsx      # Email draft state management + LiveKit stream subscription
 │   ├── insights-context.tsx          # AI insights state management
 │   ├── meeting-persistence-context.tsx # Meeting data persistence (transcripts, insights, notes)
-│   └── sidebar-context.tsx           # Dashboard sidebar UI state + folders CRUD
+│   ├── sidebar-context.tsx           # Dashboard sidebar UI state + folders CRUD
+│   └── team-context.tsx              # Team workspace state management + CRUD
 ├── hooks/
+│   ├── use-actions.ts                # Action items context consumer utilities
 │   ├── use-agenda.ts                 # Agenda context consumer utilities
 │   ├── use-block-notes.ts            # Block-based notes (text + transcript refs) w/ storage + migration
+│   ├── use-folders.ts                # Folders context consumer utilities
 │   ├── use-insights.ts
 │   ├── use-media-devices.ts
 │   ├── use-mobile.ts
@@ -227,6 +252,8 @@ frontend/
 │   ├── calendar-sync.ts              # Google Calendar sync for meetings
 │   ├── calendar/ {ics.ts, links.ts, utils.ts, index.ts}
 │   ├── gmail-oauth.ts                # Gmail OAuth utilities (token exchange, refresh, revoke)
+│   ├── google-calendar.ts            # Google Calendar API utilities (event creation, sync)
+│   ├── google-oauth-base.ts          # Shared Google OAuth base utilities
 │   ├── google-oauth.ts               # Google Calendar OAuth utilities
 │   ├── db/                           # Drizzle ORM setup
 │   │   ├── agenda.ts
@@ -235,17 +262,19 @@ frontend/
 │   │   ├── email-draft.ts            # Email draft CRUD operations (upsert, update, send tracking)
 │   │   ├── folder.ts                 # Meeting folder CRUD operations
 │   │   ├── gmail.ts                  # Gmail integration CRUD operations
+│   │   ├── index.ts
 │   │   ├── invitee.ts
 │   │   ├── meeting.ts                # Meeting CRUD (includes folderId support)
 │   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
 │   │   ├── room-access.ts
-│   │   ├── team.ts                   # Team CRUD, members, hierarchy, permissions
 │   │   ├── schema.ts                 # Includes team, team_member, team_meeting tables
-│   │   ├── index.ts
-│   │   └── migrations/               # SQL + meta snapshots
+│   │   ├── team.ts                   # Team CRUD, members, hierarchy, permissions
+│   │   └── migrations/               # SQL + meta snapshots (0000-0017)
 │   │       ├── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
+│   │       ├── 0012_add_action_item_table.sql    # Action items table for meeting actions
 │   │       ├── 0013_add_gmail_integration.sql    # Gmail OAuth integration table
 │   │       ├── 0014_add_email_draft_table.sql    # Email draft + sent audit tables
+│   │       ├── 0015_drop_email_draft_fk_constraints.sql # Remove FK constraints from email_draft
 │   │       ├── 0016_add_meeting_folder_table.sql # Meeting folder organization
 │   │       └── 0017_add_team_tables.sql          # Team workspace tables
 │   ├── email/
@@ -257,6 +286,7 @@ frontend/
 │   ├── validation.ts
 │   └── validation/{agenda.ts, folder.ts, invitee.ts, meeting.ts, team.ts}
 ├── types/
+│   ├── action.ts                     # Action item types, status enum, priority levels
 │   ├── agenda.ts
 │   ├── calendar.ts
 │   ├── document.ts
@@ -271,7 +301,6 @@ frontend/
 │   ├── team.ts                       # Team types, roles, permissions, limits, API request/response types
 │   ├── transcript-note.ts
 │   └── user.ts
-├── docs/                             # Project documentation + reference notes
 ├── tests/
 │   ├── setup.ts                      # Vitest setup (jsdom, matchers)
 │   ├── api/rooms/agenda.test.ts
@@ -287,15 +316,19 @@ frontend/
 │   └── types/agenda.test.ts
 ├── public/
 │   ├── pdf.worker.min.mjs            # PDF.js worker for react-pdf
-│   ├── blue_avatar.webp ... red_avatar.webp
+│   ├── blue_avatar.webp              # User avatar images
+│   ├── green_avatar.webp
+│   ├── orange_avatar.webp
+│   ├── purple_avatar.webp
+│   ├── red_avatar.webp
 │   ├── image1.png
 │   ├── file.svg
 │   ├── globe.svg
-│   ├── next.svg
 │   ├── vercel.svg
 │   └── window.svg
 ├── proxy.ts                          # Next.js 16 route protection middleware
 ├── drizzle.config.ts                 # Drizzle ORM configuration
+├── vitest.config.ts                  # Vitest test configuration
 ├── components.json                   # shadcn/ui configuration
 ├── next.config.ts                    # Next.js configuration
 ├── eslint.config.mjs                 # ESLint configuration

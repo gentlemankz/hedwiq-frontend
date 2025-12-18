@@ -4,14 +4,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Loader2,
   Users,
-  Mail,
   X,
   Crown,
   Shield,
   User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +35,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { TeamColorDot } from "./team-color-dot";
+import { InviteTeamMemberInput, type TeamInviteEntry } from "./invite-team-member-input";
 import { getInitials } from "@/lib/utils";
 import type {
   TeamWithSubteams,
@@ -96,9 +95,8 @@ export function TeamMembersDialog({
   const [membersLoading, setMembersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Invite state
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<TeamRole>("member");
+  // Invite state - using InviteTeamMemberInput for bulk support
+  const [pendingInvites, setPendingInvites] = useState<TeamInviteEntry[]>([]);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
@@ -139,61 +137,69 @@ export function TeamMembersDialog({
   useEffect(() => {
     if (open) {
       fetchMembers();
-      setInviteEmail("");
-      setInviteRole("member");
+      setPendingInvites([]);
       setInviteError(null);
     }
   }, [open, fetchMembers]);
 
-  // Handle invite
-  const handleInvite = async () => {
-    const trimmedEmail = inviteEmail.trim().toLowerCase();
-    if (!trimmedEmail) {
-      setInviteError("Email is required");
-      return;
-    }
-
-    // Basic email validation
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setInviteError("Please enter a valid email address");
-      return;
-    }
+  // Handle bulk invite submission
+  const handleInviteSubmit = async () => {
+    if (pendingInvites.length === 0) return;
 
     setIsInviting(true);
     setInviteError(null);
 
     try {
-      const response = await fetch(`/api/teams/${team.id}/members`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          invites: [{ email: trimmedEmail }],
-          role: inviteRole,
-        }),
-      });
+      // Group invites by role for batch processing
+      const invitesByRole = pendingInvites.reduce((acc, inv) => {
+        if (!acc[inv.role]) acc[inv.role] = [];
+        acc[inv.role].push(inv.email);
+        return acc;
+      }, {} as Record<TeamRole, string[]>);
 
-      if (!mountedRef.current) return;
+      let totalFailed: Array<{ identifier: string; reason: string }> = [];
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to send invitation");
+      // Send invites for each role group
+      for (const [role, emails] of Object.entries(invitesByRole)) {
+        const response = await fetch(`/api/teams/${team.id}/members`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            invites: emails.map((email) => ({ email })),
+            role,
+          }),
+        });
+
+        if (!mountedRef.current) return;
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to send invitations");
+        }
+
+        const data = await response.json();
+        if (data.failed && data.failed.length > 0) {
+          totalFailed = [...totalFailed, ...data.failed];
+        }
       }
 
-      const data = await response.json();
-
-      if (data.failed && data.failed.length > 0) {
-        setInviteError(data.failed[0].reason);
-      } else {
-        setInviteEmail("");
-        // Refresh members list
-        await fetchMembers();
+      if (totalFailed.length > 0) {
+        setInviteError(
+          `${totalFailed.length} invitation(s) failed: ${totalFailed
+            .map((f) => f.reason)
+            .join(", ")}`
+        );
       }
+
+      // Clear pending invites and refresh
+      setPendingInvites([]);
+      await fetchMembers();
     } catch (err) {
       if (!mountedRef.current) return;
 
-      console.error("Failed to invite member:", err);
+      console.error("Failed to invite members:", err);
       setInviteError(
-        err instanceof Error ? err.message : "Failed to send invitation"
+        err instanceof Error ? err.message : "Failed to send invitations"
       );
     } finally {
       if (mountedRef.current) {
@@ -201,6 +207,9 @@ export function TeamMembersDialog({
       }
     }
   };
+
+  // Get existing member emails for duplicate prevention
+  const existingMemberEmails = members.map((m) => m.user.email);
 
   // Handle role change
   const handleRoleChange = async (memberId: string, newRole: TeamRole) => {
@@ -289,49 +298,31 @@ export function TeamMembersDialog({
         <div className="py-4 space-y-4">
           {/* Invite Section */}
           {canInvite && (
-            <div className="space-y-2">
-              <Label>Invite New Member</Label>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Input
-                    placeholder="email@example.com"
-                    value={inviteEmail}
-                    onChange={(e) => {
-                      setInviteEmail(e.target.value);
-                      setInviteError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !isInviting) {
-                        e.preventDefault();
-                        handleInvite();
-                      }
-                    }}
-                    disabled={isInviting}
-                  />
-                </div>
-                <Select
-                  value={inviteRole}
-                  onValueChange={(v) => setInviteRole(v as TeamRole)}
-                  disabled={isInviting}
-                >
-                  <SelectTrigger className="w-[100px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button onClick={handleInvite} disabled={isInviting}>
-                  {isInviting ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Mail className="size-4" />
-                  )}
-                </Button>
-              </div>
+            <div className="space-y-3">
+              <InviteTeamMemberInput
+                invites={pendingInvites}
+                onChange={setPendingInvites}
+                disabled={isInviting}
+                existingMemberEmails={existingMemberEmails}
+              />
               {inviteError && (
                 <p className="text-sm text-destructive">{inviteError}</p>
+              )}
+              {pendingInvites.length > 0 && (
+                <Button
+                  onClick={handleInviteSubmit}
+                  disabled={isInviting}
+                  className="w-full"
+                >
+                  {isInviting ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    `Send ${pendingInvites.length} Invitation${pendingInvites.length !== 1 ? "s" : ""}`
+                  )}
+                </Button>
               )}
             </div>
           )}
