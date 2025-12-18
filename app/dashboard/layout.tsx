@@ -2,7 +2,9 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { listFoldersByUser } from "@/lib/db/folder";
+import { getTeamHierarchyForUser, listTeamsForUser } from "@/lib/db/team";
 import { SidebarProvider } from "@/contexts/sidebar-context";
+import { TeamProvider } from "@/contexts/team-context";
 import {
   SidebarProvider as SidebarUIProvider,
   SidebarInset,
@@ -26,27 +28,31 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  // Fetch initial folders for the sidebar
-  const initialFolders = await listFoldersByUser(session.user.id, {
-    includeMeetingCounts: true,
-  });
+  // Fetch initial folders and teams for the sidebar
+  const [initialFolders, initialTeams, initialHierarchy] = await Promise.all([
+    listFoldersByUser(session.user.id, { includeMeetingCounts: true }),
+    listTeamsForUser(session.user.id),
+    getTeamHierarchyForUser(session.user.id),
+  ]);
 
   return (
     <SidebarProvider initialFolders={initialFolders}>
-      <SidebarUIProvider>
-        <DashboardSidebar user={session.user} />
-        <SidebarInset>
-          {/* Header with sidebar trigger for mobile */}
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            <span className="font-semibold">Dashboard</span>
-          </header>
+      <TeamProvider initialTeams={initialTeams} initialHierarchy={initialHierarchy}>
+        <SidebarUIProvider>
+          <DashboardSidebar user={session.user} />
+          <SidebarInset>
+            {/* Header with sidebar trigger for mobile */}
+            <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
+              <SidebarTrigger className="-ml-1" />
+              <Separator orientation="vertical" className="mr-2 h-4" />
+              <span className="font-semibold">Dashboard</span>
+            </header>
 
-          {/* Main Content */}
-          <main className="flex-1 overflow-auto">{children}</main>
-        </SidebarInset>
-      </SidebarUIProvider>
+            {/* Main Content */}
+            <main className="flex-1 overflow-auto">{children}</main>
+          </SidebarInset>
+        </SidebarUIProvider>
+      </TeamProvider>
     </SidebarProvider>
   );
 }

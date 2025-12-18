@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSidebarContext } from "@/contexts/sidebar-context";
 import { FolderColorDot, EditFolderDialog, DeleteFolderDialog } from "@/components/folders";
+import { TeamSidebarSection } from "@/components/teams";
 import { getInitials } from "@/lib/utils";
 import type { User } from "@/types/user";
 import type { Folder } from "@/types/folder";
@@ -185,6 +186,9 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+
+              {/* Teams Section */}
+              <TeamSidebarSection userId={user.id} />
 
               {/* Past Meetings with Folders */}
               <Collapsible

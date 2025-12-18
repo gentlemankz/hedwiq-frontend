@@ -18,3 +18,4 @@ export {
   useMeetingPersistenceRequired,
 } from "./meeting-persistence-context";
 export { SidebarProvider, useSidebarContext } from "./sidebar-context";
+export { TeamProvider, useTeamContext } from "./team-context";
