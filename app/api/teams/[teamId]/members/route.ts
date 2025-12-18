@@ -13,10 +13,15 @@ import {
   getEffectivePermissions,
   getTeamWithMemberCount,
 } from "@/lib/db/team";
+import {
+  createExternalInvitation,
+  emailHasAccount,
+} from "@/lib/db/external-team-invitation";
 import { validateInviteMembersRequest } from "@/lib/validation/team";
 import { TEAM_LIMITS, type TeamRole } from "@/types/team";
 import {
   sendTeamInvitationEmails,
+  sendExternalTeamInvitationEmail,
   type TeamInvitationData,
   type TeamEmailInvitee,
 } from "@/lib/email";
@@ -176,20 +181,99 @@ export async function POST(request: NextRequest, context: RouteContext) {
             continue;
           }
 
-          // inviteUserByEmail handles re-inviting left users
-          member = await inviteUserByEmail({
-            teamId,
-            email: invite.email,
-            invitedBy: session.user.id,
-            role: body.role,
-          });
+          // First check if user has an account
+          const hasAccount = await emailHasAccount(invite.email);
 
-          if (!member) {
-            failed.push({
-              identifier,
-              reason: "User not found with this email",
+          if (hasAccount) {
+            // User exists - use internal invite flow
+            member = await inviteUserByEmail({
+              teamId,
+              email: invite.email,
+              invitedBy: session.user.id,
+              role: body.role,
             });
-            continue;
+
+            if (!member) {
+              // Edge case: emailHasAccount returned true but inviteUserByEmail failed
+              // This could happen due to race conditions, try external invite as fallback
+              console.warn(
+                `User lookup succeeded but invite failed for ${invite.email}, falling back to external invite`
+              );
+            }
+          }
+
+          // If no member created (user doesn't exist or internal invite failed), create external invitation
+          if (!member) {
+            try {
+              // Get team details for the email
+              const teamDetails = await getTeamWithMemberCount(teamId);
+              if (!teamDetails) {
+                failed.push({
+                  identifier,
+                  reason: "Team not found",
+                });
+                continue;
+              }
+
+              // Create external invitation
+              const externalRole = body.role === "owner" ? "member" : (body.role ?? "member");
+              const externalInvite = await createExternalInvitation({
+                teamId,
+                email: invite.email,
+                role: externalRole as Exclude<TeamRole, "owner">,
+                invitedBy: session.user.id,
+              });
+
+              if (externalInvite) {
+                // Send external invitation email
+                try {
+                  await sendExternalTeamInvitationEmail({
+                    teamId,
+                    teamName: teamDetails.name,
+                    teamDescription: teamDetails.description,
+                    teamColor: teamDetails.color,
+                    role: externalRole as Exclude<TeamRole, "owner">,
+                    memberCount: teamDetails.memberCount,
+                    inviterName: session.user.name || session.user.email || "A team member",
+                    inviterEmail: session.user.email || "",
+                    inviteeEmail: invite.email,
+                    token: externalInvite.token,
+                  });
+                } catch (emailError) {
+                  console.error(
+                    `Failed to send external invitation email to ${invite.email}:`,
+                    emailError
+                  );
+                  // Don't fail - invitation was created
+                }
+
+                // Mark as external invite success (no team_member record to return)
+                // We return a synthetic response to indicate success
+                invited.push({
+                  id: externalInvite.id,
+                  teamId,
+                  userId: "", // No user ID for external invites
+                  role: externalRole,
+                  invitedBy: session.user.id,
+                  status: "external_pending",
+                  invitedAt: externalInvite.invitedAt,
+                } as unknown as Awaited<ReturnType<typeof inviteUserToTeam>>);
+                continue;
+              } else {
+                failed.push({
+                  identifier,
+                  reason: "Pending invitation already exists for this email",
+                });
+                continue;
+              }
+            } catch (externalError) {
+              console.error(`Failed to create external invite for ${invite.email}:`, externalError);
+              failed.push({
+                identifier,
+                reason: externalError instanceof Error ? externalError.message : "Failed to create invitation",
+              });
+              continue;
+            }
           }
         }
 

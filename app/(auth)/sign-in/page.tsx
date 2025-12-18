@@ -29,8 +29,15 @@ function SignInContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const callbackURL = searchParams.get("callbackURL") || "/dashboard";
+  const teamInviteToken = searchParams.get("team_invite");
   const authError = searchParams.get("error");
+
+  // Build callback URL with team_invite token if present
+  let callbackURL = searchParams.get("callbackURL") || "/dashboard";
+  if (teamInviteToken) {
+    // Redirect to teams page with accept_token after auth
+    callbackURL = `/dashboard/teams?accept_token=${encodeURIComponent(teamInviteToken)}`;
+  }
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
@@ -58,6 +65,13 @@ function SignInContent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Team invitation notice */}
+          {teamInviteToken && (
+            <div className="rounded-md bg-primary/10 p-3 text-sm text-primary">
+              You&apos;ve been invited to join a team. Sign in to accept the invitation.
+            </div>
+          )}
+
           {(error || authError) && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {error || "Authentication failed. Please try again."}

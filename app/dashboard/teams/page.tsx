@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense, useMemo } from "react";
+import { useState, useEffect, Suspense, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   Card,
@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import { useTeamContext } from "@/contexts/team-context";
 import { useSession } from "@/lib/auth-client";
 import {
@@ -37,6 +38,7 @@ import {
   Trash2,
   UserPlus,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import type { TeamWithSubteams } from "@/types/team";
 import { canPerformAction } from "@/types/team";
@@ -58,6 +60,7 @@ function TeamsContent() {
     updateTeam,
     deleteTeam,
     getUserRoleInTeam,
+    refreshTeams,
   } = useTeamContext();
 
   // Dialog state
@@ -68,6 +71,69 @@ function TeamsContent() {
   const [editingTeam, setEditingTeam] = useState<TeamWithSubteams | null>(null);
   const [deletingTeam, setDeletingTeam] = useState<TeamWithSubteams | null>(null);
   const [managingMembersTeam, setManagingMembersTeam] = useState<TeamWithSubteams | null>(null);
+
+  // External invitation acceptance state
+  const [acceptingInvitation, setAcceptingInvitation] = useState(false);
+  // Use state + ref combination to prevent race conditions in React Strict Mode
+  const [tokenProcessed, setTokenProcessed] = useState<string | null>(null);
+  const processingRef = useRef(false);
+
+  // Handle external invitation token from URL
+  useEffect(() => {
+    const acceptToken = searchParams.get("accept_token");
+
+    // Skip if no token, already processed this token, currently processing, or no session
+    if (
+      !acceptToken ||
+      tokenProcessed === acceptToken ||
+      processingRef.current ||
+      !session?.user?.id
+    ) {
+      return;
+    }
+
+    // Mark as processing immediately to prevent race conditions
+    processingRef.current = true;
+
+    const acceptInvitation = async () => {
+      setAcceptingInvitation(true);
+      try {
+        const response = await fetch("/api/teams/external-invites/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: acceptToken }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          toast.success("Welcome to the team!", {
+            description: `You've successfully joined ${data.team?.name || "the team"}.`,
+          });
+          // Refresh teams to show the new team
+          await refreshTeams();
+        } else {
+          toast.error("Invitation failed", {
+            description: data.error || "Unable to accept the invitation.",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to accept invitation:", error);
+        toast.error("Error", {
+          description: "Failed to accept the invitation. Please try again.",
+        });
+      } finally {
+        setAcceptingInvitation(false);
+        // Mark this token as processed (prevents re-processing on re-renders)
+        setTokenProcessed(acceptToken);
+        processingRef.current = false;
+        // Clean up URL (always, even on error, to prevent retry loops)
+        router.replace("/dashboard/teams", { scroll: false });
+      }
+    };
+
+    void acceptInvitation();
+  }, [searchParams, session?.user?.id, router, refreshTeams, tokenProcessed]);
 
   // Flatten hierarchy for grid view (only show root-level teams in the grid)
   const rootTeams = teamHierarchy;
@@ -115,6 +181,23 @@ function TeamsContent() {
       }
     }
   };
+
+  // Show loading overlay when accepting an invitation
+  if (acceptingInvitation) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Card className="p-8">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="size-8 animate-spin text-primary" />
+            <p className="text-lg font-medium">Accepting invitation...</p>
+            <p className="text-sm text-muted-foreground">
+              Please wait while we add you to the team.
+            </p>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 md:p-8">

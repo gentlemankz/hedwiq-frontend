@@ -13,7 +13,10 @@ import { MeetingCancelledEmail } from "./templates/meeting-cancelled";
 import type { MeetingCancelledEmailProps } from "./templates/meeting-cancelled";
 import { TeamInvitationEmail } from "./templates/team-invitation";
 import type { TeamInvitationEmailProps } from "./templates/team-invitation";
+import { ExternalTeamInvitationEmail } from "./templates/external-team-invitation";
+import type { ExternalTeamInvitationEmailProps } from "./templates/external-team-invitation";
 import type { Meeting, MeetingWithHost } from "@/types/meeting";
+import { EXTERNAL_INVITE_LIMITS } from "@/types/team";
 import type { AgendaWithItems } from "@/types/agenda";
 import type { MeetingInvitee } from "@/types/invitee";
 import type { TeamRole } from "@/types/team";
@@ -628,4 +631,98 @@ export async function sendTeamInvitationEmails(
   }
 
   return result;
+}
+
+// ============================================================================
+// External Team Invitation Emails
+// ============================================================================
+
+/**
+ * Data for sending external team invitation emails.
+ */
+export interface ExternalTeamInvitationData {
+  /** Team ID */
+  teamId: string;
+  /** Team name */
+  teamName: string;
+  /** Team description */
+  teamDescription?: string | null;
+  /** Team color */
+  teamColor?: string | null;
+  /** Role being assigned */
+  role: Exclude<TeamRole, "owner">;
+  /** Number of current active members */
+  memberCount: number;
+  /** Inviter's name */
+  inviterName: string;
+  /** Inviter's email */
+  inviterEmail: string;
+  /** Invitee's email */
+  inviteeEmail: string;
+  /** Invitation token for direct acceptance */
+  token: string;
+}
+
+/**
+ * Send an external team invitation email to a non-registered user.
+ */
+export async function sendExternalTeamInvitationEmail(
+  data: ExternalTeamInvitationData
+): Promise<SendInvitationResult> {
+  // Check if Resend API key is configured
+  if (!process.env.RESEND_API_KEY) {
+    console.warn(
+      "RESEND_API_KEY not configured, skipping external team invitation email"
+    );
+    return {
+      success: false,
+      error: "Email service not configured",
+    };
+  }
+
+  try {
+    // Generate signup link with invitation token
+    const signupLink = `${APP_URL}/sign-in?team_invite=${data.token}`;
+
+    // Prepare email props
+    const emailProps: ExternalTeamInvitationEmailProps = {
+      inviterName: data.inviterName,
+      inviterEmail: data.inviterEmail,
+      teamName: data.teamName,
+      teamDescription: data.teamDescription || undefined,
+      teamColor: data.teamColor || undefined,
+      role: data.role,
+      memberCount: data.memberCount,
+      signupLink,
+      expirationDays: EXTERNAL_INVITE_LIMITS.DEFAULT_EXPIRATION_DAYS,
+      appUrl: APP_URL,
+    };
+
+    // Send email
+    const { data: responseData, error } = await getResend()!.emails.send({
+      from: FROM_EMAIL,
+      to: data.inviteeEmail,
+      subject: `${data.inviterName} invited you to join ${data.teamName} on Hedwiq`,
+      react: ExternalTeamInvitationEmail(emailProps),
+    });
+
+    if (error) {
+      console.error("Failed to send external team invitation email:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+
+    return {
+      success: true,
+      messageId: responseData?.id,
+    };
+  } catch (error) {
+    console.error("Error sending external team invitation email:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }

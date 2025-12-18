@@ -502,3 +502,170 @@ export interface PendingTeamInvitation {
   /** Current team member count */
   memberCount: number;
 }
+
+// ============================================================================
+// External Team Invitation Types (Phase 7)
+// ============================================================================
+
+/**
+ * Status of an external team invitation.
+ * - pending: Invitation sent, waiting for user to sign up
+ * - accepted: User signed up and accepted
+ * - expired: Invitation expired
+ * - cancelled: Invitation was cancelled by admin
+ */
+export type ExternalInvitationStatus =
+  | "pending"
+  | "accepted"
+  | "expired"
+  | "cancelled";
+
+/**
+ * External team invitation record from the database.
+ * Represents invitations sent to users who don't have accounts yet.
+ */
+export interface ExternalTeamInvitation {
+  /** Unique identifier (e.g., peti-{timestamp}-{random}) */
+  id: string;
+  /** Team ID */
+  teamId: string;
+  /** Invitee's email (normalized lowercase) */
+  email: string;
+  /** Role to be assigned: admin or member (not owner) */
+  role: Exclude<TeamRole, "owner">;
+  /** User ID who sent the invitation */
+  invitedBy: string;
+  /** When the invitation was sent (ISO string) */
+  invitedAt: string;
+  /** When the invitation expires (ISO string) */
+  expiresAt: string;
+  /** Secure token for direct-link acceptance */
+  token: string;
+  /** Current status */
+  status: ExternalInvitationStatus;
+  /** When the user accepted (ISO string, null if not accepted) */
+  acceptedAt: string | null;
+  /** User ID who accepted (null if not accepted) */
+  acceptedUserId: string | null;
+  /** Creation timestamp (ISO string) */
+  createdAt: string;
+  /** Last update timestamp (ISO string) */
+  updatedAt: string;
+}
+
+/**
+ * External invitation with inviter details for display.
+ */
+export interface ExternalInvitationWithInviter extends ExternalTeamInvitation {
+  /** Inviter details */
+  inviter: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+}
+
+/**
+ * External invitation with team details (for acceptance flow).
+ */
+export interface ExternalInvitationWithTeam extends ExternalTeamInvitation {
+  /** Team details */
+  team: {
+    id: string;
+    name: string;
+    description: string | null;
+    color: string | null;
+    memberCount: number;
+  };
+  /** Inviter details */
+  inviter: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+}
+
+// ============================================================================
+// External Invitation API Types
+// ============================================================================
+
+/**
+ * Request body for creating external invitations.
+ */
+export interface CreateExternalInvitationsRequest {
+  /** Array of emails to invite */
+  emails: string[];
+  /** Role for new members (default: member) */
+  role?: Exclude<TeamRole, "owner">;
+}
+
+/**
+ * Response from creating external invitations.
+ */
+export interface CreateExternalInvitationsResponse {
+  /** Successfully created invitations */
+  created: ExternalTeamInvitation[];
+  /** Emails that failed */
+  failed: Array<{
+    email: string;
+    reason: string;
+  }>;
+}
+
+/**
+ * Response from listing external invitations.
+ */
+export interface ListExternalInvitationsResponse {
+  invitations: ExternalInvitationWithInviter[];
+}
+
+/**
+ * Request body for accepting an external invitation via token.
+ */
+export interface AcceptExternalInvitationRequest {
+  /** Invitation token */
+  token: string;
+}
+
+/**
+ * Response from accepting an external invitation.
+ */
+export interface AcceptExternalInvitationResponse {
+  success: boolean;
+  /** Team member record if successful */
+  membership?: TeamMember;
+  /** Team details */
+  team?: {
+    id: string;
+    name: string;
+  };
+  /** Error message if failed */
+  error?: string;
+}
+
+/**
+ * Response from getting pending invitations for current user.
+ */
+export interface GetPendingExternalInvitationsResponse {
+  invitations: ExternalInvitationWithTeam[];
+}
+
+// ============================================================================
+// External Invitation Constants
+// ============================================================================
+
+/**
+ * Constants for external invitation limits and settings.
+ */
+export const EXTERNAL_INVITE_LIMITS = {
+  /** Default expiration period in days */
+  DEFAULT_EXPIRATION_DAYS: 30,
+  /** Maximum pending invites per team */
+  MAX_PENDING_PER_TEAM: 50,
+  /** Maximum invitations that can be sent per hour per team */
+  MAX_INVITES_PER_HOUR: 10,
+  /** Length of the secure token */
+  TOKEN_LENGTH: 32,
+  /** Minimum hours before resending an invitation */
+  MIN_RESEND_INTERVAL_HOURS: 24,
+} as const;

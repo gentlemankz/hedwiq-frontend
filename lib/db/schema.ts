@@ -1112,3 +1112,56 @@ export const teamMeeting = pgTable(
     uniqueIndex("idx_team_meeting_unique").on(table.teamId, table.meetingId),
   ]
 );
+
+/**
+ * Pending External Team Invitation - Invitations for non-registered users.
+ * When a user is invited to a team but doesn't have an account, this stores the invitation.
+ * When they sign up with the matching email, the invitation is auto-accepted.
+ */
+export const pendingExternalTeamInvitation = pgTable(
+  "pending_external_team_invitation",
+  {
+    /** Unique identifier (e.g., peti-{timestamp}-{random}) */
+    id: text("id").primaryKey(),
+    /** Team this invitation is for */
+    teamId: text("team_id")
+      .notNull()
+      .references(() => team.id, { onDelete: "cascade" }),
+    /** Invitee's email (normalized lowercase) */
+    email: text("email").notNull(),
+    /** Role to be assigned: admin or member (not owner) */
+    role: text("role").notNull().default("member"),
+    /** User who sent the invitation */
+    invitedBy: text("invited_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** When the invitation was sent */
+    invitedAt: timestamp("invited_at").notNull().defaultNow(),
+    /** When the invitation expires */
+    expiresAt: timestamp("expires_at").notNull(),
+    /** Secure token for direct-link acceptance (32 chars) */
+    token: text("token").notNull(),
+    /** Status: pending, accepted, expired, cancelled */
+    status: text("status").notNull().default("pending"),
+    /** When the user accepted (null if not accepted) */
+    acceptedAt: timestamp("accepted_at"),
+    /** User ID who accepted (null if not accepted) */
+    acceptedUserId: text("accepted_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    // Index for looking up invitations by email (for signup flow)
+    index("idx_ext_team_invite_email").on(table.email),
+    // Unique index for token lookup
+    uniqueIndex("idx_ext_team_invite_token").on(table.token),
+    // Index for team-scoped queries with status filter
+    index("idx_ext_team_invite_team_status").on(table.teamId, table.status),
+    // Index for cleanup of expired invitations
+    index("idx_ext_team_invite_expires").on(table.expiresAt),
+    // Note: Partial unique index (team_id, email WHERE status='pending')
+    // is created in the migration file as Drizzle doesn't support partial indexes directly
+  ]
+);

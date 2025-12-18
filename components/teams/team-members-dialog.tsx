@@ -9,6 +9,9 @@ import {
   Shield,
   User,
   UserPlus,
+  Mail,
+  Clock,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -37,7 +40,7 @@ import {
 } from "@/components/ui/tooltip";
 import { TeamColorDot } from "./team-color-dot";
 import { InviteTeamMemberInput, type TeamInviteEntry } from "./invite-team-member-input";
-import { getInitials } from "@/lib/utils";
+import { getInitials, formatRelativeTime } from "@/lib/utils";
 import {
   canChangeRole,
   canPerformAction,
@@ -45,6 +48,7 @@ import {
   type TeamWithSubteams,
   type TeamMemberWithUser,
   type TeamRole,
+  type ExternalInvitationWithInviter,
 } from "@/types/team";
 
 // ============================================================================
@@ -94,6 +98,12 @@ export function TeamMembersDialog({
   const [membersLoading, setMembersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // External invitations state
+  const [externalInvitations, setExternalInvitations] = useState<
+    ExternalInvitationWithInviter[]
+  >([]);
+  const [externalLoading, setExternalLoading] = useState(false);
+
   // Invite state - using InviteTeamMemberInput for bulk support
   const [pendingInvites, setPendingInvites] = useState<TeamInviteEntry[]>([]);
   const [isInviting, setIsInviting] = useState(false);
@@ -132,16 +142,42 @@ export function TeamMembersDialog({
     }
   }, [team.id]);
 
-  // Fetch members when dialog opens
+  // Fetch external invitations
+  const fetchExternalInvitations = useCallback(async () => {
+    setExternalLoading(true);
+
+    try {
+      const response = await fetch(`/api/teams/${team.id}/external-invites`);
+      if (!response.ok) {
+        // Don't show error for external invites - may not have permission
+        return;
+      }
+      const data = await response.json();
+
+      if (!mountedRef.current) return;
+
+      setExternalInvitations(data.invitations ?? []);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      console.error("Failed to fetch external invitations:", err);
+    } finally {
+      if (mountedRef.current) {
+        setExternalLoading(false);
+      }
+    }
+  }, [team.id]);
+
+  // Fetch members and external invitations when dialog opens
   useEffect(() => {
     if (open) {
       fetchMembers();
+      fetchExternalInvitations();
       setPendingInvites([]);
       setInviteError(null);
     }
-  }, [open, fetchMembers]);
+  }, [open, fetchMembers, fetchExternalInvitations]);
 
-  // Handle bulk invite submission
+  // Handle bulk invite submission (both internal and external)
   const handleInviteSubmit = async () => {
     if (pendingInvites.length === 0) return;
 
@@ -149,36 +185,76 @@ export function TeamMembersDialog({
     setInviteError(null);
 
     try {
-      // Group invites by role for batch processing
-      const invitesByRole = pendingInvites.reduce((acc, inv) => {
-        if (!acc[inv.role]) acc[inv.role] = [];
-        acc[inv.role].push(inv.email);
-        return acc;
-      }, {} as Record<TeamRole, string[]>);
+      // Separate internal and external invites
+      const internalInvites = pendingInvites.filter((inv) => !inv.isExternal);
+      const externalInvites = pendingInvites.filter((inv) => inv.isExternal);
 
       let totalFailed: Array<{ identifier: string; reason: string }> = [];
 
-      // Send invites for each role group
-      for (const [role, emails] of Object.entries(invitesByRole)) {
-        const response = await fetch(`/api/teams/${team.id}/members`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            invites: emails.map((email) => ({ email })),
-            role,
-          }),
-        });
+      // Handle internal invites (existing users)
+      if (internalInvites.length > 0) {
+        // Group by role for batch processing
+        const invitesByRole = internalInvites.reduce((acc, inv) => {
+          if (!acc[inv.role]) acc[inv.role] = [];
+          acc[inv.role].push(inv.email);
+          return acc;
+        }, {} as Record<TeamRole, string[]>);
 
-        if (!mountedRef.current) return;
+        for (const [role, emails] of Object.entries(invitesByRole)) {
+          const response = await fetch(`/api/teams/${team.id}/members`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              invites: emails.map((email) => ({ email })),
+              role,
+            }),
+          });
 
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to send invitations");
+          if (!mountedRef.current) return;
+
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || "Failed to send invitations");
+          }
+
+          const data = await response.json();
+          if (data.failed && data.failed.length > 0) {
+            totalFailed = [...totalFailed, ...data.failed];
+          }
         }
+      }
 
-        const data = await response.json();
-        if (data.failed && data.failed.length > 0) {
-          totalFailed = [...totalFailed, ...data.failed];
+      // Handle external invites (users without accounts)
+      if (externalInvites.length > 0) {
+        // Group by role
+        const externalByRole = externalInvites.reduce((acc, inv) => {
+          const role = inv.role === "owner" ? "member" : inv.role; // Can't assign owner to external
+          if (!acc[role]) acc[role] = [];
+          acc[role].push(inv.email);
+          return acc;
+        }, {} as Record<string, string[]>);
+
+        for (const [role, emails] of Object.entries(externalByRole)) {
+          const response = await fetch(`/api/teams/${team.id}/external-invites`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ emails, role }),
+          });
+
+          if (!mountedRef.current) return;
+
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || "Failed to send external invitations");
+          }
+
+          const data = await response.json();
+          if (data.failed && data.failed.length > 0) {
+            totalFailed = [...totalFailed, ...data.failed.map((f: { email: string; reason: string }) => ({
+              identifier: f.email,
+              reason: f.reason,
+            }))];
+          }
         }
       }
 
@@ -193,6 +269,7 @@ export function TeamMembersDialog({
       // Clear pending invites and refresh
       setPendingInvites([]);
       await fetchMembers();
+      await fetchExternalInvitations();
     } catch (err) {
       if (!mountedRef.current) return;
 
@@ -206,6 +283,96 @@ export function TeamMembersDialog({
       }
     }
   };
+
+  // Handle cancelling an external invitation
+  const handleCancelExternalInvite = async (inviteId: string) => {
+    try {
+      const response = await fetch(
+        `/api/teams/${team.id}/external-invites/${inviteId}`,
+        { method: "DELETE" }
+      );
+
+      if (!mountedRef.current) return;
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to cancel invitation");
+      }
+
+      // Update local state
+      setExternalInvitations((prev) =>
+        prev.filter((inv) => inv.id !== inviteId)
+      );
+    } catch (err) {
+      if (!mountedRef.current) return;
+      console.error("Failed to cancel external invitation:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to cancel invitation"
+      );
+    }
+  };
+
+  // Handle resending an external invitation
+  const handleResendExternalInvite = async (inviteId: string) => {
+    try {
+      const response = await fetch(
+        `/api/teams/${team.id}/external-invites/${inviteId}`,
+        { method: "PATCH" }
+      );
+
+      if (!mountedRef.current) return;
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to resend invitation");
+      }
+
+      // Refresh external invitations
+      await fetchExternalInvitations();
+    } catch (err) {
+      if (!mountedRef.current) return;
+      console.error("Failed to resend external invitation:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to resend invitation"
+      );
+    }
+  };
+
+  // Check if an email has an account (for external invite detection)
+  // Note: Server-side now handles fallback to external invite automatically,
+  // so this is mainly for UI indication purposes
+  const checkEmailHasAccount = useCallback(async (email: string): Promise<boolean> => {
+    try {
+      // Check against existing members first (quick local check)
+      const normalizedEmail = email.toLowerCase().trim();
+      if (members.some((m) => m.user.email.toLowerCase() === normalizedEmail)) {
+        return true;
+      }
+
+      // Check against pending external invitations
+      if (externalInvitations.some((inv) => inv.email.toLowerCase() === normalizedEmail)) {
+        return false; // Already has pending external invite
+      }
+
+      // Call API to check if email has an account
+      const response = await fetch("/api/teams/check-emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emails: [email] }),
+      });
+
+      if (!response.ok) {
+        // On error, default to external (server will verify anyway)
+        return false;
+      }
+
+      const data = await response.json();
+      return data.results?.[email] ?? false;
+    } catch {
+      // On error, default to external (server will verify anyway)
+      return false;
+    }
+  }, [members, externalInvitations]);
 
   // Get existing member emails for duplicate prevention
   const existingMemberEmails = members.map((m) => m.user.email);
@@ -304,6 +471,8 @@ export function TeamMembersDialog({
                 onChange={setPendingInvites}
                 disabled={isInviting}
                 existingMemberEmails={existingMemberEmails}
+                checkEmailHasAccount={checkEmailHasAccount}
+                showExternalIndicator={true}
               />
               {inviteError && (
                 <p className="text-sm text-destructive">{inviteError}</p>
@@ -359,7 +528,7 @@ export function TeamMembersDialog({
                     />
                   ))}
 
-                  {/* Pending Members */}
+                  {/* Pending Members (internal invites) */}
                   {pendingMembers.length > 0 && (
                     <>
                       <div className="pt-2 pb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -377,6 +546,30 @@ export function TeamMembersDialog({
                           isPending
                         />
                       ))}
+                    </>
+                  )}
+
+                  {/* External Invitations (users without accounts) */}
+                  {externalInvitations.length > 0 && (
+                    <>
+                      <div className="pt-2 pb-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        External Invitations ({externalInvitations.length})
+                      </div>
+                      {externalLoading ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : (
+                        externalInvitations.map((invite) => (
+                          <ExternalInviteRow
+                            key={invite.id}
+                            invitation={invite}
+                            canManage={canInvite}
+                            onCancel={() => handleCancelExternalInvite(invite.id)}
+                            onResend={() => handleResendExternalInvite(invite.id)}
+                          />
+                        ))
+                      )}
                     </>
                   )}
 
@@ -579,6 +772,151 @@ function MemberRow({
             </>
           )}
         </Button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// External Invite Row Component
+// ============================================================================
+
+interface ExternalInviteRowProps {
+  invitation: ExternalInvitationWithInviter;
+  canManage: boolean;
+  onCancel: () => void;
+  onResend: () => void;
+}
+
+function ExternalInviteRow({
+  invitation,
+  canManage,
+  onCancel,
+  onResend,
+}: ExternalInviteRowProps) {
+  const [isResending, setIsResending] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  // Calculate days until expiration
+  const expiresAt = new Date(invitation.expiresAt);
+  const now = new Date();
+  const daysRemaining = Math.ceil(
+    (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  const handleResend = async () => {
+    setIsResending(true);
+    try {
+      await onResend();
+    } finally {
+      setIsResending(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    setIsCancelling(true);
+    try {
+      await onCancel();
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
+      {/* Avatar placeholder with mail icon */}
+      <div className="size-8 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+        <Mail className="size-4 text-amber-600 dark:text-amber-500" />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium truncate">{invitation.email}</span>
+          <Badge
+            variant="outline"
+            className="text-xs border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400"
+          >
+            External
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex items-center gap-1">
+                  <Clock className="size-3" />
+                  {daysRemaining > 0
+                    ? `Expires in ${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}`
+                    : "Expiring soon"}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">
+                  Invited {formatRelativeTime(new Date(invitation.invitedAt).getTime())}
+                  {invitation.inviter && ` by ${invitation.inviter.name}`}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      </div>
+
+      {/* Role badge */}
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-muted-foreground">
+          {ROLE_LABELS[invitation.role as TeamRole] || "Member"}
+        </span>
+      </div>
+
+      {/* Actions */}
+      {canManage && (
+        <div className="flex items-center gap-1">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  onClick={handleResend}
+                  disabled={isResending || isCancelling}
+                >
+                  {isResending ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <RotateCcw className="size-3" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">Resend invitation</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  onClick={handleCancel}
+                  disabled={isResending || isCancelling}
+                >
+                  {isCancelling ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <X className="size-3" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">Cancel invitation</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       )}
     </div>
   );

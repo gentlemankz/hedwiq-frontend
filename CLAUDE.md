@@ -34,7 +34,7 @@ frontend/
 ├── app/                              # Next.js App Router
 │   ├── (auth)/                       # Auth route group
 │   │   ├── layout.tsx                # Shared auth layout
-│   │   └── sign-in/page.tsx          # Sign-in page
+│   │   └── sign-in/page.tsx          # Sign-in page (handles team_invite token for external invites)
 │   ├── (public)/                     # Public route group (no auth required)
 │   │   └── rsvp/[token]/page.tsx     # Public RSVP landing
 │   ├── api/                          # API routes
@@ -97,9 +97,16 @@ frontend/
 │   │       ├── reorder/route.ts      # Bulk reorder teams
 │   │       ├── invitations/route.ts  # User's pending invitations (GET/POST accept/decline)
 │   │       ├── search/route.ts       # Team search with relevance scoring
+│   │       ├── check-emails/route.ts # Check if emails have accounts (for external invite detection)
+│   │       ├── external-invites/     # External user invitation APIs
+│   │       │   ├── accept/route.ts   # Accept external invitation via token
+│   │       │   └── pending/route.ts  # Get pending external invitations for user
 │   │       └── [teamId]/
 │   │           ├── route.ts          # Get/update/delete team
 │   │           ├── subteams/route.ts # List/create sub-teams
+│   │           ├── external-invites/ # Team-scoped external invitation APIs
+│   │           │   ├── route.ts      # List/create external invitations
+│   │           │   └── [inviteId]/route.ts # Cancel/resend external invitation
 │   │           └── members/
 │   │               ├── route.ts      # List/invite team members (+ email notifications)
 │   │               └── [memberId]/route.ts # Get/update/remove member
@@ -116,7 +123,7 @@ frontend/
 │   │   ├── settings/
 │   │   │   └── page.tsx              # User preferences (stub)
 │   │   └── teams/                    # Team workspace pages
-│   │       ├── page.tsx              # Teams overview with grid/stats
+│   │       ├── page.tsx              # Teams overview (handles accept_token for external invites)
 │   │       └── [teamId]/
 │   │           ├── page.tsx          # Team detail server component
 │   │           └── team-detail-view.tsx # Team detail client view
@@ -209,10 +216,10 @@ frontend/
 │   │   ├── create-team-dialog.tsx    # Dialog for creating new teams
 │   │   ├── delete-team-dialog.tsx    # Confirmation dialog with cascade impact
 │   │   ├── edit-team-dialog.tsx      # Dialog for editing team name/color
-│   │   ├── invite-team-member-input.tsx # Bulk email input with role selection
+│   │   ├── invite-team-member-input.tsx # Bulk email input with role selection + external indicators
 │   │   ├── pending-team-invitations.tsx # Pending invitations banner/card component
 │   │   ├── team-color-dot.tsx        # Reusable team color indicator
-│   │   ├── team-members-dialog.tsx   # Dialog for managing team members + re-invite
+│   │   ├── team-members-dialog.tsx   # Dialog for managing team members + external invitations
 │   │   ├── team-sidebar-item.tsx     # Individual team item in sidebar (memoized)
 │   │   ├── team-sidebar-section.tsx  # Teams section in sidebar with invitations
 │   │   └── index.ts
@@ -268,6 +275,7 @@ frontend/
 │   │   ├── calendar-event.ts
 │   │   ├── calendar.ts
 │   │   ├── email-draft.ts            # Email draft CRUD operations (upsert, update, send tracking)
+│   │   ├── external-team-invitation.ts # External invitation CRUD (create, accept, cancel, resend)
 │   │   ├── folder.ts                 # Meeting folder CRUD operations
 │   │   ├── gmail.ts                  # Gmail integration CRUD operations
 │   │   ├── index.ts
@@ -275,23 +283,25 @@ frontend/
 │   │   ├── meeting.ts                # Meeting CRUD (includes folderId support)
 │   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
 │   │   ├── room-access.ts
-│   │   ├── schema.ts                 # Includes team, team_member, team_meeting tables
+│   │   ├── schema.ts                 # Includes team, team_member, team_meeting, external invitation tables
 │   │   ├── team.ts                   # Team CRUD, members, hierarchy, permissions, inheritance
-│   │   └── migrations/               # SQL + meta snapshots (0000-0017)
+│   │   └── migrations/               # SQL + meta snapshots (0000-0018)
 │   │       ├── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
 │   │       ├── 0012_add_action_item_table.sql    # Action items table for meeting actions
 │   │       ├── 0013_add_gmail_integration.sql    # Gmail OAuth integration table
 │   │       ├── 0014_add_email_draft_table.sql    # Email draft + sent audit tables
 │   │       ├── 0015_drop_email_draft_fk_constraints.sql # Remove FK constraints from email_draft
 │   │       ├── 0016_add_meeting_folder_table.sql # Meeting folder organization
-│   │       └── 0017_add_team_tables.sql          # Team workspace tables
+│   │       ├── 0017_add_team_tables.sql          # Team workspace tables
+│   │       └── 0018_add_external_team_invitation.sql # External user invitation table
 │   ├── email/
-│   │   ├── index.ts                  # Email utilities + team invitation sender
+│   │   ├── index.ts                  # Email utilities + team/external invitation senders
 │   │   └── templates/
 │   │       ├── meeting-invitation.tsx
 │   │       ├── meeting-updated.tsx
 │   │       ├── meeting-cancelled.tsx
-│   │       └── team-invitation.tsx   # Team invitation email template
+│   │       ├── team-invitation.tsx   # Team invitation email template (existing users)
+│   │       └── external-team-invitation.tsx # External invitation email (non-registered users)
 │   ├── supabase/{client.ts, server.ts, index.ts}
 │   ├── utils.ts                      # Includes formatDurationCompact, formatMeetingDate, formatMeetingTime
 │   ├── utils/meeting-form.ts
@@ -310,7 +320,7 @@ frontend/
 │   ├── meeting.ts                    # Meeting types (includes folderId)
 │   ├── meeting-history.ts            # Types for meeting history (includes folderId, sessions, transcripts, insights, notes, stats)
 │   ├── persistence.ts                # Shared persistence types (TranscriptionEntry)
-│   ├── team.ts                       # Team types, roles, permissions, limits, ROLE_LABELS, PendingTeamInvitation
+│   ├── team.ts                       # Team types, roles, permissions, limits, external invitation types
 │   ├── transcript-note.ts
 │   └── user.ts
 ├── tests/
