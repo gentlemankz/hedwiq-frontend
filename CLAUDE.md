@@ -88,7 +88,16 @@ frontend/
 │   │   │       └── items/[itemId]/   # Item-level updates
 │   │   │           ├── route.ts      # Update/delete an agenda item
 │   │   │           └── status/route.ts # Manual status override (fallback)
-│   │   └── rsvp/[token]/route.ts     # Public RSVP status endpoint
+│   │   ├── rsvp/[token]/route.ts     # Public RSVP status endpoint
+│   │   └── teams/                    # Team workspace APIs
+│   │       ├── route.ts              # List/create teams
+│   │       ├── reorder/route.ts      # Bulk reorder teams
+│   │       └── [teamId]/
+│   │           ├── route.ts          # Get/update/delete team
+│   │           ├── subteams/route.ts # List/create sub-teams
+│   │           └── members/
+│   │               ├── route.ts      # List/invite team members
+│   │               └── [memberId]/route.ts # Get/update/remove member
 │   ├── dashboard/                    # Dashboard with sidebar navigation
 │   │   ├── layout.tsx                # Dashboard layout with sidebar + auth check
 │   │   ├── page.tsx                  # Home: Quick Actions + Upcoming Meetings
@@ -230,13 +239,15 @@ frontend/
 │   │   ├── meeting.ts                # Meeting CRUD (includes folderId support)
 │   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
 │   │   ├── room-access.ts
-│   │   ├── schema.ts                 # Includes meeting_folder, gmail_integration, email_draft tables
+│   │   ├── team.ts                   # Team CRUD, members, hierarchy, permissions
+│   │   ├── schema.ts                 # Includes team, team_member, team_meeting tables
 │   │   ├── index.ts
 │   │   └── migrations/               # SQL + meta snapshots
 │   │       ├── 0011_add_meeting_data_tables.sql  # Meeting data persistence tables
 │   │       ├── 0013_add_gmail_integration.sql    # Gmail OAuth integration table
 │   │       ├── 0014_add_email_draft_table.sql    # Email draft + sent audit tables
-│   │       └── 0016_add_meeting_folder_table.sql # Meeting folder organization
+│   │       ├── 0016_add_meeting_folder_table.sql # Meeting folder organization
+│   │       └── 0017_add_team_tables.sql          # Team workspace tables
 │   ├── email/
 │   │   ├── index.ts
 │   │   └── templates/{meeting-invitation.tsx, meeting-updated.tsx, meeting-cancelled.tsx}
@@ -244,7 +255,7 @@ frontend/
 │   ├── utils.ts                      # Includes formatDurationCompact, formatMeetingDate, formatMeetingTime
 │   ├── utils/meeting-form.ts
 │   ├── validation.ts
-│   └── validation/{agenda.ts, folder.ts, invitee.ts, meeting.ts}
+│   └── validation/{agenda.ts, folder.ts, invitee.ts, meeting.ts, team.ts}
 ├── types/
 │   ├── agenda.ts
 │   ├── calendar.ts
@@ -257,6 +268,7 @@ frontend/
 │   ├── meeting.ts                    # Meeting types (includes folderId)
 │   ├── meeting-history.ts            # Types for meeting history (includes folderId, sessions, transcripts, insights, notes, stats)
 │   ├── persistence.ts                # Shared persistence types (TranscriptionEntry)
+│   ├── team.ts                       # Team types, roles, permissions, limits, API request/response types
 │   ├── transcript-note.ts
 │   └── user.ts
 ├── docs/                             # Project documentation + reference notes

@@ -999,3 +999,116 @@ export const emailSent = pgTable(
     index("idx_email_sent_sent_at").on(table.sentAt),
   ]
 );
+
+// ============================================================================
+// Team Workspace Tables
+// ============================================================================
+
+/**
+ * Team - Core team entity for organizing users.
+ * Supports hierarchical sub-teams via parentTeamId.
+ * Teams enable group-based meeting invitations and collaboration.
+ */
+export const team = pgTable(
+  "team",
+  {
+    /** Unique team identifier (e.g., team-{creatorId}-{timestamp}) */
+    id: text("id").primaryKey(),
+    /** Team name (3-50 chars) */
+    name: text("name").notNull(),
+    /** Optional team description */
+    description: text("description"),
+    /** Optional hex color for UI display (e.g., #3B82F6) */
+    color: text("color"),
+    /** Optional icon identifier */
+    icon: text("icon"),
+    /** Parent team ID for sub-team hierarchy (null for root teams) */
+    parentTeamId: text("parent_team_id"),
+    /** User who created the team */
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Display order within parent (0-based, lower = higher priority) */
+    orderIndex: integer("order_index").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_team_parent").on(table.parentTeamId),
+    index("idx_team_created_by").on(table.createdBy),
+    index("idx_team_parent_order").on(table.parentTeamId, table.orderIndex),
+  ]
+);
+
+/**
+ * Team Member - User membership in teams.
+ * Tracks role (owner/admin/member) and status (pending/active/left).
+ */
+export const teamMember = pgTable(
+  "team_member",
+  {
+    /** Unique membership identifier */
+    id: text("id").primaryKey(),
+    /** Team this membership belongs to */
+    teamId: text("team_id")
+      .notNull()
+      .references(() => team.id, { onDelete: "cascade" }),
+    /** User who is a member */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Role: owner, admin, member */
+    role: text("role").notNull().default("member"),
+    /** User who sent the invitation (nullable if inviter is deleted) */
+    invitedBy: text("invited_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** When the invitation was sent */
+    invitedAt: timestamp("invited_at").notNull().defaultNow(),
+    /** When the user accepted/joined (null if pending) */
+    joinedAt: timestamp("joined_at"),
+    /** Status: pending, active, left */
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_team_member_team").on(table.teamId),
+    index("idx_team_member_user").on(table.userId),
+    index("idx_team_member_team_status").on(table.teamId, table.status),
+    index("idx_team_member_user_status").on(table.userId, table.status),
+    uniqueIndex("idx_team_member_unique").on(table.teamId, table.userId),
+  ]
+);
+
+/**
+ * Team Meeting - Links teams to meetings for team-wide invitations.
+ * When a team is invited, all active members get access to the meeting.
+ */
+export const teamMeeting = pgTable(
+  "team_meeting",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** Team invited to the meeting */
+    teamId: text("team_id")
+      .notNull()
+      .references(() => team.id, { onDelete: "cascade" }),
+    /** Meeting the team is invited to */
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meeting.id, { onDelete: "cascade" }),
+    /** User who invited the team (nullable if inviter is deleted) */
+    invitedBy: text("invited_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** When the team was invited */
+    invitedAt: timestamp("invited_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_team_meeting_meeting").on(table.meetingId),
+    index("idx_team_meeting_team").on(table.teamId),
+    uniqueIndex("idx_team_meeting_unique").on(table.teamId, table.meetingId),
+  ]
+);
