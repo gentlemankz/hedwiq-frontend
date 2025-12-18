@@ -14,6 +14,11 @@ import { db } from "@/lib/db";
 import { teamMember, team, user } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { acceptTeamInvitation, removeMemberFromTeam, getTeamById } from "@/lib/db/team";
+import {
+  getPendingInvitationsForEmail,
+  acceptExternalInvitation,
+  cancelExternalInvitation,
+} from "@/lib/db/external-team-invitation";
 import type { PendingTeamInvitation, TeamRole } from "@/types/team";
 
 // ============================================================================
@@ -30,9 +35,9 @@ export async function GET() {
   }
 
   try {
-    // Query pending invitations with team and inviter details
+    // Query INTERNAL pending invitations (user already has account, invited via team_member)
     // SECURITY: Only returns invitations for the authenticated user
-    const invitations = await db
+    const internalInvitations = await db
       .select({
         id: teamMember.id,
         teamId: teamMember.teamId,
@@ -60,8 +65,8 @@ export async function GET() {
       )
       .orderBy(teamMember.invitedAt);
 
-    // Map to shared type for consistency
-    const pendingInvitations: PendingTeamInvitation[] = invitations.map((inv) => ({
+    // Map internal invitations to shared type
+    const pendingInvitations: PendingTeamInvitation[] = internalInvitations.map((inv) => ({
       id: inv.id,
       teamId: inv.teamId,
       teamName: inv.teamName,
@@ -72,7 +77,36 @@ export async function GET() {
       inviterEmail: inv.inviterEmail,
       invitedAt: inv.invitedAt.toISOString(),
       memberCount: inv.memberCount,
+      isExternal: false, // Internal invitation
     }));
+
+    // Query EXTERNAL pending invitations (user signed up after being invited)
+    // These are stored in pending_external_team_invitation and matched by email
+    if (session.user.email) {
+      const externalInvitations = await getPendingInvitationsForEmail(session.user.email);
+
+      // Map external invitations to same type
+      for (const ext of externalInvitations) {
+        pendingInvitations.push({
+          id: ext.id,
+          teamId: ext.teamId,
+          teamName: ext.team?.name ?? "Unknown Team",
+          teamDescription: ext.team?.description ?? null,
+          teamColor: ext.team?.color ?? null,
+          role: ext.role as TeamRole,
+          inviterName: ext.inviter?.name ?? null,
+          inviterEmail: ext.inviter?.email ?? null,
+          invitedAt: ext.invitedAt,
+          memberCount: ext.team?.memberCount ?? 0,
+          isExternal: true, // External invitation
+        });
+      }
+    }
+
+    // Sort all invitations by date (newest first)
+    pendingInvitations.sort(
+      (a, b) => new Date(b.invitedAt).getTime() - new Date(a.invitedAt).getTime()
+    );
 
     return NextResponse.json({ invitations: pendingInvitations });
   } catch (error) {
@@ -101,6 +135,8 @@ export async function POST(request: NextRequest) {
   let body: {
     teamId?: string;
     action?: "accept" | "decline";
+    isExternal?: boolean; // Flag to indicate external invitation
+    invitationId?: string; // Required for external invitations
   };
 
   try {
@@ -131,6 +167,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Handle EXTERNAL invitations (from pending_external_team_invitation table)
+    if (body.isExternal) {
+      if (!session.user.email) {
+        return NextResponse.json(
+          { error: "User email is required for external invitations" },
+          { status: 400 }
+        );
+      }
+
+      // Find the external invitation for this user's email and team
+      const externalInvitations = await getPendingInvitationsForEmail(session.user.email);
+      const externalInvite = externalInvitations.find(
+        (inv) => inv.teamId === body.teamId
+      );
+
+      if (!externalInvite) {
+        return NextResponse.json(
+          { error: "No pending external invitation found for this team" },
+          { status: 404 }
+        );
+      }
+
+      if (body.action === "accept") {
+        // Accept the external invitation (creates team_member record)
+        const result = await acceptExternalInvitation(externalInvite.token, session.user.id);
+
+        if (!result.success) {
+          return NextResponse.json(
+            { error: result.error || "Failed to accept invitation" },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.json({
+          success: true,
+          action: "accepted",
+          team: teamExists,
+        });
+      } else {
+        // Decline the external invitation (cancel it)
+        const success = await cancelExternalInvitation(externalInvite.id);
+
+        if (!success) {
+          return NextResponse.json(
+            { error: "Failed to decline invitation" },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.json({
+          success: true,
+          action: "declined",
+        });
+      }
+    }
+
+    // Handle INTERNAL invitations (from team_member table)
     // SECURITY: Verify user has a PENDING invitation for this team
     // This prevents accepting declined invitations or modifying active memberships
     const [pending] = await db

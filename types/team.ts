@@ -501,6 +501,8 @@ export interface PendingTeamInvitation {
   invitedAt: string;
   /** Current team member count */
   memberCount: number;
+  /** Whether this is an external invitation (from pending_external_team_invitation) */
+  isExternal?: boolean;
 }
 
 // ============================================================================

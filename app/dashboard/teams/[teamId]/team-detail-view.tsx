@@ -59,6 +59,7 @@ import {
   ChevronRight,
   AlertTriangle,
   Home,
+  Mail,
 } from "lucide-react";
 import {
   canPerformAction,
@@ -68,6 +69,7 @@ import {
   type TeamMemberWithUser,
   type TeamWithSubteams,
   type TeamRole,
+  type ExternalTeamInvitation,
 } from "@/types/team";
 
 // ============================================================================
@@ -149,6 +151,10 @@ export function TeamDetailView({
   const [pendingInvites, setPendingInvites] = useState<TeamInviteEntry[]>([]);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // External invitations state (users without accounts)
+  const [externalInvitations, setExternalInvitations] = useState<ExternalTeamInvitation[]>([]);
+  const [externalInvitationsLoading, setExternalInvitationsLoading] = useState(false);
 
   // Member operation error state
   const [memberError, setMemberError] = useState<string | null>(null);
@@ -233,6 +239,32 @@ export function TeamDetailView({
     }
   }, [team.id]);
 
+  // Fetch external invitations (users without accounts)
+  const refreshExternalInvitations = useCallback(async () => {
+    setExternalInvitationsLoading(true);
+    try {
+      const response = await fetch(`/api/teams/${team.id}/external-invites`);
+      if (!response.ok) throw new Error("Failed to fetch external invitations");
+      const data = await response.json();
+      if (mountedRef.current) {
+        setExternalInvitations(data.invitations ?? []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch external invitations:", error);
+    } finally {
+      if (mountedRef.current) {
+        setExternalInvitationsLoading(false);
+      }
+    }
+  }, [team.id]);
+
+  // Fetch external invitations on mount (if user has permission)
+  useEffect(() => {
+    if (canInviteMembers) {
+      refreshExternalInvitations();
+    }
+  }, [canInviteMembers, refreshExternalInvitations]);
+
   // Handle invite submission - groups invites by role for batch processing
   const handleInviteSubmit = async () => {
     if (pendingInvites.length === 0) return;
@@ -284,6 +316,7 @@ export function TeamDetailView({
 
       setPendingInvites([]);
       await refreshMembers();
+      await refreshExternalInvitations();
     } catch (error) {
       if (mountedRef.current) {
         setInviteError(
@@ -350,6 +383,34 @@ export function TeamDetailView({
       }
     }
   };
+
+  // Handle canceling external invitation
+  const handleCancelExternalInvite = async (inviteId: string) => {
+    setMemberError(null);
+    try {
+      const response = await fetch(`/api/teams/${team.id}/external-invites/${inviteId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to cancel invitation");
+      }
+
+      // Update local state
+      setExternalInvitations((prev) => prev.filter((inv) => inv.id !== inviteId));
+    } catch (error) {
+      console.error("Failed to cancel external invitation:", error);
+      if (mountedRef.current) {
+        setMemberError(
+          error instanceof Error ? error.message : "Failed to cancel invitation"
+        );
+      }
+    }
+  };
+
+  // Total pending count (internal + external)
+  const totalPendingCount = pendingMembers.length + externalInvitations.length;
 
   // Convert team to TeamWithSubteams for dialogs
   const teamAsSubteams: TeamWithSubteams = {
@@ -509,7 +570,7 @@ export function TeamDetailView({
             <CardContent>
               <div className="flex items-center gap-2">
                 <User className="size-5 text-primary" />
-                <span className="text-2xl font-bold">{pendingMembers.length}</span>
+                <span className="text-2xl font-bold">{totalPendingCount}</span>
               </div>
             </CardContent>
           </Card>
@@ -591,8 +652,8 @@ export function TeamDetailView({
             </CardTitle>
             <CardDescription>
               {activeMembers.length} active member{activeMembers.length !== 1 ? "s" : ""}
-              {pendingMembers.length > 0 &&
-                `, ${pendingMembers.length} pending`}
+              {totalPendingCount > 0 &&
+                `, ${totalPendingCount} pending`}
             </CardDescription>
             {memberError && (
               <p className="text-sm text-destructive mt-2">{memberError}</p>
@@ -622,7 +683,7 @@ export function TeamDetailView({
                     />
                   ))}
 
-                  {/* Pending Members */}
+                  {/* Pending Members (internal - users with accounts) */}
                   {pendingMembers.length > 0 && (
                     <>
                       <div className="pt-4 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -644,7 +705,50 @@ export function TeamDetailView({
                     </>
                   )}
 
-                  {members.length === 0 && (
+                  {/* External Invitations (users without accounts yet) */}
+                  {externalInvitations.length > 0 && (
+                    <>
+                      <div className="pt-4 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        External Invitations (Awaiting Sign-up)
+                      </div>
+                      {externalInvitations.map((invitation) => (
+                        <div
+                          key={invitation.id}
+                          className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 border"
+                        >
+                          <div className="flex items-center justify-center size-10 rounded-full bg-muted">
+                            <Mail className="size-5 text-muted-foreground" />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium truncate">{invitation.email}</span>
+                              <Badge variant="outline" className="text-xs bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300">
+                                External
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Awaiting sign-up • {ROLE_LABELS[invitation.role]}
+                            </p>
+                          </div>
+
+                          {/* Cancel Button */}
+                          {canRemoveMembers && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleCancelExternalInvite(invitation.id)}
+                            >
+                              <X className="size-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </>
+                  )}
+
+                  {members.length === 0 && externalInvitations.length === 0 && (
                     <div className="text-center py-8 text-muted-foreground text-sm">
                       No members found
                     </div>

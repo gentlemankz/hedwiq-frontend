@@ -77,7 +77,11 @@ export function PendingTeamInvitations({
   }, [fetchInvitations]);
 
   // Handle accept/decline
-  const handleAction = async (teamId: string, action: "accept" | "decline") => {
+  const handleAction = async (
+    teamId: string,
+    action: "accept" | "decline",
+    isExternal?: boolean
+  ) => {
     // Optimistic UI update: add to processing immediately
     setProcessingIds((prev) => new Set([...prev, teamId]));
 
@@ -85,7 +89,7 @@ export function PendingTeamInvitations({
       const response = await fetch("/api/teams/invitations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId, action }),
+        body: JSON.stringify({ teamId, action, isExternal }),
       });
 
       if (!response.ok) {
@@ -168,7 +172,7 @@ export function PendingTeamInvitations({
                 size="sm"
                 variant="default"
                 className="h-7 flex-1 text-xs"
-                onClick={() => handleAction(invitation.teamId, "accept")}
+                onClick={() => handleAction(invitation.teamId, "accept", invitation.isExternal)}
                 disabled={processingIds.has(invitation.teamId)}
               >
                 {processingIds.has(invitation.teamId) ? (
@@ -184,7 +188,7 @@ export function PendingTeamInvitations({
                 size="sm"
                 variant="outline"
                 className="h-7 flex-1 text-xs"
-                onClick={() => handleAction(invitation.teamId, "decline")}
+                onClick={() => handleAction(invitation.teamId, "decline", invitation.isExternal)}
                 disabled={processingIds.has(invitation.teamId)}
               >
                 <X className="size-3 mr-1" />
@@ -258,7 +262,7 @@ export function PendingTeamInvitations({
             <div className="flex gap-2 pt-1">
               <Button
                 size="sm"
-                onClick={() => handleAction(invitation.teamId, "accept")}
+                onClick={() => handleAction(invitation.teamId, "accept", invitation.isExternal)}
                 disabled={processingIds.has(invitation.teamId)}
               >
                 {processingIds.has(invitation.teamId) ? (
@@ -271,7 +275,7 @@ export function PendingTeamInvitations({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => handleAction(invitation.teamId, "decline")}
+                onClick={() => handleAction(invitation.teamId, "decline", invitation.isExternal)}
                 disabled={processingIds.has(invitation.teamId)}
               >
                 <X className="size-4 mr-2" />
