@@ -1,6 +1,7 @@
 "use client";
 
-import { ColorDot } from "@/components/ui/color-dot";
+import { Paperclip } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface TeamColorDotProps {
   /** Hex color value (e.g., #3B82F6) */
@@ -13,17 +14,27 @@ interface TeamColorDotProps {
 
 const DEFAULT_TEAM_COLOR = "#6366F1"; // Indigo
 
+const sizePx = {
+  xs: 12,
+  sm: 14,
+  md: 16,
+} as const;
+
 /**
- * A colored dot indicator for teams.
- * Wrapper around ColorDot with team-specific default color.
+ * A colored team indicator.
+ * Uses the saved team color as the Gem icon color.
  */
 export function TeamColorDot({ color, size = "sm", className }: TeamColorDotProps) {
+  const resolvedColor = color || DEFAULT_TEAM_COLOR;
+
   return (
-    <ColorDot
-      color={color}
-      defaultColor={DEFAULT_TEAM_COLOR}
-      size={size}
-      className={className}
+    <Paperclip
+      aria-hidden="true"
+      size={sizePx[size]}
+      className={cn("shrink-0", className)}
+      style={{ color: resolvedColor }}
+      fill="currentColor"
+      fillOpacity={0.2}
     />
   );
 }
