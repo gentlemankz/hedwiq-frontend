@@ -31,6 +31,7 @@ import type { MessageFormatter } from "@livekit/components-react";
 import { CustomParticipantTile } from "./custom-participant-tile";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { NoteBlock, TranscriptNote } from "@/types/transcript-note";
+import { AGENT_IDENTITY_PREFIX } from "@/contexts/agenda/constants";
 
 /**
  * Props for the CustomVideoConference component.
@@ -117,12 +118,25 @@ export function CustomVideoConference({
   const lastAutoFocusedScreenShareTrack =
     React.useRef<TrackReferenceOrPlaceholder | null>(null);
 
-  const tracks = useTracks(
+  const allTracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
       { source: Track.Source.ScreenShare, withPlaceholder: false },
     ],
     { updateOnlyOn: [RoomEvent.ActiveSpeakersChanged], onlySubscribed: false }
+  );
+
+  // Filter out agent tracks (defense in depth - agent should be hidden, but filter anyway)
+  // This ensures the Hedwiq agent never appears in the video grid even if hidden flag fails
+  const tracks = React.useMemo(
+    () =>
+      allTracks.filter(
+        (track) =>
+          !track.participant.identity
+            .toLowerCase()
+            .startsWith(AGENT_IDENTITY_PREFIX)
+      ),
+    [allTracks]
   );
 
   const widgetUpdate = (state: WidgetState) => {

@@ -1,16 +1,23 @@
 "use client";
 
 /**
- * Hook for late joiner sync via agent attributes
+ * Hook for late joiner sync (DEPRECATED - Agent is now hidden)
  *
- * Handles syncing agenda state from agent participant attributes for late joiners.
+ * IMPORTANT: The Hedwiq agent is now a hidden participant and does NOT appear
+ * in remoteParticipants. This hook is kept as a no-op placeholder for backwards
+ * compatibility and potential future use.
+ *
+ * Late joiner sync is now handled via:
+ * 1. API fetch in use-agenda-api.ts (primary method)
+ * 2. LiveKit text streams (real-time updates) which work regardless of agent visibility
+ *
+ * The agent still attempts to set participant attributes, but this may fail silently
+ * for hidden participants. This is expected behavior.
  */
 
-import { useEffect, useRef, type MutableRefObject } from "react";
+import type { MutableRefObject } from "react";
 import type { RemoteParticipant } from "livekit-client";
-import type { AgendaWithItems, AgendaItemStatus, AgendaStateAttribute } from "./types";
-import { DEBUG, AGENT_IDENTITY_PREFIX, AGENDA_STATE_ATTRIBUTE_KEY } from "./constants";
-import { isValidAgendaStateAttribute } from "./validators";
+import type { AgendaWithItems, AgendaItemStatus } from "./types";
 
 interface UseAgendaLateJoinerSyncProps {
   apiLoadComplete: boolean;
@@ -27,132 +34,46 @@ interface UseAgendaLateJoinerSyncProps {
 }
 
 /**
- * Hook that handles late joiner sync from agent attributes
+ * Hook that handles late joiner sync from agent attributes (NO-OP)
+ *
+ * This hook is a no-op placeholder because the Hedwiq agent is now a hidden
+ * participant and does not appear in remoteParticipants.
+ *
+ * Late joiner sync flow:
+ * 1. Late joiner connects to room
+ * 2. use-agenda-api.ts fetches current agenda state from API
+ * 3. use-agenda-livekit.ts subscribes to real-time updates via text streams
+ * 4. Both methods work regardless of agent visibility
+ *
+ * @see use-agenda-api.ts for API-based late joiner sync
+ * @see use-agenda-livekit.ts for real-time stream updates
  */
 export function useAgendaLateJoinerSync({
+  // Props kept for interface compatibility - not used since agent is hidden
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   apiLoadComplete,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   remoteParticipants,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   error,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   agenda,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   lastVersionRef,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   setCurrentItemId,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   setItemStatuses,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   setIsMeetingStarted,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   setError,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   setRecoveredFromAgent,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   setHasAgentStateOnly,
 }: UseAgendaLateJoinerSyncProps) {
-  // Track last processed attribute state to prevent duplicate processing
-  const lastAttributeStateRef = useRef<string | null>(null);
-
-  /**
-   * Check agent participant attributes for agenda state
-   * This handles late joiner sync without relying on text stream replay.
-   *
-   * IMPORTANT: This effect runs even when agenda is null to allow attribute-based
-   * recovery for late joiners who may receive attributes before API response.
-   */
-  useEffect(() => {
-    // Wait for API load attempt to complete (whether success, 404, or error)
-    // This prevents race conditions with initial fetch
-    if (!apiLoadComplete) return;
-
-    // Find the hedwiq agent participant
-    const agentParticipant = remoteParticipants.find((p) =>
-      p.identity.toLowerCase().startsWith(AGENT_IDENTITY_PREFIX)
-    );
-
-    if (!agentParticipant) return;
-
-    // Check for agenda state in attributes
-    const agendaStateJson = agentParticipant.attributes?.[AGENDA_STATE_ATTRIBUTE_KEY];
-    if (!agendaStateJson) return;
-
-    // Skip if we already processed this exact state
-    if (agendaStateJson === lastAttributeStateRef.current) return;
-
-    try {
-      const parsed = JSON.parse(agendaStateJson);
-
-      // Validate attribute structure before processing
-      if (!isValidAgendaStateAttribute(parsed)) {
-        if (DEBUG) {
-          console.warn("[AgendaContext] Invalid agent attribute structure:", parsed);
-        }
-        return;
-      }
-
-      const state = parsed as AgendaStateAttribute;
-
-      // Only process if version matches or is newer
-      if (state.v >= (lastVersionRef.current ?? 0)) {
-        lastAttributeStateRef.current = agendaStateJson;
-        lastVersionRef.current = state.v;
-
-        // Update completed items and current item status
-        if ((state.d && state.d.length > 0) || state.c) {
-          setItemStatuses((prev) => {
-            const updated = new Map(prev);
-            // Mark completed items first
-            if (state.d) {
-              state.d.forEach((id) => {
-                updated.set(id, "completed");
-              });
-            }
-            // Set current as in_progress ONLY if not already in completed list
-            // This prevents the bug where a stale "current" value overwrites
-            // a completed status (defense in depth - agent should also filter this)
-            if (state.c && !state.d?.includes(state.c)) {
-              updated.set(state.c, "in_progress");
-            }
-            return updated;
-          });
-        }
-
-        // Update current item ONLY if not already in completed list
-        // This prevents setting a completed item as "current"
-        if (state.c && !state.d?.includes(state.c)) {
-          setCurrentItemId(state.c);
-        }
-
-        // Update meeting started
-        if (state.s) {
-          setIsMeetingStarted(true);
-        }
-
-        // Clear error state since we have valid data from agent
-        // This allows UI to render recovered state instead of error message
-        if (error) {
-          setError(null);
-          setRecoveredFromAgent(true);
-        }
-
-        // Track if we have agent state but no agenda definition yet
-        // This enables UI to show "using agent state, awaiting definition" message
-        if (!agenda && (state.c || (state.d && state.d.length > 0))) {
-          setHasAgentStateOnly(true);
-        }
-
-        if (DEBUG) {
-          console.log("[AgendaContext] Synced from agent attributes:", state);
-        }
-      }
-    } catch (err) {
-      if (DEBUG) {
-        console.warn("[AgendaContext] Failed to parse agent attributes:", err);
-      }
-    }
-  }, [
-    apiLoadComplete,
-    remoteParticipants,
-    error,
-    agenda,
-    lastVersionRef,
-    setCurrentItemId,
-    setItemStatuses,
-    setIsMeetingStarted,
-    setError,
-    setRecoveredFromAgent,
-    setHasAgentStateOnly,
-  ]);
+  // NO-OP: Agent is hidden and does not appear in remoteParticipants
+  // Late joiner sync is handled via API fetch (use-agenda-api.ts)
+  // Real-time updates come via LiveKit text streams (use-agenda-livekit.ts)
 }
