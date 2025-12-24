@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Session } from "@/lib/auth";
 
 const protectedRoutes = ["/dashboard", "/settings", "/meetings"];
-const authRoutes = ["/sign-in", "/sign-up"];
+const authRoutes = ["/sign-in", "/sign-up", "/forgot-password", "/reset-password"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -45,5 +45,7 @@ export const config = {
     "/meetings/:path*",
     "/sign-in",
     "/sign-up",
+    "/forgot-password",
+    "/reset-password",
   ],
 };

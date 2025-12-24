@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { signIn, sendVerificationEmail } from "@/lib/auth-client";
+import { signUp, signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,30 +42,26 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-function SignInContent() {
+function SignUpContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [needsVerification, setNeedsVerification] = useState(false);
-  const [verificationEmail, setVerificationEmail] = useState("");
-  const [resendingVerification, setResendingVerification] = useState(false);
-  const [verificationSent, setVerificationSent] = useState(false);
 
   const [formData, setFormData] = useState({
+    name: "",
     email: "",
     password: "",
+    confirmPassword: "",
   });
 
-  const searchParams = useSearchParams();
   const teamInviteToken = searchParams.get("team_invite");
   const authError = searchParams.get("error");
-  const verified = searchParams.get("verified");
 
   // Build callback URL with team_invite token if present
   let callbackURL = searchParams.get("callbackURL") || "/dashboard";
   if (teamInviteToken) {
-    // Redirect to teams page with accept_token after auth
     callbackURL = `/dashboard/teams?accept_token=${encodeURIComponent(teamInviteToken)}`;
   }
 
@@ -73,81 +69,51 @@ function SignInContent() {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     setError(null);
-    setNeedsVerification(false);
-    setVerificationSent(false);
   };
 
-  // Known Better Auth error codes for email verification
-  const EMAIL_VERIFICATION_ERROR_CODES = [
-    "EMAIL_NOT_VERIFIED",
-    "VERIFICATION_REQUIRED",
-  ];
-
-  const handleEmailSignIn = async (e: React.FormEvent) => {
+  const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    if (formData.password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
-    setNeedsVerification(false);
-    setVerificationSent(false);
 
     try {
-      const { error } = await signIn.email({
+      const { error } = await signUp.email({
+        name: formData.name,
         email: formData.email,
         password: formData.password,
         callbackURL,
       });
 
       if (error) {
-        // Check if the error is about email verification using error code (more reliable)
-        const errorCode = (error as { code?: string }).code;
-        const isVerificationError =
-          error.status === 403 ||
-          (errorCode && EMAIL_VERIFICATION_ERROR_CODES.includes(errorCode)) ||
-          // Fallback: only check for exact "email not verified" phrase (more specific than just "verify")
-          error.message?.toLowerCase() === "email not verified";
-
-        if (isVerificationError) {
-          setNeedsVerification(true);
-          setVerificationEmail(formData.email);
-        } else if (
-          error.status === 401 ||
-          error.message?.toLowerCase().includes("invalid credentials") ||
-          error.message?.toLowerCase().includes("invalid email or password")
-        ) {
-          setError("Invalid email or password");
+        if (error.message?.includes("already exists") || error.message?.includes("already registered")) {
+          setError("An account with this email already exists. Please sign in instead.");
         } else {
-          setError(error.message || "Failed to sign in");
+          setError(error.message || "Failed to create account");
         }
       } else {
+        // Redirect to dashboard (auto sign-in is enabled)
         router.push(callbackURL);
       }
     } catch (err) {
-      console.error("Sign in error:", err);
-      setError("Failed to sign in. Please try again.");
+      console.error("Sign up error:", err);
+      setError("Failed to create account. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleResendVerification = async () => {
-    setResendingVerification(true);
-    setVerificationSent(false);
-    setError(null);
-    try {
-      await sendVerificationEmail({
-        email: verificationEmail,
-        callbackURL,
-      });
-      setVerificationSent(true);
-    } catch (err) {
-      console.error("Failed to resend verification email:", err);
-      setError("Failed to send verification email. Please try again.");
-    } finally {
-      setResendingVerification(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignUp = async () => {
     setIsGoogleLoading(true);
     setError(null);
     try {
@@ -156,8 +122,8 @@ function SignInContent() {
         callbackURL,
       });
     } catch (err) {
-      console.error("Sign in error:", err);
-      setError("Failed to sign in. Please try again.");
+      console.error("Google sign up error:", err);
+      setError("Failed to sign up with Google. Please try again.");
     } finally {
       setIsGoogleLoading(false);
     }
@@ -167,58 +133,40 @@ function SignInContent() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Welcome to Hedwiq</CardTitle>
+          <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
           <CardDescription>
-            Sign in to start your AI-powered meetings
+            Sign up to start your AI-powered meetings
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Email verified notice */}
-          {verified === "true" && (
-            <div className="rounded-md bg-green-500/10 p-3 text-sm text-green-600">
-              Your email has been verified! You can now sign in.
-            </div>
-          )}
-
           {/* Team invitation notice */}
           {teamInviteToken && (
             <div className="rounded-md bg-primary/10 p-3 text-sm text-primary">
-              You&apos;ve been invited to join a team. Sign in to accept the invitation.
+              You&apos;ve been invited to join a team. Create an account to accept the invitation.
             </div>
           )}
 
-          {/* Email verification needed */}
-          {needsVerification && (
-            <div className="rounded-md bg-amber-500/10 p-3 text-sm text-amber-700">
-              <p className="mb-2">
-                Please verify your email address before signing in.
-              </p>
-              {verificationSent ? (
-                <p className="text-green-600">
-                  Verification email sent! Check your inbox.
-                </p>
-              ) : (
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 text-amber-700 underline"
-                  onClick={handleResendVerification}
-                  disabled={resendingVerification}
-                >
-                  {resendingVerification ? "Sending..." : "Resend verification email"}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {(error || authError) && !needsVerification && (
+          {(error || authError) && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {error || "Authentication failed. Please try again."}
             </div>
           )}
 
           {/* Email/Password Form */}
-          <form onSubmit={handleEmailSignIn} className="space-y-4">
+          <form onSubmit={handleEmailSignUp} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Full Name</Label>
+              <Input
+                id="name"
+                name="name"
+                type="text"
+                placeholder="John Doe"
+                value={formData.name}
+                onChange={handleInputChange}
+                required
+                disabled={isLoading}
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -233,21 +181,27 @@ function SignInContent() {
               />
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Link
-                  href="/forgot-password"
-                  className="text-xs text-muted-foreground hover:text-primary"
-                >
-                  Forgot password?
-                </Link>
-              </div>
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 name="password"
                 type="password"
-                placeholder="Your password"
+                placeholder="At least 8 characters"
                 value={formData.password}
+                onChange={handleInputChange}
+                required
+                minLength={8}
+                disabled={isLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                placeholder="Confirm your password"
+                value={formData.confirmPassword}
                 onChange={handleInputChange}
                 required
                 disabled={isLoading}
@@ -276,10 +230,10 @@ function SignInContent() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     />
                   </svg>
-                  Signing in...
+                  Creating account...
                 </span>
               ) : (
-                "Sign in"
+                "Create account"
               )}
             </Button>
           </form>
@@ -296,11 +250,11 @@ function SignInContent() {
             </div>
           </div>
 
-          {/* Google Sign In - follows Google branding guidelines */}
+          {/* Google Sign Up - follows Google branding guidelines */}
           <button
             type="button"
             className="flex h-10 w-full items-center justify-center gap-3 rounded-md border border-input bg-white px-4 text-sm font-medium text-[#1f1f1f] shadow-sm transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 dark:border-[#8e918f] dark:bg-[#131314] dark:text-[#e3e3e3] dark:hover:bg-[#1f1f1f]"
-            onClick={handleGoogleSignIn}
+            onClick={handleGoogleSignUp}
             disabled={isGoogleLoading || isLoading}
           >
             {isGoogleLoading ? (
@@ -325,24 +279,24 @@ function SignInContent() {
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                <span>Signing in...</span>
+                <span>Signing up...</span>
               </>
             ) : (
               <>
                 <GoogleIcon className="size-5" />
-                <span>Sign in with Google</span>
+                <span>Sign up with Google</span>
               </>
             )}
           </button>
 
           <p className="text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
-            <Link href="/sign-up" className="text-primary underline hover:no-underline">
-              Sign up
+            Already have an account?{" "}
+            <Link href="/sign-in" className="text-primary underline hover:no-underline">
+              Sign in
             </Link>
           </p>
           <p className="text-center text-xs text-muted-foreground">
-            By signing in, you agree to our Terms of Service and Privacy Policy
+            By signing up, you agree to our Terms of Service and Privacy Policy
           </p>
         </CardContent>
       </Card>
@@ -350,16 +304,16 @@ function SignInContent() {
   );
 }
 
-export default function SignInPage() {
+export default function SignUpPage() {
   return (
     <Suspense
       fallback={
         <div className="flex min-h-screen items-center justify-center p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl font-bold">Welcome to Hedwiq</CardTitle>
+              <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
               <CardDescription>
-                Sign in to start your AI-powered meetings
+                Sign up to start your AI-powered meetings
               </CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center py-8">
@@ -369,7 +323,7 @@ export default function SignInPage() {
         </div>
       }
     >
-      <SignInContent />
+      <SignUpContent />
     </Suspense>
   );
 }
