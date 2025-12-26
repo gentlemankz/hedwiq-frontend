@@ -49,6 +49,7 @@ import {
 import { useSidebarContext } from "@/contexts/sidebar-context";
 import { FolderColorDot, EditFolderDialog, DeleteFolderDialog } from "@/components/folders";
 import { TeamSidebarSection } from "@/components/teams";
+import { SubscriptionWidget } from "@/components/subscription";
 import { getInitials } from "@/lib/utils";
 import type { User } from "@/types/user";
 import type { Folder } from "@/types/folder";
@@ -165,6 +166,13 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+
+      <SidebarSeparator />
+
+      {/* Subscription Widget */}
+      <div className="px-2 py-2">
+        <SubscriptionWidget />
+      </div>
 
       <SidebarSeparator />
 
