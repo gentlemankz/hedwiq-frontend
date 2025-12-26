@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { Crown, Zap, Sparkles, Building2, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import {
   useSubscriptionContext,
   type SubscriptionTier,
 } from "@/contexts/subscription-context";
-import { isUnlimitedMinutes } from "@/lib/polar";
+import { isUnlimitedMinutes } from "@/lib/polar/constants";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -48,25 +48,18 @@ interface TierBadgeProps {
 }
 
 export function TierBadge({ tier, showUpgrade = false, className }: TierBadgeProps) {
-  const variantMap: Record<SubscriptionTier, "default" | "secondary" | "outline"> = {
-    enterprise: "default",
-    business: "default",
-    pro: "secondary",
-    free: "outline",
+  // Style mapping based on tier - uses custom colors with appropriate variants
+  const styleMap: Record<SubscriptionTier, { variant: "default" | "secondary" | "outline"; color: string }> = {
+    enterprise: { variant: "default", color: "bg-purple-500 text-white border-purple-500" },
+    business: { variant: "default", color: "bg-amber-500 text-white border-amber-500" },
+    pro: { variant: "secondary", color: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" },
+    free: { variant: "outline", color: "" },
   };
 
-  const colorMap: Record<SubscriptionTier, string> = {
-    enterprise: "bg-purple-500 text-white border-purple-500",
-    business: "bg-amber-500 text-white border-amber-500",
-    pro: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-    free: "",
-  };
+  const { variant, color } = styleMap[tier];
 
   return (
-    <Badge
-      variant={variantMap[tier]}
-      className={cn(colorMap[tier], className)}
-    >
+    <Badge variant={variant} className={cn(color, className)}>
       {showUpgrade && tier === "free" ? "Upgrade" : tier.charAt(0).toUpperCase() + tier.slice(1)}
     </Badge>
   );
@@ -125,14 +118,11 @@ export function SubscriptionWidget({ className, compact = false }: SubscriptionW
     getUsagePercentage,
   } = useSubscriptionContext();
 
-  // Memoized calculations
-  const usagePercent = useMemo(() => getUsagePercentage(), [getUsagePercentage]);
+  // Computed values - getUsagePercentage is already stable from context
+  const usagePercent = getUsagePercentage();
   const isNearLimit = usagePercent > 80;
   const isAtLimit = usagePercent >= 100;
-  const hasUnlimited = useMemo(
-    () => isUnlimitedMinutes(limits.minutesPerMonth),
-    [limits.minutesPerMonth]
-  );
+  const hasUnlimited = isUnlimitedMinutes(limits.minutesPerMonth);
 
   // Handle upgrade click (memoized to prevent unnecessary re-renders)
   const handleUpgrade = useCallback(async () => {

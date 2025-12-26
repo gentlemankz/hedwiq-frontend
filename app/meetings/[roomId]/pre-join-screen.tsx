@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar, Info, FolderClosed } from "lucide-react";
+import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar, Info, FolderClosed, Zap } from "lucide-react";
 import { FolderSelect } from "@/components/folders";
 import { useFolders } from "@/hooks/use-folders";
 import Link from "next/link";
@@ -17,6 +17,7 @@ import type { User } from "@/types/user";
 import type { UploadedDocument } from "@/types/document";
 import type { DraftAgendaItem, AgendaWithItems } from "@/types/agenda";
 import type { Meeting } from "@/types/meeting";
+import type { SubscriptionTier } from "@/lib/polar/constants";
 import { VideoPreview } from "./components/video-preview";
 import { MediaControls } from "./components/media-controls";
 import { UsernameForm } from "./components/username-form";
@@ -85,6 +86,14 @@ export interface MeetingData {
   initialAgendaItems?: DraftAgendaItem[];
 }
 
+/** Limit exceeded data for showing upgrade prompt */
+export interface LimitExceededData {
+  tier: SubscriptionTier;
+  minutesUsed: number;
+  minutesLimit: number;
+  remainingMinutes: number;
+}
+
 interface PreJoinScreenProps {
   roomId: string;
   user: User;
@@ -96,6 +105,8 @@ interface PreJoinScreenProps {
   meetingData?: MeetingData | null;
   /** Folder ID from URL params for instant meetings */
   instantMeetingFolderId?: string;
+  /** Limit exceeded data for showing upgrade prompt */
+  limitExceeded?: LimitExceededData | null;
 }
 
 // ============================================================================
@@ -118,6 +129,7 @@ export function PreJoinScreen({
   error,
   meetingData,
   instantMeetingFolderId,
+  limitExceeded,
 }: PreJoinScreenProps) {
   // Folder data for organizing meetings (standalone fetch, works outside SidebarProvider)
   const { folders, foldersLoading, defaultFolderId } = useFolders();
@@ -339,12 +351,36 @@ export function PreJoinScreen({
       </div>
 
       {/* Error messages */}
-      {displayError && (
+      {limitExceeded ? (
+        <Alert variant="destructive" className="mb-4 w-full max-w-2xl">
+          <AlertCircle className="size-4" />
+          <AlertDescription className="space-y-3">
+            <div>
+              <strong>Monthly meeting limit reached</strong>
+              <p className="text-sm mt-1">
+                You&apos;ve used {limitExceeded.minutesUsed} of {limitExceeded.minutesLimit} minutes
+                on your <span className="capitalize">{limitExceeded.tier}</span> plan.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button size="sm" variant="outline" className="gap-2" asChild>
+                <Link href="/dashboard/settings?tab=subscription">
+                  <Zap className="size-4" />
+                  Upgrade Plan
+                </Link>
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                to get more meeting minutes
+              </span>
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : displayError ? (
         <Alert variant="destructive" className="mb-4 w-full max-w-2xl">
           <AlertCircle className="size-4" />
           <AlertDescription>{displayError}</AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
       {/* Main PreJoin Card */}
       <div className="w-full max-w-2xl rounded-lg border bg-card p-6 shadow-sm">

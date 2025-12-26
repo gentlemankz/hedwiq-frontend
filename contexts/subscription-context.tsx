@@ -20,7 +20,7 @@ import {
   getIntervalFromProductId,
   isUnlimitedMinutes,
   isValidProductSlug,
-} from "@/lib/polar";
+} from "@/lib/polar/constants";
 
 // ============================================================================
 // Types
@@ -83,14 +83,17 @@ export { TIER_LIMITS, isUnlimitedMinutes };
 // Constants
 // ============================================================================
 
-const DEFAULT_USAGE: UsageStats = Object.freeze({
+const DEFAULT_USAGE: UsageStats = {
   minutesUsed: 0,
   storageUsedGb: 0,
   emailDraftsSent: 0,
-});
+};
 
 // Debounce delay for refresh operations (ms)
 const REFRESH_DEBOUNCE_MS = 1000;
+
+// Delay after checkout success before refreshing (allows webhook processing)
+const CHECKOUT_SUCCESS_DELAY_MS = 2000;
 
 // ============================================================================
 // Context
@@ -207,6 +210,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastRefreshRef = useRef<number>(0);
+  const checkoutRetryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Derived limits based on tier
   const limits = useMemo(() => TIER_LIMITS[tier], [tier]);
@@ -448,13 +452,36 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       url.searchParams.delete("checkout");
       window.history.replaceState({}, "", url.toString());
 
-      // Then refresh subscription state
-      // Use a small delay to ensure Polar has processed the webhook
-      const timeoutId = setTimeout(() => {
-        refresh();
-      }, 500);
+      // Refresh subscription state with retry logic
+      // Webhooks may take time to process, so we retry a few times
+      let retryCount = 0;
+      const maxRetries = 3;
+      let isCancelled = false;
 
-      return () => clearTimeout(timeoutId);
+      const attemptRefresh = async () => {
+        if (isCancelled) return;
+
+        await refresh();
+
+        // Fetch fresh state to avoid stale closure
+        // We need to re-check via fetchCustomerState since tier state may be stale
+        // If still on free tier after checkout success, retry
+        if (!isCancelled && retryCount < maxRetries) {
+          retryCount++;
+          checkoutRetryTimeoutRef.current = setTimeout(attemptRefresh, CHECKOUT_SUCCESS_DELAY_MS * retryCount);
+        }
+      };
+
+      // Initial delay to allow webhook processing
+      checkoutRetryTimeoutRef.current = setTimeout(attemptRefresh, CHECKOUT_SUCCESS_DELAY_MS);
+
+      return () => {
+        isCancelled = true;
+        if (checkoutRetryTimeoutRef.current) {
+          clearTimeout(checkoutRetryTimeoutRef.current);
+          checkoutRetryTimeoutRef.current = null;
+        }
+      };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally run only on mount to check URL params once
   }, []);
@@ -469,6 +496,10 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       // Clear any pending refresh timeout
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
+      }
+      // Clear any pending checkout retry timeout
+      if (checkoutRetryTimeoutRef.current) {
+        clearTimeout(checkoutRetryTimeoutRef.current);
       }
     };
   }, []);

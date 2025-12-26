@@ -21,6 +21,7 @@ import {
   user,
   document,
 } from "./schema";
+import { reportMeetingMinutes } from "@/lib/polar/usage";
 
 // ============================================================================
 // Types
@@ -185,6 +186,32 @@ export interface MeetingHistoryData {
 }
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Maximum rows per batch insert to avoid PostgreSQL parameter limits.
+ * PostgreSQL has a limit of ~65535 parameters per query.
+ * With ~10-15 columns per row, 100 rows keeps us well under the limit.
+ */
+const BATCH_INSERT_CHUNK_SIZE = 100;
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Split an array into chunks of specified size
+ */
+function chunk<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
+
+// ============================================================================
 // ID Generation
 // ============================================================================
 
@@ -220,8 +247,19 @@ export async function createMeetingSession(
 
 /**
  * End a meeting session when user leaves
+ *
+ * Also reports usage to Polar for billing purposes.
+ *
+ * @param sessionId - The session ID to end
+ * @returns The session data with duration, or null if session not found
  */
-export async function endMeetingSession(sessionId: string): Promise<void> {
+export async function endMeetingSession(sessionId: string): Promise<{
+  id: string;
+  userId: string;
+  meetingId: string;
+  roomId: string;
+  durationSeconds: number;
+} | null> {
   const now = new Date();
 
   // Get the session to calculate duration
@@ -233,7 +271,7 @@ export async function endMeetingSession(sessionId: string): Promise<void> {
 
   if (sessions.length === 0) {
     console.warn(`Session ${sessionId} not found`);
-    return;
+    return null;
   }
 
   const session = sessions[0];
@@ -241,6 +279,7 @@ export async function endMeetingSession(sessionId: string): Promise<void> {
     (now.getTime() - session.joinedAt.getTime()) / 1000
   );
 
+  // Update the session in database
   await db
     .update(meetingSession)
     .set({
@@ -249,6 +288,29 @@ export async function endMeetingSession(sessionId: string): Promise<void> {
       updatedAt: now,
     })
     .where(eq(meetingSession.id, sessionId));
+
+  // Report meeting minutes to Polar for usage-based billing
+  // Convert seconds to minutes (rounding up to nearest minute)
+  const durationMinutes = Math.ceil(durationSeconds / 60);
+
+  if (durationMinutes > 0) {
+    // Fire and forget - don't block session end on usage reporting
+    reportMeetingMinutes(session.userId, durationMinutes, {
+      roomId: session.roomId,
+      meetingId: session.meetingId,
+      sessionId: session.id,
+    }).catch((error) => {
+      console.error("[Meeting Session] Failed to report usage to Polar:", error);
+    });
+  }
+
+  return {
+    id: session.id,
+    userId: session.userId,
+    meetingId: session.meetingId,
+    roomId: session.roomId,
+    durationSeconds,
+  };
 }
 
 /**
@@ -296,32 +358,43 @@ export async function validateSessionOwnership(
 
 /**
  * Save transcription segments (batch insert with upsert)
+ *
+ * Uses chunked batch inserts to avoid PostgreSQL parameter limits.
+ * For very long meetings with thousands of segments, this prevents query failures.
  */
 export async function saveTranscriptionSegments(
   segments: TranscriptionInput[]
 ): Promise<void> {
   if (segments.length === 0) return;
 
-  // Use upsert to handle duplicates (same segment ID)
-  for (const segment of segments) {
+  // Prepare values for batch insert
+  const values = segments.map((segment) => ({
+    id: segment.id,
+    meetingId: segment.meetingId,
+    roomId: segment.roomId,
+    speakerIdentity: segment.speakerIdentity,
+    speakerName: segment.speakerName,
+    text: segment.text,
+    timestamp: segment.timestamp,
+    orderIndex: segment.orderIndex,
+    isFinal: segment.isFinal ?? true,
+  }));
+
+  // Chunk the values to avoid PostgreSQL parameter limits
+  const chunks = chunk(values, BATCH_INSERT_CHUNK_SIZE);
+
+  // Process chunks sequentially to maintain order and avoid overwhelming the DB
+  for (const valueChunk of chunks) {
+    // Batch insert with upsert - uses PostgreSQL ON CONFLICT DO UPDATE
+    // The sql`excluded.column` syntax references the values that would have been inserted
     await db
       .insert(transcriptionSegment)
-      .values({
-        id: segment.id,
-        meetingId: segment.meetingId,
-        roomId: segment.roomId,
-        speakerIdentity: segment.speakerIdentity,
-        speakerName: segment.speakerName,
-        text: segment.text,
-        timestamp: segment.timestamp,
-        orderIndex: segment.orderIndex,
-        isFinal: segment.isFinal ?? true,
-      })
+      .values(valueChunk)
       .onConflictDoUpdate({
         target: transcriptionSegment.id,
         set: {
-          text: segment.text,
-          isFinal: segment.isFinal ?? true,
+          text: sql`excluded.text`,
+          isFinal: sql`excluded.is_final`,
         },
       });
   }
@@ -362,27 +435,33 @@ export async function getMeetingTranscription(
 // ============================================================================
 
 /**
- * Save insights (batch insert with upsert)
+ * Save insights (batch insert)
+ *
+ * Uses chunked batch inserts to avoid PostgreSQL parameter limits.
  */
 export async function saveInsights(insights: InsightInput[]): Promise<void> {
   if (insights.length === 0) return;
 
-  for (const insight of insights) {
-    await db
-      .insert(meetingInsight)
-      .values({
-        id: insight.id,
-        meetingId: insight.meetingId,
-        roomId: insight.roomId,
-        type: insight.type,
-        content: insight.content,
-        speakerIdentity: insight.speakerIdentity,
-        speakerName: insight.speakerName,
-        confidence: Math.round(insight.confidence * 100),
-        transcriptRef: insight.transcriptRef,
-        timestamp: insight.timestamp,
-      })
-      .onConflictDoNothing();
+  // Prepare values for batch insert
+  const values = insights.map((insight) => ({
+    id: insight.id,
+    meetingId: insight.meetingId,
+    roomId: insight.roomId,
+    type: insight.type,
+    content: insight.content,
+    speakerIdentity: insight.speakerIdentity,
+    speakerName: insight.speakerName,
+    confidence: Math.round(insight.confidence * 100),
+    transcriptRef: insight.transcriptRef,
+    timestamp: insight.timestamp,
+  }));
+
+  // Chunk the values to avoid PostgreSQL parameter limits
+  const chunks = chunk(values, BATCH_INSERT_CHUNK_SIZE);
+
+  for (const valueChunk of chunks) {
+    // Batch insert, skip duplicates
+    await db.insert(meetingInsight).values(valueChunk).onConflictDoNothing();
   }
 }
 
@@ -420,32 +499,38 @@ export async function getMeetingInsights(
 // ============================================================================
 
 /**
- * Save document references (batch insert with upsert)
+ * Save document references (batch insert)
+ *
+ * Uses chunked batch inserts to avoid PostgreSQL parameter limits.
  */
 export async function saveDocumentReferences(
   references: DocumentReferenceInput[]
 ): Promise<void> {
   if (references.length === 0) return;
 
-  for (const ref of references) {
-    await db
-      .insert(documentReference)
-      .values({
-        id: ref.id,
-        meetingId: ref.meetingId,
-        roomId: ref.roomId,
-        documentId: ref.documentId,
-        sectionId: ref.sectionId,
-        pageNumber: ref.pageNumber,
-        sectionTitle: ref.sectionTitle,
-        matchedText: ref.matchedText,
-        bbox: ref.bbox,
-        context: ref.context,
-        confidence: Math.round(ref.confidence * 100),
-        transcriptRef: ref.transcriptRef,
-        timestamp: ref.timestamp,
-      })
-      .onConflictDoNothing();
+  // Prepare values for batch insert
+  const values = references.map((ref) => ({
+    id: ref.id,
+    meetingId: ref.meetingId,
+    roomId: ref.roomId,
+    documentId: ref.documentId,
+    sectionId: ref.sectionId,
+    pageNumber: ref.pageNumber,
+    sectionTitle: ref.sectionTitle,
+    matchedText: ref.matchedText,
+    bbox: ref.bbox,
+    context: ref.context,
+    confidence: Math.round(ref.confidence * 100),
+    transcriptRef: ref.transcriptRef,
+    timestamp: ref.timestamp,
+  }));
+
+  // Chunk the values to avoid PostgreSQL parameter limits
+  const chunks = chunk(values, BATCH_INSERT_CHUNK_SIZE);
+
+  for (const valueChunk of chunks) {
+    // Batch insert, skip duplicates
+    await db.insert(documentReference).values(valueChunk).onConflictDoNothing();
   }
 }
 

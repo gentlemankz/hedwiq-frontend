@@ -157,10 +157,11 @@ export function MeetingPersistenceProvider({
 
     const startSession = async () => {
       try {
+        // Skip limit check since it's already done before getting LiveKit token
         const response = await fetch(`/api/meetings/${meetingId}/session`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ roomId }),
+          body: JSON.stringify({ roomId, skipLimitCheck: true }),
         });
 
         if (!response.ok) {

@@ -115,15 +115,24 @@ export const TIER_LIMITS: Record<SubscriptionTier, TierLimits> = {
 };
 
 /**
- * Threshold for considering a tier as having "unlimited" minutes
+ * Threshold for considering a limit as "unlimited"
  */
 export const UNLIMITED_THRESHOLD = 100000;
 
 /**
+ * Check if a numeric limit should be considered unlimited
+ * Generic function for any limit type (minutes, drafts, storage, etc.)
+ */
+export function isUnlimited(limit: number): boolean {
+  return limit >= UNLIMITED_THRESHOLD;
+}
+
+/**
  * Check if minutes limit should be considered unlimited
+ * Alias for isUnlimited() with a more descriptive name for meeting minutes context
  */
 export function isUnlimitedMinutes(limit: number): boolean {
-  return limit >= UNLIMITED_THRESHOLD;
+  return isUnlimited(limit);
 }
 
 // ============================================================================

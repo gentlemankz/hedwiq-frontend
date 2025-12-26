@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -34,6 +34,8 @@ import {
 } from "@/components/meetings";
 import { FolderSelect } from "@/components/folders";
 import { useSidebarContext } from "@/contexts/sidebar-context";
+import { authClient } from "@/lib/auth-client";
+import { buildCheckoutSlug, consumePendingCheckout } from "@/lib/polar/checkout";
 import type { Meeting } from "@/types/meeting";
 import type { CalendarEventPublic } from "@/types/calendar";
 
@@ -45,6 +47,7 @@ export function DashboardClient({
   initialMeetings = [],
 }: DashboardClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { folders, foldersLoading, defaultFolderId } = useSidebarContext();
   const [joinRoomId, setJoinRoomId] = useState("");
   const [roomIdError, setRoomIdError] = useState<string | null>(null);
@@ -74,6 +77,33 @@ export function DashboardClient({
       setInstantMeetingFolderId(defaultFolderId);
     }
   }, [defaultFolderId, instantMeetingFolderId]);
+
+  // Handle pending checkout from OAuth flow (Google sign-in/sign-up)
+  useEffect(() => {
+    const checkoutPending = searchParams.get("checkout_pending");
+    if (checkoutPending !== "true") return;
+
+    // Clean up the URL immediately to prevent re-triggering on re-renders
+    const url = new URL(window.location.href);
+    url.searchParams.delete("checkout_pending");
+    router.replace(url.pathname + url.search, { scroll: false });
+
+    // Process pending checkout (sessionStorage is the source of truth)
+    const pendingCheckout = consumePendingCheckout();
+    if (!pendingCheckout) return;
+
+    const slug = buildCheckoutSlug(pendingCheckout.plan, pendingCheckout.billing);
+    if (!slug) {
+      console.error("Failed to build checkout slug from pending checkout");
+      return;
+    }
+
+    // Trigger Polar checkout - this will redirect to Polar's checkout page
+    authClient.checkout({ slug }).catch((error: unknown) => {
+      console.error("Failed to trigger checkout:", error);
+      // Note: User can still upgrade later from dashboard
+    });
+  }, [searchParams, router]);
 
   // Mounted state for hydration safety with Radix UI Dialog
   const isMounted = useSyncExternalStore(

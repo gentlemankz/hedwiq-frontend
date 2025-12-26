@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { LiveKitRoom } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { RoomOptions, VideoPresets } from "livekit-client";
-import { PreJoinScreen, UserChoices, MeetingData } from "./pre-join-screen";
+import { PreJoinScreen, UserChoices, MeetingData, LimitExceededData } from "./pre-join-screen";
 import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
 import { DocumentsProvider } from "@/contexts/documents-context";
@@ -36,6 +36,9 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
   const [userChoices, setUserChoices] = useState<UserChoices | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Limit exceeded state for showing upgrade prompt
+  const [limitExceeded, setLimitExceeded] = useState<LimitExceededData | null>(null);
 
   // Meeting data loaded from API
   const [meetingData, setMeetingData] = useState<MeetingData | null>(null);
@@ -108,6 +111,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
 
       setIsConnecting(true);
       setError(null);
+      setLimitExceeded(null);
       setUserChoices(choices);
 
       // Track the meeting data (may be created in this flow)
@@ -115,15 +119,49 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
 
       try {
         // Join Sequencing (Critical - see AGENDA_FEATURE_PLAN.md):
-        // 0. Create meeting if instant meeting (no meeting exists yet)
-        // 1. Save agenda (if items exist)
-        // 2. Publish agenda (lock it in)
-        // 3. Request token (only after agenda is published)
-        // 4. Update meeting status to "live"
-        // 5. Connect to LiveKit
-        // This order ensures the agent can fetch the agenda when it joins.
+        // 0. Check usage limits FIRST (before any DB mutations)
+        // 1. Create meeting if instant meeting (no meeting exists yet)
+        // 2. Save agenda (if items exist)
+        // 3. Publish agenda (lock it in)
+        // 4. Request token (only after agenda is published)
+        // 5. Update meeting status to "live"
+        // 6. Connect to LiveKit
+        // This order ensures we don't create orphaned records when limits are exceeded.
 
-        // Step 0: Create meeting if this is an instant meeting without existing meeting
+        // Step 0: Check usage limits BEFORE any mutations
+        // This prevents creating meetings/agendas that will be rejected at join
+        const limitCheckResponse = await fetch("/api/meetings/usage-check", {
+          signal: abortController.signal,
+        });
+
+        const limitData = await limitCheckResponse.json();
+
+        if (!limitCheckResponse.ok || !limitData.allowed) {
+          // Handle limit exceeded - show upgrade prompt
+          if (limitData.error === "LIMIT_EXCEEDED") {
+            setLimitExceeded({
+              tier: limitData.tier as LimitExceededData["tier"],
+              minutesUsed: limitData.minutesUsed,
+              minutesLimit: limitData.minutesLimit,
+              remainingMinutes: limitData.remainingMinutes,
+            });
+            throw new Error(limitData.message || "Monthly meeting minutes limit reached");
+          }
+
+          // Handle service unavailable
+          if (limitData.error === "SERVICE_UNAVAILABLE") {
+            throw new Error(limitData.message || "Unable to verify usage limits. Please try again.");
+          }
+
+          throw new Error(limitData.error || "Failed to check usage limits");
+        }
+
+        console.log("[Meeting] Usage check passed:", {
+          tier: limitData.tier,
+          remaining: limitData.remainingMinutes,
+        });
+
+        // Step 1: Create meeting if this is an instant meeting without existing meeting
         // Instant meetings are created here (on join) instead of on dashboard
         // This prevents orphaned meetings when user cancels at PreJoin
         if (!currentMeetingData?.meeting && instantMeetingParams) {
@@ -160,7 +198,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         // Track agenda version from server response (for cache invalidation)
         let agendaVersion: number | undefined;
 
-        // Step 1 & 2: Save and publish agenda if items exist
+        // Step 2 & 3: Save and publish agenda if items exist
         // Note: If user has no agenda items but room has an existing agenda,
         // we leave it intact. The user can still join without modifying
         // the existing agenda. This supports late joiners and users who
@@ -174,7 +212,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
             presenter: item.presenter,
           }));
 
-          // Step 1: Save agenda (PUT /api/rooms/[roomId]/agenda)
+          // Step 2: Save agenda (PUT /api/rooms/[roomId]/agenda)
           const saveResponse = await fetch(`/api/rooms/${roomId}/agenda`, {
             method: "PUT",
             headers: {
@@ -193,7 +231,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
             throw new Error(data.error || "Failed to save agenda");
           }
 
-          // Step 2: Publish agenda (POST /api/rooms/[roomId]/agenda/publish)
+          // Step 3: Publish agenda (POST /api/rooms/[roomId]/agenda/publish)
           const publishResponse = await fetch(`/api/rooms/${roomId}/agenda/publish`, {
             method: "POST",
             headers: {
@@ -212,7 +250,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
           agendaVersion = publishData.agenda.version;
         }
 
-        // Step 3: Request token (POST /api/livekit/token)
+        // Step 4: Request token (POST /api/livekit/token)
         const response = await fetch("/api/livekit/token", {
           method: "POST",
           headers: {
@@ -232,7 +270,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
 
         const data = await response.json();
 
-        // Step 4: Update meeting status to "live" if host is joining
+        // Step 5: Update meeting status to "live" if host is joining
         // This ensures the meeting only shows as "live" when someone actually joins
         if (
           currentMeetingData?.meeting &&
@@ -265,7 +303,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
           }
         }
 
-        // Step 5: Only update state if this request wasn't aborted
+        // Step 6: Only update state if this request wasn't aborted
         // (LiveKit connection happens via state update triggering LiveKitRoom)
         if (!abortController.signal.aborted) {
           // Update choices with agenda version for cache invalidation
@@ -367,6 +405,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
         error={error}
         meetingData={meetingData}
         instantMeetingFolderId={instantMeetingParams?.folderId}
+        limitExceeded={limitExceeded}
       />
     );
   }

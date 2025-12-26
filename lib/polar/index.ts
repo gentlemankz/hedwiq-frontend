@@ -11,6 +11,7 @@ export {
   TIER_LIMITS,
   UNLIMITED_THRESHOLD,
   // Functions
+  isUnlimited,
   isUnlimitedMinutes,
   getTierFromProductId,
   getIntervalFromProductId,
@@ -18,3 +19,41 @@ export {
   isValidProductSlug,
   getLimitsForTier,
 } from "./constants";
+
+// Usage tracking exports
+export {
+  // Types
+  type UsageReport,
+  type MeetingLimitCheck,
+  type CustomerState,
+  // Constants
+  USAGE_EVENTS,
+  // Functions
+  reportMeetingMinutes,
+  reportEmailDraft,
+  reportStorageChange,
+  getCustomerState,
+  canUserStartMeeting,
+  canUserCreateEmailDraft,
+} from "./usage";
+
+// Checkout utilities exports
+export {
+  // Types
+  type PendingCheckout,
+  // Constants
+  PENDING_CHECKOUT_KEY,
+  // Functions
+  buildCheckoutSlug,
+  storePendingCheckout,
+  consumePendingCheckout,
+  hasPendingCheckout,
+  clearPendingCheckout,
+} from "./checkout";
+
+// Auth flow utilities exports
+export {
+  handlePostAuthCheckout,
+  formatPlanName,
+  buildOAuthCallbackURL,
+} from "./auth-flow";

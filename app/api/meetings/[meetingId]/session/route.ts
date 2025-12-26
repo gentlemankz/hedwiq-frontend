@@ -8,12 +8,15 @@ import {
   getActiveSession,
   validateSessionOwnership,
 } from "@/lib/db/meeting-data";
+import { canUserStartMeeting } from "@/lib/polar/usage";
 
 /**
  * POST /api/meetings/[meetingId]/session
  *
  * Create a new session when user joins a meeting.
  * Returns the session ID to be used when leaving.
+ *
+ * Performs usage limit check before allowing user to join.
  *
  * Body:
  * - roomId: string (required)
@@ -58,7 +61,25 @@ export async function POST(
     // Check if user is host
     const isHost = await isMeetingHost(meetingId, session.user.id);
 
-    // Create session
+    // Always perform server-side limit check
+    // Never trust client-side flags - they can be bypassed
+    const limitCheck = await canUserStartMeeting(session.user.id);
+
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: "LIMIT_EXCEEDED",
+          message: limitCheck.reason || "Monthly meeting minutes limit reached",
+          tier: limitCheck.tier,
+          minutesUsed: limitCheck.minutesUsed,
+          minutesLimit: limitCheck.minutesLimit,
+          remainingMinutes: limitCheck.remainingMinutes,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Create meeting session
     const sessionId = await createMeetingSession({
       meetingId,
       userId: session.user.id,
@@ -69,6 +90,12 @@ export async function POST(
     return NextResponse.json({
       sessionId,
       isHost,
+      usage: {
+        tier: limitCheck.tier,
+        minutesUsed: limitCheck.minutesUsed,
+        minutesLimit: limitCheck.minutesLimit,
+        remainingMinutes: limitCheck.remainingMinutes,
+      },
     });
   } catch (error) {
     console.error("Create session error:", error);
