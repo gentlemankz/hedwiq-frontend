@@ -10,10 +10,28 @@ import {
   isUnlimitedMinutes,
 } from "@/contexts/subscription-context";
 
+// Import feature gating logic from lib (pure functions, server-compatible)
+import {
+  type Feature,
+  hasFeature,
+  getMinimumTier,
+  getFeatureDisplayName,
+  getFeatureDescription,
+  getFeaturesForTier,
+  getLockedFeatures,
+  isTierHigher,
+  isTierAtLeast,
+  getTierDisplayName,
+  getUpgradeSlug,
+  FEATURE_TIERS,
+  TIER_HIERARCHY,
+} from "@/lib/feature-gates";
+
 // ============================================================================
 // Re-exports for convenience
 // ============================================================================
 
+// From subscription context
 export {
   useSubscriptionContext,
   useSubscriptionOptional,
@@ -23,110 +41,105 @@ export {
   type SubscriptionState,
 };
 
-// ============================================================================
-// Feature Types
-// ============================================================================
-
-export type Feature =
-  | "transcription"
-  | "insights"
-  | "notes"
-  | "actions"
-  | "agenda_tracking"
-  | "recordings"
-  | "email_drafts"
-  | "teams"
-  | "unlimited_meetings"
-  | "extended_history"
-  | "increased_storage";
-
-// ============================================================================
-// Feature Tier Requirements
-// ============================================================================
-
-/**
- * Maps features to the tiers that have access to them
- */
-const FEATURE_TIERS: Record<Feature, SubscriptionTier[]> = {
-  transcription: ["free", "pro", "business", "enterprise"],
-  insights: ["free", "pro", "business", "enterprise"],
-  notes: ["free", "pro", "business", "enterprise"],
-  actions: ["pro", "business", "enterprise"],
-  agenda_tracking: ["pro", "business", "enterprise"],
-  recordings: ["pro", "business", "enterprise"],
-  email_drafts: ["pro", "business", "enterprise"],
-  teams: ["pro", "business", "enterprise"],
-  unlimited_meetings: ["business", "enterprise"],
-  extended_history: ["pro", "business", "enterprise"],
-  increased_storage: ["business", "enterprise"],
+// From feature-gates (pure functions)
+export {
+  type Feature,
+  hasFeature,
+  getMinimumTier,
+  getFeatureDisplayName,
+  getFeatureDescription,
+  getFeaturesForTier,
+  getLockedFeatures,
+  isTierHigher,
+  isTierAtLeast,
+  getTierDisplayName,
+  getUpgradeSlug,
+  FEATURE_TIERS,
+  TIER_HIERARCHY,
 };
 
-/**
- * Get the minimum tier required for a feature
- */
-export function getMinimumTierForFeature(feature: Feature): SubscriptionTier {
-  const tiers = FEATURE_TIERS[feature];
-  // Return the first (lowest) tier that has access
-  if (tiers.includes("free")) return "free";
-  if (tiers.includes("pro")) return "pro";
-  if (tiers.includes("business")) return "business";
-  return "enterprise";
-}
-
-/**
- * Check if a tier has access to a feature
- */
-export function hasFeatureAccess(tier: SubscriptionTier, feature: Feature): boolean {
-  return FEATURE_TIERS[feature]?.includes(tier) ?? false;
-}
+// Legacy aliases for backward compatibility
+export const getMinimumTierForFeature = getMinimumTier;
+export const hasFeatureAccess = hasFeature;
 
 // ============================================================================
 // Feature Hook
 // ============================================================================
 
-interface UseFeatureResult {
+export interface UseFeatureResult {
   /** Whether the feature is enabled for the current tier */
   enabled: boolean;
+  /** The raw feature identifier passed to the hook */
+  feature: Feature;
   /** The user's current subscription tier */
   tier: SubscriptionTier;
   /** Whether the user needs to upgrade to access this feature */
   requiresUpgrade: boolean;
   /** The minimum tier required to access this feature */
   requiredTier: SubscriptionTier;
+  /** Human-readable name of the required tier */
+  requiredTierName: string;
+  /** Human-readable display name of the feature (e.g., "Email Drafts") */
+  featureName: string;
+  /** Description of the feature */
+  featureDescription: string;
   /** Function to prompt the user to upgrade */
   promptUpgrade: () => Promise<void>;
+  /** Whether the subscription data is still loading */
+  isLoading: boolean;
+  /** Error message if subscription loading failed */
+  error: string | null;
 }
 
 /**
- * Hook to check if a feature is available for the current subscription
+ * Hook to check if a feature is available for the current subscription.
+ *
+ * Uses pure feature-gating logic from @/lib/feature-gates.
  *
  * @example
  * ```tsx
- * const { enabled, requiresUpgrade, promptUpgrade } = useFeature("email_drafts");
+ * const { enabled, feature, promptUpgrade, featureName } = useFeature("email_drafts");
  *
  * if (!enabled) {
- *   return <FeatureLockedCard onUpgrade={promptUpgrade} />;
+ *   return (
+ *     <FeatureLockedCard
+ *       feature={feature}        // Raw feature identifier for component props
+ *       onUpgrade={promptUpgrade}
+ *     />
+ *   );
  * }
+ *
+ * // featureName is the display string: "Email Drafts"
+ * // feature is the raw identifier: "email_drafts"
  * ```
  */
 export function useFeature(feature: Feature): UseFeatureResult {
-  const { tier, openCheckout } = useSubscriptionContext();
+  const { tier, openCheckout, isLoading, error } = useSubscriptionContext();
 
-  const enabled = useMemo(() => hasFeatureAccess(tier, feature), [tier, feature]);
-  const requiredTier = useMemo(() => getMinimumTierForFeature(feature), [feature]);
+  const enabled = useMemo(() => hasFeature(tier, feature), [tier, feature]);
+  const requiredTier = useMemo(() => getMinimumTier(feature), [feature]);
+  const requiredTierName = useMemo(() => getTierDisplayName(requiredTier), [requiredTier]);
+  const featureName = useMemo(() => getFeatureDisplayName(feature), [feature]);
+  const featureDescription = useMemo(() => getFeatureDescription(feature), [feature]);
 
   const promptUpgrade = useCallback(async () => {
-    // Default to the minimum required tier with annual billing for best value
-    const slug = requiredTier === "pro" ? "pro-annual" : "business-annual";
+    // Use the upgrade slug helper for consistent behavior
+    const slug = getUpgradeSlug(requiredTier, true); // preferAnnual = true
     await openCheckout(slug);
   }, [openCheckout, requiredTier]);
 
   return {
     enabled,
+    feature,
     tier,
     requiresUpgrade: !enabled,
     requiredTier,
+    requiredTierName,
+    featureName,
+    featureDescription,
     promptUpgrade,
+    isLoading,
+    error,
   };
 }
 

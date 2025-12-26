@@ -155,7 +155,8 @@ frontend/
 │   ├── email-drafts/
 │   │   ├── index.ts
 │   │   ├── email-draft-card.tsx      # Collapsible email draft card with inline editing
-│   │   └── email-draft-panel.tsx     # Email drafts panel with tabs (Pending/Sent/Dismissed)
+│   │   ├── email-draft-panel.tsx     # Email drafts panel with tabs (Pending/Sent/Dismissed)
+│   │   └── email-draft-panel-gated.tsx # Feature-gated wrapper that blocks drafts behind subscription access
 │   ├── folders/                      # Meeting folder UI components
 │   │   ├── index.ts
 │   │   ├── delete-folder-dialog.tsx  # Confirmation dialog for folder deletion
@@ -202,7 +203,9 @@ frontend/
 │   │   └── use-is-encrypted.ts
 │   ├── subscription/                 # Subscription/billing UI components
 │   │   ├── index.ts
-│   │   └── subscription-widget.tsx   # Polar subscription widget component
+│   │   ├── feature-locked-card.tsx   # Card/inline/banner/overlay upgrade prompts for gated features
+│   │   ├── subscription-widget.tsx   # Polar subscription widget component
+│   │   └── upgrade-dialog.tsx        # Plan comparison + checkout dialog with billing period toggle
 │   ├── teams/                        # Team workspace UI components
 │   │   ├── index.ts
 │   │   ├── create-team-dialog.tsx    # Dialog for creating new teams
@@ -323,12 +326,17 @@ frontend/
 │   ├── use-media-devices.ts          # Media device selection utilities
 │   ├── use-mobile.ts                 # Mobile detection hook
 │   ├── use-notes-panel.ts            # Legacy notes panel state
-│   └── use-subscription.ts           # Polar subscription hook
+│   └── use-subscription.ts           # Subscription hook with feature-gating helpers and upgrade prompts
 ├── lib/
+│   ├── api/                          # API utilities for server routes
+│   │   ├── index.ts                  # Barrel exports for API errors + feature guards
+│   │   ├── errors.ts                 # Standardized API error classes/responses
+│   │   └── feature-guard.ts          # Server-side feature gating and usage/quota checks
 │   ├── auth.ts                       # Better Auth server configuration
 │   ├── auth-client.ts                # Better Auth client configuration
 │   ├── calendar-service.ts           # Calendar sync service layer
 │   ├── calendar-sync.ts              # Google Calendar sync for meetings
+│   ├── feature-gates.ts              # Pure feature gating helpers and tier metadata
 │   ├── gmail-oauth.ts                # Gmail OAuth utilities (token exchange, refresh, revoke)
 │   ├── google-calendar.ts            # Google Calendar API utilities (event creation, sync)
 │   ├── google-oauth-base.ts          # Shared Google OAuth base utilities
