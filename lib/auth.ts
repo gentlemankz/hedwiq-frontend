@@ -11,6 +11,13 @@ import {
   generatePasswordResetEmailHtml,
 } from "@/lib/email/smtp";
 import { POLAR_CHECKOUT_PRODUCTS } from "@/lib/polar";
+import {
+  logWebhookEvent,
+  handleSubscriptionActive,
+  handleSubscriptionCanceled,
+  handleSubscriptionRevoked,
+  handleSubscriptionStatusChange,
+} from "@/lib/polar/webhook-handlers";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -138,45 +145,187 @@ export const auth = betterAuth({
                       secret: POLAR_WEBHOOK_SECRET,
                       // Triggered when a subscription becomes active
                       onSubscriptionActive: async (payload) => {
-                        // Only log in development to avoid leaking sensitive data in production
+                        const eventId = `${payload.data.id}-subscription.active`;
+
                         if (POLAR_ENVIRONMENT !== "production") {
                           console.log("[Polar Webhook] Subscription activated:", {
                             subscriptionId: payload.data.id,
                             productId: payload.data.productId,
                           });
                         }
-                        // TODO: Update local subscription cache when implemented
+
+                        // Update subscription cache
+                        const result = await handleSubscriptionActive({
+                          id: payload.data.id,
+                          productId: payload.data.productId,
+                          status: payload.data.status,
+                          currentPeriodEnd: payload.data.currentPeriodEnd?.toISOString(),
+                          cancelAtPeriodEnd: payload.data.cancelAtPeriodEnd,
+                          recurringInterval: payload.data.recurringInterval,
+                          customer: payload.data.customer ? {
+                            id: payload.data.customer.id,
+                            externalId: payload.data.customer.externalId,
+                            email: payload.data.customer.email,
+                          } : undefined,
+                        });
+
+                        // Log webhook event
+                        await logWebhookEvent(
+                          eventId,
+                          "subscription.active",
+                          result.success,
+                          { subscriptionId: payload.data.id, productId: payload.data.productId },
+                          result.error
+                        );
                       },
                       // Triggered when a subscription is canceled
                       onSubscriptionCanceled: async (payload) => {
+                        const eventId = `${payload.data.id}-subscription.canceled`;
+
                         if (POLAR_ENVIRONMENT !== "production") {
                           console.log("[Polar Webhook] Subscription canceled:", {
                             subscriptionId: payload.data.id,
                           });
                         }
-                        // TODO: Handle subscription cancellation
+
+                        // Update subscription cache
+                        const result = await handleSubscriptionCanceled({
+                          id: payload.data.id,
+                          productId: payload.data.productId,
+                          status: payload.data.status,
+                          customer: payload.data.customer ? {
+                            id: payload.data.customer.id,
+                            externalId: payload.data.customer.externalId,
+                            email: payload.data.customer.email,
+                          } : undefined,
+                        });
+
+                        // Log webhook event
+                        await logWebhookEvent(
+                          eventId,
+                          "subscription.canceled",
+                          result.success,
+                          { subscriptionId: payload.data.id },
+                          result.error
+                        );
                       },
                       // Triggered when a subscription is revoked (immediate cancellation)
                       onSubscriptionRevoked: async (payload) => {
+                        const eventId = `${payload.data.id}-subscription.revoked`;
+
                         if (POLAR_ENVIRONMENT !== "production") {
                           console.log("[Polar Webhook] Subscription revoked:", {
                             subscriptionId: payload.data.id,
                           });
                         }
-                        // TODO: Handle immediate subscription revocation
+
+                        // Update subscription cache - downgrade to free tier immediately
+                        const result = await handleSubscriptionRevoked({
+                          id: payload.data.id,
+                          productId: payload.data.productId,
+                          status: payload.data.status,
+                          customer: payload.data.customer ? {
+                            id: payload.data.customer.id,
+                            externalId: payload.data.customer.externalId,
+                            email: payload.data.customer.email,
+                          } : undefined,
+                        });
+
+                        // Log webhook event
+                        await logWebhookEvent(
+                          eventId,
+                          "subscription.revoked",
+                          result.success,
+                          { subscriptionId: payload.data.id },
+                          result.error
+                        );
                       },
                       // Triggered when an order is paid
                       onOrderPaid: async (payload) => {
+                        const eventId = `${payload.data.id}-order.paid`;
+
                         if (POLAR_ENVIRONMENT !== "production") {
                           console.log("[Polar Webhook] Order paid:", {
                             orderId: payload.data.id,
                           });
                         }
+
+                        // Log order paid event (no cache update needed for orders)
+                        await logWebhookEvent(
+                          eventId,
+                          "order.paid",
+                          true,
+                          { orderId: payload.data.id }
+                        );
                       },
                       // Catch-all for any webhook event (useful for debugging in development)
                       onPayload: async (payload) => {
                         if (POLAR_ENVIRONMENT !== "production") {
                           console.log("[Polar Webhook] Event received:", payload.type);
+                        }
+
+                        // Generic subscription status change handler for types not covered above
+                        if (
+                          payload?.type?.startsWith("subscription.") &&
+                          !["subscription.active", "subscription.canceled", "subscription.revoked"].includes(
+                            payload.type
+                          )
+                        ) {
+                          // Type assertion for subscription-related payloads
+                          // These payloads contain Subscription data with these properties
+                          const subscriptionData = payload.data as {
+                            id: string;
+                            productId: string;
+                            status: string;
+                            currentPeriodEnd?: Date | null;
+                            cancelAtPeriodEnd?: boolean;
+                            recurringInterval?: string;
+                            customer?: {
+                              id: string;
+                              externalId: string | null;
+                              email: string;
+                            };
+                          };
+
+                          if (!subscriptionData.status) return;
+
+                          const normalizedStatus = subscriptionData.status.toLowerCase();
+                          let newStatus: "active" | "trialing" | "past_due" | "canceled" | null = null;
+
+                          if (normalizedStatus === "past_due") newStatus = "past_due";
+                          else if (normalizedStatus === "trialing") newStatus = "trialing";
+                          else if (normalizedStatus === "canceled") newStatus = "canceled";
+                          else if (normalizedStatus === "active") newStatus = "active";
+
+                          if (newStatus) {
+                            const eventId = `${subscriptionData.id}-${payload.type}`;
+                            const result = await handleSubscriptionStatusChange(
+                              {
+                                id: subscriptionData.id,
+                                productId: subscriptionData.productId,
+                                status: subscriptionData.status,
+                                currentPeriodEnd: subscriptionData.currentPeriodEnd?.toISOString(),
+                                cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd,
+                                recurringInterval: subscriptionData.recurringInterval,
+                                customer: subscriptionData.customer
+                                  ? {
+                                      id: subscriptionData.customer.id,
+                                      externalId: subscriptionData.customer.externalId,
+                                      email: subscriptionData.customer.email,
+                                    }
+                                  : undefined,
+                              },
+                              newStatus
+                            );
+
+                            await logWebhookEvent(
+                              eventId,
+                              payload.type,
+                              result.success,
+                              { subscriptionId: subscriptionData.id, status: subscriptionData.status },
+                              result.error
+                            );
+                          }
                         }
                       },
                     }),

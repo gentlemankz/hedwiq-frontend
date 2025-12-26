@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { getMeetingHistory } from "@/lib/db/meeting-data";
+import {
+  checkFeatureAccess,
+  featureAccessDeniedResponse,
+} from "@/lib/polar/server-feature-gates";
 
 /**
  * GET /api/meetings/[meetingId]/history
@@ -25,6 +29,12 @@ export async function GET(
 
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Extended history requires paid tier access
+  const featureCheck = await checkFeatureAccess(session.user.id, "extended_history");
+  if (!featureCheck.allowed) {
+    return featureAccessDeniedResponse("extended_history", featureCheck);
   }
 
   const { meetingId } = await params;

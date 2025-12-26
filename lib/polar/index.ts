@@ -80,3 +80,25 @@ export {
   recordCacheSyncError,
   deleteSubscriptionCache,
 } from "./subscription-cache";
+
+// Server-side feature gating exports
+export {
+  type FeatureCheckResult,
+  type UsageLimitCheckResult,
+  getUserTier,
+  checkFeatureAccess,
+  checkEmailDraftLimit,
+  checkStorageLimit,
+  featureAccessDeniedResponse,
+  usageLimitExceededResponse,
+  withFeatureGate,
+} from "./server-feature-gates";
+
+// Webhook handler exports
+export {
+  logWebhookEvent,
+  handleSubscriptionActive,
+  handleSubscriptionCanceled,
+  handleSubscriptionRevoked,
+  handleSubscriptionStatusChange,
+} from "./webhook-handlers";

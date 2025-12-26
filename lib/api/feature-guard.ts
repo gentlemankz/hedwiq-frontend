@@ -423,8 +423,9 @@ export async function checkUsageQuota(
       customerId: customer.id,
     });
 
-    // STRICT MATCHING: Use exact slug match instead of loose substring
-    const meter = meters.result.items?.find((m) => m.meter?.slug === meterSlug);
+    // STRICT MATCHING: Use exact name match instead of loose substring
+    // Note: Polar meters use 'name' property, not 'slug'
+    const meter = meters.result.items?.find((m) => m.meter?.name === meterSlug);
 
     if (!meter) {
       // FAIL CLOSED: Meter not found could be misconfiguration or slug mismatch

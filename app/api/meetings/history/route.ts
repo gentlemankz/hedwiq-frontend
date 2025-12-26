@@ -3,6 +3,10 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { getUserMeetingHistory } from "@/lib/db/meeting-data";
 import { parseFolderIdParam } from "@/lib/validation/folder";
+import {
+  checkFeatureAccess,
+  featureAccessDeniedResponse,
+} from "@/lib/polar/server-feature-gates";
 
 /**
  * GET /api/meetings/history
@@ -22,6 +26,12 @@ export async function GET(request: NextRequest) {
 
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Extended history is gated to paid tiers
+  const featureCheck = await checkFeatureAccess(session.user.id, "extended_history");
+  if (!featureCheck.allowed) {
+    return featureAccessDeniedResponse("extended_history", featureCheck);
   }
 
   const { searchParams } = new URL(request.url);

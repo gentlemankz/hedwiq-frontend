@@ -39,6 +39,18 @@ import {
   getAgendaByRoomId,
 } from "@/lib/db/agenda";
 
+// Type for the mocked database (matches the mock above)
+type MockedDb = {
+  select: Mock;
+  insert: Mock;
+  update: Mock;
+  delete: Mock;
+  transaction: Mock;
+};
+
+// Cast db to mocked type for use in tests
+const mockedDb = db as unknown as MockedDb;
+
 // ============================================================================
 // Test Helpers
 // ============================================================================
@@ -175,7 +187,7 @@ describe("Transaction Integrity", () => {
       const insertChain = mockInsert(mockTx);
 
       // Setup: transaction succeeds
-      (db.transaction as Mock).mockImplementation(async (callback) => {
+      mockedDb.transaction.mockImplementation(async (callback) => {
         return callback(mockTx);
       });
 
@@ -186,7 +198,7 @@ describe("Transaction Integrity", () => {
       await createAgenda("test-room", "user-123", [{ title: "Topic 1" }]);
 
       // Verify transaction was used
-      expect(db.transaction).toHaveBeenCalled();
+      expect(mockedDb.transaction).toHaveBeenCalled();
 
       // Verify operations were on transaction, not db directly
       expect(mockTx.insert).toHaveBeenCalled();
@@ -198,7 +210,7 @@ describe("Transaction Integrity", () => {
       const insertChain = mockInsert(mockTx);
 
       // Setup: transaction fails on item insert
-      (db.transaction as Mock).mockImplementation(async (callback) => {
+      mockedDb.transaction.mockImplementation(async (callback) => {
         insertChain.values
           .mockResolvedValueOnce([]) // Agenda insert succeeds
           .mockRejectedValueOnce(new Error("Insert failed")); // Item insert fails
@@ -225,7 +237,7 @@ describe("Reorder - Duplicate ID Detection", () => {
 
   it("should reject duplicate IDs in reorder request", async () => {
     const mockAgenda = createMockAgenda({ status: "draft" });
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     selectChain.limit.mockResolvedValue([mockAgenda]);
 
@@ -242,7 +254,7 @@ describe("Reorder - Duplicate ID Detection", () => {
       createMockAgendaItem({ id: "item-2" }),
       createMockAgendaItem({ id: "item-3" }),
     ];
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     selectChain.limit.mockResolvedValue([mockAgenda]);
     selectChain.orderBy.mockResolvedValue(mockItems);
@@ -259,7 +271,7 @@ describe("Reorder - Duplicate ID Detection", () => {
       createMockAgendaItem({ id: "item-1" }),
       createMockAgendaItem({ id: "item-2" }),
     ];
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     selectChain.limit.mockResolvedValue([mockAgenda]);
     selectChain.orderBy.mockResolvedValue(mockItems);
@@ -283,7 +295,7 @@ describe("Status Update - Agenda State Validation", () => {
   it("should reject status updates on draft agendas", async () => {
     const mockItem = createMockAgendaItem();
     const mockAgenda = createMockAgenda({ status: "draft" });
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     // First call returns item, second returns agenda
     selectChain.limit
@@ -298,7 +310,7 @@ describe("Status Update - Agenda State Validation", () => {
   it("should reject status updates on completed agendas", async () => {
     const mockItem = createMockAgendaItem();
     const mockAgenda = createMockAgenda({ status: "completed" });
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     selectChain.limit
       .mockResolvedValueOnce([mockItem])
@@ -312,8 +324,8 @@ describe("Status Update - Agenda State Validation", () => {
   it("should allow status updates on active agendas", async () => {
     const mockItem = createMockAgendaItem();
     const mockAgenda = createMockAgenda({ status: "active" });
-    const selectChain = mockSelect(db);
-    const updateChain = mockUpdate(db);
+    const selectChain = mockSelect(mockedDb);
+    const updateChain = mockUpdate(mockedDb);
 
     selectChain.limit
       .mockResolvedValueOnce([mockItem])
@@ -340,7 +352,7 @@ describe("itemCount Consistency", () => {
     const mockItem = createMockAgendaItem();
     const mockAgenda = createMockAgenda({ status: "draft", itemCount: 3 });
 
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     // Setup db.select for initial checks (before transaction)
     selectChain.limit
@@ -351,7 +363,7 @@ describe("itemCount Consistency", () => {
     let txSelectCallCount = 0;
 
     // Setup transaction with proper chaining
-    (db.transaction as Mock).mockImplementation(async (callback) => {
+    mockedDb.transaction.mockImplementation(async (callback) => {
       const mockTx = {
         delete: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([]),
@@ -403,7 +415,7 @@ describe("Edge Cases - Reviewer2 Findings", () => {
 
   it("should not allow reorder on active agenda", async () => {
     const mockAgenda = createMockAgenda({ status: "active" });
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     selectChain.limit.mockResolvedValue([mockAgenda]);
 
@@ -414,7 +426,7 @@ describe("Edge Cases - Reviewer2 Findings", () => {
 
   it("should not allow reorder on completed agenda", async () => {
     const mockAgenda = createMockAgenda({ status: "completed" });
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     selectChain.limit.mockResolvedValue([mockAgenda]);
 
@@ -424,7 +436,7 @@ describe("Edge Cases - Reviewer2 Findings", () => {
   });
 
   it("should throw when agenda not found for reorder", async () => {
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
     selectChain.limit.mockResolvedValue([]);
 
     await expect(
@@ -434,7 +446,7 @@ describe("Edge Cases - Reviewer2 Findings", () => {
 
   it("should throw when parent agenda not found for status update", async () => {
     const mockItem = createMockAgendaItem();
-    const selectChain = mockSelect(db);
+    const selectChain = mockSelect(mockedDb);
 
     selectChain.limit
       .mockResolvedValueOnce([mockItem])

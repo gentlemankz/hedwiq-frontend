@@ -9,6 +9,10 @@ import {
 } from "@/lib/db/team";
 import { validateCreateTeamRequest } from "@/lib/validation/team";
 import { TEAM_LIMITS } from "@/types/team";
+import {
+  checkFeatureAccess,
+  featureAccessDeniedResponse,
+} from "@/lib/polar/server-feature-gates";
 
 /**
  * GET /api/teams
@@ -64,6 +68,12 @@ export async function POST(request: NextRequest) {
 
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Teams are a paid feature
+  const featureCheck = await checkFeatureAccess(session.user.id, "teams");
+  if (!featureCheck.allowed) {
+    return featureAccessDeniedResponse("teams", featureCheck);
   }
 
   // Parse request body

@@ -7,6 +7,12 @@ import { uploadFile, STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase";
 import { validateRoomAccess } from "@/lib/db/room-access";
 import { eq, and, count } from "drizzle-orm";
 import { reportStorageChange } from "@/lib/polar/usage";
+import {
+  checkFeatureAccess,
+  checkStorageLimit,
+  featureAccessDeniedResponse,
+  usageLimitExceededResponse,
+} from "@/lib/polar/server-feature-gates";
 
 // Security constants
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -94,6 +100,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // 1.5 Server-side feature gate: Check if user has access to document upload
+  const featureCheck = await checkFeatureAccess(session.user.id, "document_upload");
+  if (!featureCheck.allowed) {
+    return featureAccessDeniedResponse("document_upload", featureCheck);
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -145,7 +157,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Filename validation
+    // 6.5 Server-side storage limit check: Verify user has space for this file
+    const storageCheck = await checkStorageLimit(session.user.id, file.size);
+    if (!storageCheck.allowed) {
+      return usageLimitExceededResponse("storage", storageCheck);
+    }
+
+    // 7. Filename validation
     if (file.name.length > MAX_FILENAME_LENGTH) {
       return NextResponse.json({ error: "Filename too long" }, { status: 400 });
     }

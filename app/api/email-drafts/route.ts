@@ -8,6 +8,12 @@ import {
 } from "@/lib/db/email-draft";
 import { z } from "zod";
 import type { EmailRecipient, MeetingContext } from "@/types/email-draft";
+import {
+  checkFeatureAccess,
+  checkEmailDraftLimit,
+  featureAccessDeniedResponse,
+  usageLimitExceededResponse,
+} from "@/lib/polar/server-feature-gates";
 
 /**
  * GET /api/email-drafts
@@ -27,6 +33,12 @@ export async function GET(request: NextRequest) {
 
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Server-side feature gate
+    const featureCheck = await checkFeatureAccess(session.user.id, "email_drafts");
+    if (!featureCheck.allowed) {
+      return featureAccessDeniedResponse("email_drafts", featureCheck);
     }
 
     const { searchParams } = new URL(request.url);
@@ -107,6 +119,10 @@ const createDraftSchema = z.object({
  *
  * Creates or updates an email draft.
  * Uses upsert on action_id + user_id.
+ *
+ * Server-side feature gating:
+ * - Checks user has email_drafts feature (Pro+ tier)
+ * - Checks user hasn't exceeded monthly email draft limit
  */
 export async function POST(request: NextRequest) {
   try {
@@ -116,6 +132,18 @@ export async function POST(request: NextRequest) {
 
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Server-side feature gate: Check if user has access to email drafts
+    const featureCheck = await checkFeatureAccess(session.user.id, "email_drafts");
+    if (!featureCheck.allowed) {
+      return featureAccessDeniedResponse("email_drafts", featureCheck);
+    }
+
+    // Server-side usage limit: Check if user has remaining email drafts
+    const usageCheck = await checkEmailDraftLimit(session.user.id);
+    if (!usageCheck.allowed) {
+      return usageLimitExceededResponse("email_drafts", usageCheck);
     }
 
     const body = await request.json();
