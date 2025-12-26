@@ -6,6 +6,7 @@ import { document } from "@/lib/db/schema";
 import { deleteFiles, STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase";
 import { validateRoomAccess } from "@/lib/db/room-access";
 import { eq, and } from "drizzle-orm";
+import { reportStorageChange } from "@/lib/polar/usage";
 
 export async function GET(
   request: NextRequest,
@@ -161,19 +162,45 @@ export async function DELETE(
       );
     }
 
-    // Delete from Supabase Storage
+    // 1. Attempt to delete from Supabase Storage
     const storagePath = STORAGE_PATHS.document(roomId, documentId);
-    const deleted = await deleteFiles(STORAGE_BUCKETS.DOCUMENTS, [storagePath]);
+    const storageResult = await deleteFiles(STORAGE_BUCKETS.DOCUMENTS, [storagePath]);
 
-    if (!deleted) {
-      console.error("Failed to delete file from storage");
-      // Continue with database deletion even if storage deletion fails
+    // Log storage deletion result
+    if (!storageResult.success) {
+      // Storage delete failed with actual error (not "not found")
+      // Log but proceed with DB cleanup to prevent stuck records
+      console.error("[Document Delete] Storage delete failed:", storageResult.error);
+      console.warn("[Document Delete] Proceeding with DB cleanup despite storage error");
+    } else if (!storageResult.deleted) {
+      // File was already gone (not found) - this is fine
+      console.log("[Document Delete] File already removed from storage");
     }
 
-    // Delete from database
+    // 2. Delete from database (always proceed to prevent stuck records)
     await db
       .delete(document)
       .where(and(eq(document.id, documentId), eq(document.roomId, roomId)));
+
+    // 3. Report negative storage change to Polar for billing
+    // Decrement even if file was already gone (success without actual delete) to keep usage accurate
+    if (storageResult.success && doc.fileSize && doc.fileSize > 0) {
+      try {
+        const usageResult = await reportStorageChange(session.user.id, -doc.fileSize, {
+          documentId,
+          fileName: doc.filename,
+          action: "delete",
+        });
+
+        if (!usageResult.success) {
+          // Log error but don't fail delete - file is already removed
+          console.error("[Document Delete] Failed to report storage usage:", usageResult.error);
+        }
+      } catch (usageError) {
+        // Isolate usage reporting errors - delete already succeeded
+        console.error("[Document Delete] Usage reporting error (delete succeeded):", usageError);
+      }
+    }
 
     return NextResponse.json({ success: true, documentId });
   } catch (error) {

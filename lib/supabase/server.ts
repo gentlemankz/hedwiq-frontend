@@ -111,25 +111,55 @@ export async function downloadFile(
 }
 
 /**
+ * Result of a file deletion operation
+ */
+export interface DeleteFilesResult {
+  /** Whether the operation succeeded (file deleted or already gone) */
+  success: boolean;
+  /** Whether the file was actually deleted (false if already gone) */
+  deleted: boolean;
+  /** Error message if operation failed */
+  error?: string;
+}
+
+/**
  * Delete a file from Supabase Storage.
+ * Treats "not found" as success since the goal is to ensure the file doesn't exist.
  *
  * @param bucket - The storage bucket name
  * @param paths - Array of file paths to delete
+ * @returns Detailed result including whether file was actually deleted
  */
 export async function deleteFiles(
   bucket: string,
   paths: string[]
-): Promise<boolean> {
+): Promise<DeleteFilesResult> {
   const supabase = createServerSupabaseClient();
 
-  const { error } = await supabase.storage
+  const { data, error } = await supabase.storage
     .from(bucket)
     .remove(paths);
 
   if (error) {
+    // Check for "not found" errors - treat as success (file already gone)
+    const errorMessage = error.message?.toLowerCase() || "";
+    const isNotFound =
+      errorMessage.includes("not found") ||
+      errorMessage.includes("object not found") ||
+      errorMessage.includes("does not exist") ||
+      error.message?.includes("404");
+
+    if (isNotFound) {
+      console.log("[Storage] File already deleted or not found:", paths);
+      return { success: true, deleted: false };
+    }
+
     console.error("Error deleting files:", error);
-    return false;
+    return { success: false, deleted: false, error: error.message };
   }
 
-  return true;
+  // Supabase returns empty array if files didn't exist
+  const actuallyDeleted = data && data.length > 0;
+
+  return { success: true, deleted: actuallyDeleted };
 }

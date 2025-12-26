@@ -5,6 +5,7 @@ export {
   uploadFile,
   downloadFile,
   deleteFiles,
+  type DeleteFilesResult,
 } from "./server";
 
 // Client-side Supabase utilities

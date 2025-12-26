@@ -6,6 +6,7 @@ import { document } from "@/lib/db/schema";
 import { uploadFile, STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase";
 import { validateRoomAccess } from "@/lib/db/room-access";
 import { eq, and, count } from "drizzle-orm";
+import { reportStorageChange } from "@/lib/polar/usage";
 
 // Security constants
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -212,6 +213,32 @@ export async function POST(request: NextRequest) {
       status: "ready", // Set to ready since file is uploaded
       uploadedBy: session.user.id,
     });
+
+    // 13.5 Report storage usage to Polar for billing
+    // IMPORTANT: Isolated with timeout to prevent usage API issues from failing the upload
+    // The file is already stored and DB row created at this point, so we must succeed
+    try {
+      const usagePromise = reportStorageChange(session.user.id, file.size, {
+        documentId,
+        fileName: sanitizedFilename,
+        action: "upload",
+      });
+
+      // 5 second timeout to prevent hanging on slow/unavailable usage API
+      const timeoutPromise = new Promise<{ success: false; error: string }>((resolve) =>
+        setTimeout(() => resolve({ success: false, error: "Usage reporting timeout" }), 5000)
+      );
+
+      const usageResult = await Promise.race([usagePromise, timeoutPromise]);
+
+      if (!usageResult.success) {
+        // Log error but don't fail upload - document is already stored
+        console.error("[Document Upload] Failed to report storage usage:", usageResult.error);
+      }
+    } catch (usageError) {
+      // Isolate usage reporting errors - upload succeeded, just log the billing failure
+      console.error("[Document Upload] Usage reporting error (upload succeeded):", usageError);
+    }
 
     // 14. Forward to agent service for processing (embeddings, etc.)
     // This is critical for document reference detection to work

@@ -32,6 +32,11 @@ frontend/
 │   │   │   └── [documentId]/
 │   │   │       ├── route.ts          # Get/delete a document
 │   │   │       └── pdf/route.ts      # Serve signed URL to PDF
+│   │   ├── subscription/             # Polar subscription + billing APIs
+│   │   │   ├── checkout/route.ts     # Create checkout session (validates successUrl origin)
+│   │   │   ├── status/route.ts       # Subscription status with past_due grace + cache fallback
+│   │   │   ├── usage/route.ts        # Usage + limits with cache fallback
+│   │   │   └── portal/route.ts       # Customer portal session
 │   │   ├── email-drafts/             # AI-generated email draft management
 │   │   │   ├── route.ts              # List/create email drafts
 │   │   │   └── [draftId]/route.ts    # Get/update/delete email draft
@@ -383,6 +388,7 @@ frontend/
 │   │       ├── 0016_add_meeting_folder_table.sql
 │   │       ├── 0017_add_team_tables.sql
 │   │       ├── 0018_add_external_team_invitation.sql
+│   │       ├── 0019_add_subscription_cache.sql # Polar subscription cache + webhook log (no RLS; timestamps aligned)
 │   │       └── meta/
 │   │           ├── _journal.json
 │   │           ├── 0000_snapshot.json
@@ -399,15 +405,16 @@ frontend/
 │   │       ├── meeting-updated.tsx
 │   │       └── team-invitation.tsx   # Team invitation email template (existing users)
 │   ├── polar/                        # Polar subscription integration
-│   │   ├── index.ts                  # Polar client setup
+│   │   ├── index.ts                  # Polar client setup + exports
 │   │   ├── auth-flow.ts              # Post-auth checkout flow utilities
 │   │   ├── checkout.ts               # Checkout slug building + pending checkout storage
-│   │   ├── constants.ts              # Products, tier limits, helper functions
-│   │   └── usage.ts                  # Usage tracking (minutes, drafts, storage) + limit checks
+│   │   ├── constants.ts              # Products, tier limits, unlimited sentinel, grace helpers, meter IDs
+│   │   ├── usage.ts                  # Usage tracking (minutes, drafts, storage) + limit checks + cache-aware state
+│   │   └── subscription-cache.ts     # Cache utilities (read/write/staleness/error recording)
 │   ├── supabase/
-│   │   ├── index.ts
+│   │   ├── index.ts                  # Exposes storage helpers/types
 │   │   ├── client.ts                 # Browser Supabase client
-│   │   └── server.ts                 # Server Supabase client
+│   │   └── server.ts                 # Server Supabase client + storage helpers (delete returns success/deleted/error)
 │   ├── utils/
 │   │   └── meeting-form.ts           # Meeting form utilities
 │   └── validation/

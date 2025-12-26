@@ -4,6 +4,7 @@ import {
   timestamp,
   boolean,
   integer,
+  bigint,
   jsonb,
   index,
   uniqueIndex,
@@ -1163,5 +1164,127 @@ export const pendingExternalTeamInvitation = pgTable(
     index("idx_ext_team_invite_expires").on(table.expiresAt),
     // Note: Partial unique index (team_id, email WHERE status='pending')
     // is created in the migration file as Drizzle doesn't support partial indexes directly
+  ]
+);
+
+// ============================================================================
+// Polar Subscription Cache Tables (Phase 7 - Polar Integration)
+// ============================================================================
+
+/**
+ * Subscription tier type for type safety across the application.
+ */
+export type SubscriptionTier = "free" | "pro" | "business" | "enterprise";
+
+/**
+ * Subscription status type.
+ */
+export type SubscriptionStatus = "none" | "active" | "trialing" | "canceled" | "past_due";
+
+/**
+ * Subscription Cache - Local cache of Polar subscription data for faster reads.
+ * The source of truth is Polar, but this table enables:
+ * - Faster subscription status checks without API calls
+ * - Offline/fallback access when Polar is unavailable
+ * - Local usage tracking that syncs to Polar
+ *
+ * Updated via:
+ * - Polar webhooks (subscription.active, subscription.canceled, etc.)
+ * - Manual sync endpoint for support
+ * - Periodic reconciliation job
+ */
+export const subscriptionCache = pgTable(
+  "subscription_cache",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** User this subscription belongs to (one subscription per user) */
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => user.id, { onDelete: "cascade" }),
+
+    // Subscription identifiers
+    /** Polar customer ID for API calls */
+    polarCustomerId: text("polar_customer_id"),
+    /** Polar subscription ID for API calls */
+    polarSubscriptionId: text("polar_subscription_id"),
+
+    // Subscription state
+    /** Current subscription tier: free, pro, business, enterprise */
+    tier: text("tier").notNull().default("free"),
+    /** Subscription status: none, active, trialing, canceled, past_due */
+    status: text("status").notNull().default("none"),
+    /** Billing interval: month or year (null for free tier) */
+    billingInterval: text("billing_interval"),
+    /** End of current billing period */
+    currentPeriodEnd: timestamp("current_period_end"),
+    /** Whether subscription will cancel at period end */
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+
+    // Tier limits (cached from tier for quick access)
+    /** Monthly meeting minutes limit (-1 for unlimited) */
+    minutesLimit: integer("minutes_limit").notNull().default(300),
+    /** Storage limit in GB (-1 for unlimited) */
+    storageLimitGb: integer("storage_limit_gb").notNull().default(0),
+    /** History retention in days (-1 for unlimited) */
+    historyDays: integer("history_days").notNull().default(7),
+    /** Monthly email drafts limit (-1 for unlimited) */
+    emailDraftsLimit: integer("email_drafts_limit").notNull().default(0),
+
+    // Current period usage (reset monthly by Polar meters)
+    /** Meeting minutes used this period */
+    minutesUsed: integer("minutes_used").notNull().default(0),
+    /** Email drafts generated this period */
+    emailDraftsUsed: integer("email_drafts_used").notNull().default(0),
+    /** Storage used in bytes (bigint to support >2GB - Business tier allows 20GB) */
+    storageUsedBytes: bigint("storage_used_bytes", { mode: "number" }).notNull().default(0),
+    /** Start of current usage period (for display) */
+    usagePeriodStart: timestamp("usage_period_start").notNull().defaultNow(),
+
+    // Metadata
+    /** Last time this cache was synced with Polar */
+    lastSyncedAt: timestamp("last_synced_at"),
+    /** Error message if last sync failed */
+    syncError: text("sync_error"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    // Primary lookup by user ID (unique constraint provides index)
+    index("idx_subscription_cache_period").on(table.usagePeriodStart),
+    index("idx_subscription_cache_polar_customer").on(table.polarCustomerId),
+    index("idx_subscription_cache_tier").on(table.tier),
+    index("idx_subscription_cache_status").on(table.status),
+  ]
+);
+
+/**
+ * Webhook Log - Audit log for Polar webhook events.
+ * Used for debugging webhook delivery issues and manual recovery.
+ */
+export const webhookLog = pgTable(
+  "webhook_log",
+  {
+    /** Unique identifier */
+    id: text("id").primaryKey(),
+    /** Polar webhook event ID (for idempotency) */
+    eventId: text("event_id").notNull().unique(),
+    /** Event type (e.g., subscription.active, subscription.canceled) */
+    eventType: text("event_type").notNull(),
+    /** Whether the webhook was processed successfully */
+    success: boolean("success").notNull(),
+    /** Error message if processing failed */
+    error: text("error"),
+    /** Raw payload for debugging (truncated for large payloads) */
+    payload: jsonb("payload"),
+    /** When the webhook was received */
+    receivedAt: timestamp("received_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_webhook_log_event_type").on(table.eventType),
+    index("idx_webhook_log_received").on(table.receivedAt),
+    index("idx_webhook_log_success").on(table.success),
   ]
 );
