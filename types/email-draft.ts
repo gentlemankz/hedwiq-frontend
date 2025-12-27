@@ -1,5 +1,5 @@
 /**
- * Email Draft Types for Hedwiq Frontend
+ * Email Draft Types for Luframe Frontend
  *
  * These types match the backend schemas/email_draft.py and are used
  * for real-time email draft generation and display.

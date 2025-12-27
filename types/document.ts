@@ -1,5 +1,5 @@
 /**
- * Document Types for Hedwiq Frontend
+ * Document Types for Luframe Frontend
  *
  * These types match the backend schema and are used for document
  * reference feature in meeting transcriptions.

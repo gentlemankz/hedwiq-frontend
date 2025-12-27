@@ -280,7 +280,7 @@ export function InviteTeamMemberInput({
           <AlertCircle className="size-4 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
           <div className="text-xs text-amber-700 dark:text-amber-400">
             <span className="font-medium">
-              {externalInviteCount} {externalInviteCount === 1 ? "person doesn't" : "people don't"} have a Hedwiq account yet.
+              {externalInviteCount} {externalInviteCount === 1 ? "person doesn't" : "people don't"} have a Luframe account yet.
             </span>
             <br />
             They&apos;ll receive an invitation to sign up and join your team.

@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hedwiq - AI-Powered Meetings",
+  title: "Luframe - AI-Powered Meetings",
   description: "Next-generation agentic meeting application with native AI capabilities",
 };
 

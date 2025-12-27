@@ -1,5 +1,5 @@
 /**
- * Calendar Integration Types for Hedwiq Frontend
+ * Calendar Integration Types for Luframe Frontend
  *
  * These types support the Google Calendar OAuth integration feature.
  * Used for connecting, syncing, and managing calendar integrations.

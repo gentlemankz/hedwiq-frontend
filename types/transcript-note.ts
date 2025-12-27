@@ -1,5 +1,5 @@
 /**
- * Transcript Note Types for Hedwiq Frontend
+ * Transcript Note Types for Luframe Frontend
  *
  * These types support the feature that connects transcription entries
  * with user-created notes, allowing users to reference specific speech

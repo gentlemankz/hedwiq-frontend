@@ -244,7 +244,7 @@ export function MeetingInvitationEmail({
             </Text>
             <Text style={paragraph}>
               <strong>{hostName}</strong> ({hostEmail}) has invited you to join a
-              meeting on Hedwiq.
+              meeting on Luframe.
             </Text>
 
             <Hr style={hr} />
@@ -411,7 +411,7 @@ export function MeetingInvitationEmail({
             <Text style={footer}>
               Powered by{" "}
               <Link href={appUrl} style={link}>
-                Hedwiq
+                Luframe
               </Link>
             </Text>
           </Section>

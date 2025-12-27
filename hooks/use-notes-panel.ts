@@ -40,7 +40,7 @@ export interface UseNotesPanelReturn {
 // Constants
 // ============================================================================
 
-const STORAGE_PREFIX = "hedwiq-meeting-notes-";
+const STORAGE_PREFIX = "luframe-meeting-notes-";
 const DEFAULT_DEBOUNCE_MS = 1000;
 
 // ============================================================================

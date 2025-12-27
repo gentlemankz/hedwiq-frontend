@@ -20,7 +20,7 @@ interface UseInsightsReturn {
 }
 
 /**
- * Custom hook for accessing real-time insights from the Hedwiq agent.
+ * Custom hook for accessing real-time insights from the Luframe agent.
  *
  * This hook is a thin wrapper around useInsightsContext that provides
  * access to shared insights state. Must be used within an InsightsProvider.

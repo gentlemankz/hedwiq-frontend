@@ -32,7 +32,7 @@ export interface ICSEventOptions {
  * Includes timestamp to avoid collisions when meeting is re-exported.
  */
 function generateUID(meetingId: string): string {
-  return `${meetingId}@hedwiq.com`;
+  return `${meetingId}@luframe.com`;
 }
 
 // ============================================================================
@@ -98,7 +98,7 @@ export function generateICS(
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Hedwiq//Meeting//EN",
+    "PRODID:-//Luframe//Meeting//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:REQUEST",
     "BEGIN:VEVENT",

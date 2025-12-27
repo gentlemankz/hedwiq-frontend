@@ -4,8 +4,8 @@
  * Configuration values and constants used throughout the agenda context.
  */
 
-/** Agent identity prefix for identifying the hedwiq agent */
-export const AGENT_IDENTITY_PREFIX = "hedwiq";
+/** Agent identity prefix for identifying the luframe agent */
+export const AGENT_IDENTITY_PREFIX = "luframe";
 
 /** Attribute key for agenda state in agent participant attributes */
 export const AGENDA_STATE_ATTRIBUTE_KEY = "agendaState";

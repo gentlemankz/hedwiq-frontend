@@ -26,8 +26,8 @@ import {
   isNonEmptyDraftString,
 } from "@/types/email-draft";
 
-/** LiveKit topic for email drafts from the Hedwiq agent */
-const EMAIL_DRAFT_TOPIC = "hedwiq.email_draft";
+/** LiveKit topic for email drafts from the Luframe agent */
+const EMAIL_DRAFT_TOPIC = "luframe.email_draft";
 
 /**
  * Interface for the text stream reader from LiveKit

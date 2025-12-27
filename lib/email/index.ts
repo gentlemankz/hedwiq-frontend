@@ -38,7 +38,7 @@ function getResend(): Resend | null {
   return _resend;
 }
 
-const FROM_EMAIL = process.env.EMAIL_FROM || "meetings@hedwiq.com";
+const FROM_EMAIL = process.env.EMAIL_FROM || "meetings@luframe.com";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 // ============================================================================
@@ -557,7 +557,7 @@ export async function sendTeamInvitationEmail(
     const { data, error } = await getResend()!.emails.send({
       from: FROM_EMAIL,
       to: invitee.email,
-      subject: `You've been invited to join ${team.teamName} on Hedwiq`,
+      subject: `You've been invited to join ${team.teamName} on Luframe`,
       react: TeamInvitationEmail(emailProps),
     });
 
@@ -702,7 +702,7 @@ export async function sendExternalTeamInvitationEmail(
     const { data: responseData, error } = await getResend()!.emails.send({
       from: FROM_EMAIL,
       to: data.inviteeEmail,
-      subject: `${data.inviterName} invited you to join ${data.teamName} on Hedwiq`,
+      subject: `${data.inviterName} invited you to join ${data.teamName} on Luframe`,
       react: ExternalTeamInvitationEmail(emailProps),
     });
 

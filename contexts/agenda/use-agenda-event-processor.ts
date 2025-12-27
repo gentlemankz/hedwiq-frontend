@@ -49,7 +49,7 @@ export function useAgendaEventProcessor({
   const processAgendaEvent = useCallback((event: AgendaProgressEvent, senderIdentity?: string) => {
     if (!isMountedRef.current) return;
 
-    // Validate sender is the hedwiq agent (security)
+    // Validate sender is the luframe agent (security)
     if (senderIdentity && !senderIdentity.toLowerCase().startsWith(AGENT_IDENTITY_PREFIX)) {
       if (DEBUG) {
         console.warn(`[AgendaContext] Ignoring event from non-agent sender: ${senderIdentity}`);

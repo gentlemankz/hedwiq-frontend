@@ -1,5 +1,5 @@
 /**
- * Meeting History Types for Hedwiq Frontend
+ * Meeting History Types for Luframe Frontend
  *
  * Types for displaying historical meeting data including
  * transcriptions, insights, document references, and notes.

@@ -1,5 +1,5 @@
 /**
- * Action Types for Hedwiq Frontend
+ * Action Types for Luframe Frontend
  *
  * These types match the backend action_classifier.py schema and are used
  * for real-time action display and classification.
@@ -133,7 +133,7 @@ export const DEFAULT_ACTION_METADATA: ActionMetadata = {
 };
 
 /**
- * A classified action from the Hedwiq agent.
+ * A classified action from the Luframe agent.
  * Extends action_item insights with classification and metadata.
  */
 export interface ClassifiedAction {

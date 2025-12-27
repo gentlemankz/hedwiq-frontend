@@ -1,5 +1,5 @@
 /**
- * Persistence Types for Hedwiq Frontend
+ * Persistence Types for Luframe Frontend
  *
  * Shared types for meeting data persistence (transcription, insights, etc.)
  */

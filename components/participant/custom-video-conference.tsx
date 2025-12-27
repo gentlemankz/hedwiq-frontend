@@ -127,7 +127,7 @@ export function CustomVideoConference({
   );
 
   // Filter out agent tracks (defense in depth - agent should be hidden, but filter anyway)
-  // This ensures the Hedwiq agent never appears in the video grid even if hidden flag fails
+  // This ensures the Luframe agent never appears in the video grid even if hidden flag fails
   const tracks = React.useMemo(
     () =>
       allTracks.filter(

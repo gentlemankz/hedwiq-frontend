@@ -18,7 +18,7 @@ export default async function Home() {
       <main className="flex flex-col items-center justify-center gap-8 px-4 text-center">
         <div className="space-y-4">
           <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-            Hedwiq
+            Luframe
           </h1>
           <p className="text-xl text-muted-foreground">
             AI-Powered Meeting Intelligence

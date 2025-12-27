@@ -418,7 +418,7 @@ export const meeting = pgTable(
 // ============================================================================
 
 /**
- * Calendar Event - Maps Hedwiq meetings to external calendar events.
+ * Calendar Event - Maps Luframe meetings to external calendar events.
  * Tracks sync status for each meeting-calendar pair.
  */
 export const calendarEvent = pgTable(

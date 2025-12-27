@@ -6,7 +6,7 @@
  * Provider component that manages agenda state and LiveKit stream subscription.
  * Handles:
  * - Initial agenda fetch from API
- * - Real-time updates via hedwiq.agenda LiveKit topic
+ * - Real-time updates via luframe.agenda LiveKit topic
  * - Late joiner sync via agent participant attributes
  *
  * NOTE: Manual override methods (forceStartItem, forceCompleteItem, forceSkipItem)

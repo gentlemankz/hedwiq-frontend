@@ -167,20 +167,20 @@ export function ExternalTeamInvitationEmail({
     <Html>
       <Head />
       <Preview>
-        {inviterName} invited you to join {teamName} on Hedwiq
+        {inviterName} invited you to join {teamName} on Luframe
       </Preview>
       <Body style={main}>
         <Container style={container}>
           <Section style={box}>
             {/* Header */}
             <Heading style={heading}>
-              You&apos;re invited to join a team on Hedwiq
+              You&apos;re invited to join a team on Luframe
             </Heading>
 
             <Text style={paragraph}>Hi there,</Text>
             <Text style={paragraph}>
               <strong>{inviterName}</strong> ({inviterEmail}) has invited you to
-              join their team <strong>&quot;{teamName}&quot;</strong> on Hedwiq,
+              join their team <strong>&quot;{teamName}&quot;</strong> on Luframe,
               the AI-powered meeting assistant.
             </Text>
 
@@ -278,7 +278,7 @@ export function ExternalTeamInvitationEmail({
 
             <Hr style={hr} />
 
-            {/* What is Hedwiq Section */}
+            {/* What is Luframe Section */}
             <Text
               style={{
                 color: "#374151",
@@ -287,10 +287,10 @@ export function ExternalTeamInvitationEmail({
                 marginBottom: "12px",
               }}
             >
-              What is Hedwiq?
+              What is Luframe?
             </Text>
             <Text style={paragraph}>
-              Hedwiq is an AI-powered meeting assistant that helps teams:
+              Luframe is an AI-powered meeting assistant that helps teams:
             </Text>
             <Text style={{ ...paragraph, paddingLeft: "16px" }}>
               • Run more productive meetings with smart agendas
@@ -350,7 +350,7 @@ export function ExternalTeamInvitationEmail({
             <Text style={footer}>
               Powered by{" "}
               <Link href={appUrl} style={link}>
-                Hedwiq
+                Luframe
               </Link>
             </Text>
           </Section>

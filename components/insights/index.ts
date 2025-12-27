@@ -1,7 +1,7 @@
 /**
  * Insights Components
  *
- * Real-time insight display components for Hedwiq meetings.
+ * Real-time insight display components for Luframe meetings.
  */
 
 export { InsightBadge, InsightBadgeIcon } from "./insight-badge";

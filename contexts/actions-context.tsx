@@ -27,8 +27,8 @@ import {
   isNonEmptyString,
 } from "@/types/action";
 
-/** LiveKit topic for classified actions from the Hedwiq agent */
-const ACTION_TOPIC = "hedwiq.action";
+/** LiveKit topic for classified actions from the Luframe agent */
+const ACTION_TOPIC = "luframe.action";
 
 /**
  * Interface for the text stream reader from LiveKit

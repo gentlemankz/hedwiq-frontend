@@ -1,5 +1,5 @@
 /**
- * Team Types for Hedwiq Frontend
+ * Team Types for Luframe Frontend
  *
  * These types support the Team Workspace feature for organizing users
  * into collaborative groups with hierarchical sub-teams.

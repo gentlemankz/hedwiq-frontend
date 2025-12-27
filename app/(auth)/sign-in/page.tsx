@@ -178,7 +178,7 @@ function SignInContent() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Welcome to Hedwiq</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome to Luframe</CardTitle>
           <CardDescription>
             Sign in to start your AI-powered meetings
           </CardDescription>
@@ -348,7 +348,7 @@ export default function SignInPage() {
         <div className="flex min-h-screen items-center justify-center p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl font-bold">Welcome to Hedwiq</CardTitle>
+              <CardTitle className="text-2xl font-bold">Welcome to Luframe</CardTitle>
               <CardDescription>
                 Sign in to start your AI-powered meetings
               </CardDescription>

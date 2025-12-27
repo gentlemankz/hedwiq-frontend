@@ -3,7 +3,7 @@
 /**
  * Hook for late joiner sync (DEPRECATED - Agent is now hidden)
  *
- * IMPORTANT: The Hedwiq agent is now a hidden participant and does NOT appear
+ * IMPORTANT: The Luframe agent is now a hidden participant and does NOT appear
  * in remoteParticipants. This hook is kept as a no-op placeholder for backwards
  * compatibility and potential future use.
  *
@@ -36,7 +36,7 @@ interface UseAgendaLateJoinerSyncProps {
 /**
  * Hook that handles late joiner sync from agent attributes (NO-OP)
  *
- * This hook is a no-op placeholder because the Hedwiq agent is now a hidden
+ * This hook is a no-op placeholder because the Luframe agent is now a hidden
  * participant and does not appear in remoteParticipants.
  *
  * Late joiner sync flow:

@@ -47,7 +47,7 @@ const polarClient = POLAR_ACCESS_TOKEN
   : null;
 
 export const auth = betterAuth({
-  appName: "Hedwiq",
+  appName: "Luframe",
   baseURL: process.env.BETTER_AUTH_URL,
   trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",") || [],
   database: drizzleAdapter(db, {
@@ -78,7 +78,7 @@ export const auth = betterAuth({
       });
       const result = await sendEmail({
         to: user.email,
-        subject: "Reset your Hedwiq password",
+        subject: "Reset your Luframe password",
         html,
         text,
       });
@@ -99,7 +99,7 @@ export const auth = betterAuth({
       });
       const result = await sendEmail({
         to: user.email,
-        subject: "Verify your Hedwiq email address",
+        subject: "Verify your Luframe email address",
         html,
         text,
       });

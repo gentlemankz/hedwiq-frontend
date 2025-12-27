@@ -52,11 +52,11 @@ describe("AGENDA_LIMITS", () => {
 
 describe("AGENDA_TOPIC", () => {
   it("should have correct LiveKit topic name", () => {
-    expect(AGENDA_TOPIC).toBe("hedwiq.agenda");
+    expect(AGENDA_TOPIC).toBe("luframe.agenda");
   });
 
   it("should follow LiveKit naming convention", () => {
-    expect(AGENDA_TOPIC).toMatch(/^hedwiq\./);
+    expect(AGENDA_TOPIC).toMatch(/^luframe\./);
   });
 });
 

@@ -1,5 +1,5 @@
 /**
- * Gmail Integration Types for Hedwiq Frontend
+ * Gmail Integration Types for Luframe Frontend
  *
  * These types support the Gmail OAuth integration feature for Real-Time Actions.
  * Used for connecting, managing, and sending emails via Gmail API.

@@ -1,8 +1,8 @@
 /**
- * Insight Types for Hedwiq Frontend
+ * Insight Types for Luframe Frontend
  *
  * These types match the backend schema and are used for real-time
- * insight display from the Hedwiq agent.
+ * insight display from the Luframe agent.
  */
 
 /**

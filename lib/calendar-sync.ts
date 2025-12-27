@@ -1,7 +1,7 @@
 /**
  * Calendar Sync Service
  *
- * Handles synchronization between Hedwiq meetings and Google Calendar.
+ * Handles synchronization between Luframe meetings and Google Calendar.
  * Provides high-level operations for creating, updating, and deleting
  * calendar events when meetings are modified.
  */

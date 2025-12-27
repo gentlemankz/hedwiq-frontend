@@ -12,8 +12,8 @@ import React, {
 import { useRoomContext } from "@livekit/components-react";
 import type { Insight, InsightType } from "@/types/insight";
 
-/** LiveKit topic for insights from the Hedwiq agent */
-const INSIGHT_TOPIC = "hedwiq.insight";
+/** LiveKit topic for insights from the Luframe agent */
+const INSIGHT_TOPIC = "luframe.insight";
 
 /** Maximum number of insights to keep in memory */
 const MAX_INSIGHTS = 100;

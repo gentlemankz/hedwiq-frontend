@@ -1,7 +1,7 @@
 /**
  * Action Components
  *
- * Real-time action display components for Hedwiq meetings.
+ * Real-time action display components for Luframe meetings.
  * Actions are classified action_items with type badges and metadata.
  */
 

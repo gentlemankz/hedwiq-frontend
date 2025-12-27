@@ -175,7 +175,7 @@ export function TeamInvitationEmail({
     <Html>
       <Head />
       <Preview>
-        {inviterName} invited you to join {teamName} on Hedwiq
+        {inviterName} invited you to join {teamName} on Luframe
       </Preview>
       <Body style={main}>
         <Container style={container}>
@@ -186,7 +186,7 @@ export function TeamInvitationEmail({
             <Text style={paragraph}>{greeting},</Text>
             <Text style={paragraph}>
               <strong>{inviterName}</strong> ({inviterEmail}) has invited you to
-              join their team on Hedwiq.
+              join their team on Luframe.
             </Text>
 
             <Hr style={hr} />
@@ -319,7 +319,7 @@ export function TeamInvitationEmail({
             <Text style={footer}>
               Powered by{" "}
               <Link href={appUrl} style={link}>
-                Hedwiq
+                Luframe
               </Link>
             </Text>
           </Section>

@@ -1,5 +1,5 @@
 -- Migration: Add calendar_event table for syncing meetings with external calendars
--- This table maps Hedwiq meetings to Google Calendar events
+-- This table maps Luframe meetings to Google Calendar events
 
 CREATE TABLE IF NOT EXISTS "calendar_event" (
   "id" TEXT PRIMARY KEY,

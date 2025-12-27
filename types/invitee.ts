@@ -1,5 +1,5 @@
 /**
- * Meeting Invitee Types for Hedwiq Frontend
+ * Meeting Invitee Types for Luframe Frontend
  *
  * Types for managing meeting invitations and RSVP tracking.
  */

@@ -102,7 +102,7 @@ describe("useNotesPanel", () => {
   describe("localStorage Persistence", () => {
     it("loads notes from localStorage on mount", () => {
       localStorageMock.setItem(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         JSON.stringify({ notes: "Saved notes", isExpanded: false })
       );
 
@@ -120,7 +120,7 @@ describe("useNotesPanel", () => {
 
     it("loads expanded state from localStorage", () => {
       localStorageMock.setItem(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         JSON.stringify({ notes: "", isExpanded: true })
       );
 
@@ -151,7 +151,7 @@ describe("useNotesPanel", () => {
 
       // Before debounce
       expect(localStorageMock.setItem).not.toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         expect.stringContaining("New content")
       );
 
@@ -161,7 +161,7 @@ describe("useNotesPanel", () => {
       });
 
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         JSON.stringify({ notes: "New content", isExpanded: false })
       );
     });
@@ -181,13 +181,13 @@ describe("useNotesPanel", () => {
 
       // Should save immediately without waiting for debounce
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         JSON.stringify({ notes: "", isExpanded: true })
       );
     });
 
     it("handles corrupted localStorage data gracefully", () => {
-      localStorageMock.setItem("hedwiq-meeting-notes-test-room", "not-valid-json");
+      localStorageMock.setItem("luframe-meeting-notes-test-room", "not-valid-json");
 
       const { result } = renderHook(() =>
         useNotesPanel({ storageKey: "test-room" })
@@ -354,7 +354,7 @@ describe("useNotesPanel", () => {
 
     it("removes from localStorage on clear", () => {
       localStorageMock.setItem(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         JSON.stringify({ notes: "Saved", isExpanded: true })
       );
 
@@ -367,7 +367,7 @@ describe("useNotesPanel", () => {
       });
 
       expect(localStorageMock.removeItem).toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room"
+        "luframe-meeting-notes-test-room"
       );
     });
   });
@@ -392,7 +392,7 @@ describe("useNotesPanel", () => {
 
       // Not saved yet (5 second debounce)
       expect(localStorageMock.setItem).not.toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         expect.stringContaining("Pending changes")
       );
 
@@ -402,7 +402,7 @@ describe("useNotesPanel", () => {
 
       // Now saved immediately
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         JSON.stringify({ notes: "Pending changes", isExpanded: false })
       );
     });
@@ -454,18 +454,18 @@ describe("useNotesPanel", () => {
       });
 
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-my-room-123",
+        "luframe-meeting-notes-my-room-123",
         expect.any(String)
       );
     });
 
     it("isolates data between different storage keys", () => {
       localStorageMock.setItem(
-        "hedwiq-meeting-notes-room-a",
+        "luframe-meeting-notes-room-a",
         JSON.stringify({ notes: "Room A notes", isExpanded: false })
       );
       localStorageMock.setItem(
-        "hedwiq-meeting-notes-room-b",
+        "luframe-meeting-notes-room-b",
         JSON.stringify({ notes: "Room B notes", isExpanded: true })
       );
 
@@ -509,7 +509,7 @@ describe("useNotesPanel", () => {
       });
 
       expect(localStorageMock.setItem).not.toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         expect.stringContaining("Content")
       );
 
@@ -519,7 +519,7 @@ describe("useNotesPanel", () => {
       });
 
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         JSON.stringify({ notes: "Content", isExpanded: false })
       );
     });
@@ -557,7 +557,7 @@ describe("useNotesPanel", () => {
 
       // Not saved yet
       expect(localStorageMock.setItem).not.toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         expect.stringContaining("ABC")
       );
 
@@ -567,7 +567,7 @@ describe("useNotesPanel", () => {
       });
 
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "hedwiq-meeting-notes-test-room",
+        "luframe-meeting-notes-test-room",
         JSON.stringify({ notes: "ABC", isExpanded: false })
       );
     });

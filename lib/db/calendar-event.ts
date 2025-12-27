@@ -2,7 +2,7 @@
  * Calendar Event Database Operations
  *
  * CRUD operations for the calendar_event table.
- * Handles mapping between Hedwiq meetings and external calendar events.
+ * Handles mapping between Luframe meetings and external calendar events.
  */
 
 import { db } from "@/lib/db";

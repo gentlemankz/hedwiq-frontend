@@ -1,5 +1,5 @@
 /**
- * Folder Types for Hedwiq Frontend
+ * Folder Types for Luframe Frontend
  *
  * These types support the Meeting Folders feature for organizing past meetings.
  */

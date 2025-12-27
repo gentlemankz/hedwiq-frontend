@@ -246,7 +246,7 @@ export async function createGoogleCalendarEvent(
     agendaSection,
     "",
     "---",
-    `Join Hedwiq Meeting: ${input.meetingLink}`,
+    `Join Luframe Meeting: ${input.meetingLink}`,
     `Room ID: ${input.roomId}`,
   ]
     .filter(Boolean)
@@ -266,7 +266,7 @@ export async function createGoogleCalendarEvent(
     },
     // Add meeting link as a source
     source: {
-      title: "Hedwiq Meeting",
+      title: "Luframe Meeting",
       url: input.meetingLink,
     },
     // Add transparency to show as busy

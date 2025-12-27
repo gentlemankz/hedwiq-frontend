@@ -63,7 +63,7 @@ export interface UseBlockNotesReturn {
 // Constants
 // ============================================================================
 
-const STORAGE_PREFIX = "hedwiq-block-notes-";
+const STORAGE_PREFIX = "luframe-block-notes-";
 const DEFAULT_DEBOUNCE_MS = 500;
 
 // ============================================================================
@@ -176,8 +176,8 @@ export function useBlockNotes({
 }: UseBlockNotesOptions): UseBlockNotesReturn {
   // Storage keys
   const fullStorageKey = `${STORAGE_PREFIX}${storageKey}`;
-  const legacyTranscriptKey = `hedwiq-transcript-notes-${storageKey}`;
-  const legacyNotesKey = `hedwiq-meeting-notes-${storageKey}`;
+  const legacyTranscriptKey = `luframe-transcript-notes-${storageKey}`;
+  const legacyNotesKey = `luframe-meeting-notes-${storageKey}`;
 
   // Hydration state
   const [isHydrated, setIsHydrated] = React.useState(false);

@@ -16,8 +16,8 @@ import type {
   DocumentUploadResponse,
 } from "@/types/document";
 
-/** LiveKit topic for document references from the Hedwiq agent */
-const DOCUMENT_REFERENCE_TOPIC = "hedwiq.document_reference";
+/** LiveKit topic for document references from the Luframe agent */
+const DOCUMENT_REFERENCE_TOPIC = "luframe.document_reference";
 
 /** Maximum number of references to keep in memory */
 const MAX_REFERENCES = 200;

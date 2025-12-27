@@ -384,7 +384,7 @@ export function MeetingUpdatedEmail({
             <Text style={footer}>
               Powered by{" "}
               <Link href={appUrl} style={link}>
-                Hedwiq
+                Luframe
               </Link>
             </Text>
           </Section>

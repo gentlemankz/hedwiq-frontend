@@ -1,5 +1,5 @@
 /**
- * Meeting Types for Hedwiq Frontend
+ * Meeting Types for Luframe Frontend
  *
  * These types support the Meeting Scheduling feature.
  * Used for creating, listing, and managing meetings.

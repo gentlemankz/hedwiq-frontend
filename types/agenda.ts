@@ -1,5 +1,5 @@
 /**
- * Agenda Types for Hedwiq Frontend
+ * Agenda Types for Luframe Frontend
  *
  * These types support the Meeting Agenda Builder and Automatic Progress feature.
  * Used for agenda creation in PreJoin and real-time progress tracking during meetings.
@@ -381,4 +381,4 @@ export const AGENDA_LIMITS = {
 /**
  * LiveKit topic name for agenda events.
  */
-export const AGENDA_TOPIC = "hedwiq.agenda" as const;
+export const AGENDA_TOPIC = "luframe.agenda" as const;

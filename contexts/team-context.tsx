@@ -62,7 +62,7 @@ const TeamContext = createContext<TeamContextValue | null>(null);
 // Storage Keys
 // ============================================================================
 
-const TEAM_EXPANDED_KEY = "hedwiq-expanded-teams";
+const TEAM_EXPANDED_KEY = "luframe-expanded-teams";
 
 // ============================================================================
 // Provider

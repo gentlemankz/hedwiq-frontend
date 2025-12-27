@@ -50,7 +50,7 @@ const SidebarContext = createContext<SidebarContextValue | null>(null);
 // Storage Keys
 // ============================================================================
 
-const SIDEBAR_EXPANDED_SECTIONS_KEY = "hedwiq-sidebar-expanded-sections";
+const SIDEBAR_EXPANDED_SECTIONS_KEY = "luframe-sidebar-expanded-sections";
 
 // ============================================================================
 // Provider

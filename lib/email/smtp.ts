@@ -86,8 +86,8 @@ export interface SendEmailResult {
 // Email Sending
 // ============================================================================
 
-const FROM_EMAIL = process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@hedwiq.com";
-const FROM_NAME = process.env.SMTP_FROM_NAME || "Hedwiq";
+const FROM_EMAIL = process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@luframe.com";
+const FROM_NAME = process.env.SMTP_FROM_NAME || "Luframe";
 
 /**
  * Send an email via SMTP.
@@ -185,7 +185,7 @@ export function generateVerificationEmailHtml(options: {
     <p style="color: #374151; font-size: 14px; line-height: 24px; margin: 0 0 12px;">${greeting},</p>
 
     <p style="color: #374151; font-size: 14px; line-height: 24px; margin: 0 0 24px;">
-      Thanks for signing up for Hedwiq! Please verify your email address by clicking the button below.
+      Thanks for signing up for Luframe! Please verify your email address by clicking the button below.
     </p>
 
     <div style="text-align: center; margin: 32px 0;">
@@ -205,7 +205,7 @@ export function generateVerificationEmailHtml(options: {
     <hr style="border: none; border-top: 1px solid #e6ebf1; margin: 32px 0;">
 
     <p style="color: #6b7280; font-size: 12px; line-height: 20px; margin: 0;">
-      If you didn't create an account on Hedwiq, you can safely ignore this email.
+      If you didn't create an account on Luframe, you can safely ignore this email.
     </p>
   </div>
 </body>
@@ -214,13 +214,13 @@ export function generateVerificationEmailHtml(options: {
 
   const text = `${greeting},
 
-Thanks for signing up for Hedwiq! Please verify your email address by clicking the link below:
+Thanks for signing up for Luframe! Please verify your email address by clicking the link below:
 
 ${options.verificationLink}
 
 This link will expire in 1 hour.
 
-If you didn't create an account on Hedwiq, you can safely ignore this email.`;
+If you didn't create an account on Luframe, you can safely ignore this email.`;
 
   return { html, text };
 }
@@ -252,7 +252,7 @@ export function generatePasswordResetEmailHtml(options: {
     <p style="color: #374151; font-size: 14px; line-height: 24px; margin: 0 0 12px;">${greeting},</p>
 
     <p style="color: #374151; font-size: 14px; line-height: 24px; margin: 0 0 24px;">
-      We received a request to reset your password for your Hedwiq account. Click the button below to choose a new password.
+      We received a request to reset your password for your Luframe account. Click the button below to choose a new password.
     </p>
 
     <div style="text-align: center; margin: 32px 0;">
@@ -287,7 +287,7 @@ export function generatePasswordResetEmailHtml(options: {
 
   const text = `${greeting},
 
-We received a request to reset your password for your Hedwiq account. Click the link below to choose a new password:
+We received a request to reset your password for your Luframe account. Click the link below to choose a new password:
 
 ${options.resetLink}
 
