@@ -257,7 +257,15 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       }
 
       if (stateError) {
-        throw new Error(stateError.message || "Failed to fetch customer state");
+        // Gracefully fall back to free tier when Polar state cannot be fetched
+        console.warn("[SubscriptionContext] Failed to fetch customer state:", stateError);
+        setTier("free");
+        setStatus("none");
+        setBillingInterval(null);
+        setSubscription(null);
+        setUsage(DEFAULT_USAGE);
+        setError(stateError.message || "Failed to fetch customer state");
+        return;
       }
 
       // Validate response structure

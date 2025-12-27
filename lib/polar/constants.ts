@@ -32,10 +32,50 @@ export interface TierLimits {
 // ============================================================================
 
 /**
- * Polar products mapped to their slugs and tiers.
- * This is the single source of truth for product configuration.
+ * Determine which Polar environment to use.
+ * Set POLAR_ENVIRONMENT=sandbox for development, POLAR_ENVIRONMENT=production for live payments.
  */
-export const POLAR_PRODUCTS: PolarProduct[] = [
+const isProduction = process.env.POLAR_ENVIRONMENT === "production";
+
+/**
+ * Sandbox (development) product IDs from Polar sandbox environment.
+ * Used when POLAR_ENVIRONMENT=sandbox or not set.
+ */
+const SANDBOX_PRODUCTS: PolarProduct[] = [
+  {
+    productId: "6a513e7d-07cd-4809-9c01-4cb29604a207",
+    slug: "pro",
+    tier: "pro",
+    interval: "month",
+    displayName: "Pro Monthly",
+  },
+  {
+    productId: "d6825cb5-35b6-4c94-9106-b6523aeac079",
+    slug: "pro-annual",
+    tier: "pro",
+    interval: "year",
+    displayName: "Pro Annual",
+  },
+  {
+    productId: "0ba11623-5fd2-479d-bf1b-79ee61eba60c",
+    slug: "business",
+    tier: "business",
+    interval: "month",
+    displayName: "Business Monthly",
+  },
+  {
+    productId: "7a26630b-1dbb-4d67-a685-643c98c0cc0a",
+    slug: "business-annual",
+    tier: "business",
+    interval: "year",
+    displayName: "Business Annual",
+  },
+];
+
+/**
+ * Production product IDs from Polar production environment (polar.sh).
+ */
+const PRODUCTION_PRODUCTS: PolarProduct[] = [
   {
     productId: "96ef3a99-c31f-4c71-ad3a-a18c73875442",
     slug: "pro",
@@ -65,6 +105,14 @@ export const POLAR_PRODUCTS: PolarProduct[] = [
     displayName: "Business Annual",
   },
 ];
+
+/**
+ * Polar products mapped to their slugs and tiers.
+ * Automatically selects sandbox or production based on POLAR_ENVIRONMENT.
+ */
+export const POLAR_PRODUCTS: PolarProduct[] = isProduction
+  ? PRODUCTION_PRODUCTS
+  : SANDBOX_PRODUCTS;
 
 /**
  * Products formatted for Better Auth checkout plugin
