@@ -13,7 +13,6 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
   TIER_LIMITS,
-  UNLIMITED,
   type SubscriptionTier,
 } from "@/lib/polar/constants";
 

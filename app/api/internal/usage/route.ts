@@ -103,11 +103,6 @@ const VALUE_CONSTRAINTS: Record<UsageEventType, { min: number; max: number; desc
   },
 };
 
-interface UsageCheckBody {
-  userId: string;
-  checkType?: "meeting" | "email-draft" | "all";
-}
-
 // ============================================================================
 // POST Handler - Report Usage
 // ============================================================================

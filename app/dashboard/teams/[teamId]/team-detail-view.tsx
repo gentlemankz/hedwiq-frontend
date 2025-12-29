@@ -154,7 +154,7 @@ export function TeamDetailView({
 
   // External invitations state (users without accounts)
   const [externalInvitations, setExternalInvitations] = useState<ExternalTeamInvitation[]>([]);
-  const [externalInvitationsLoading, setExternalInvitationsLoading] = useState(false);
+  const [_externalInvitationsLoading, setExternalInvitationsLoading] = useState(false);
 
   // Member operation error state
   const [memberError, setMemberError] = useState<string | null>(null);

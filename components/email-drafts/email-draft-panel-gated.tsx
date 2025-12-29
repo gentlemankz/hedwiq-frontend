@@ -5,7 +5,6 @@ import { FeatureLockedCard } from "@/components/subscription";
 import { EmailDraftPanel } from "./email-draft-panel";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 
 /**
  * Props for EmailDraftPanelGated

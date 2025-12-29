@@ -304,7 +304,7 @@ export function EmailDraftsProvider({
    * Handle incoming email draft stream from the agent
    */
   const handleDraftStream = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     async (reader: TextStreamReader, _participantInfo: ParticipantInfo) => {
       try {
         const rawJson = await reader.readAll();

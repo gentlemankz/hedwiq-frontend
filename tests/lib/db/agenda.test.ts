@@ -24,7 +24,6 @@ import {
   generateAgendaId,
   generateAgendaItemId,
   getAgendaByRoomId,
-  getAgendaWithItems,
   getAgendaItemById,
   upsertAgenda,
   createAgenda,
@@ -52,7 +51,7 @@ const mockSelect = () => {
   return chain;
 };
 
-const mockInsert = () => {
+const _mockInsert = () => {
   const chain = {
     values: vi.fn().mockReturnThis(),
     onConflictDoUpdate: vi.fn().mockReturnThis(),
@@ -72,7 +71,7 @@ const mockUpdate = () => {
   return chain;
 };
 
-const mockDelete = () => {
+const _mockDelete = () => {
   const chain = {
     where: vi.fn().mockReturnThis(),
   };
@@ -434,7 +433,7 @@ describe("Status Update Operations", () => {
         .mockResolvedValueOnce([{ ...mockItem, status: "in_progress" }]); // Third: get updated item
       updateChain.where.mockResolvedValue([]);
 
-      const result = await startAgendaItem("item-test", "transcript-ref-1");
+      const _result = await startAgendaItem("item-test", "transcript-ref-1");
 
       expect(db.update).toHaveBeenCalled();
     });

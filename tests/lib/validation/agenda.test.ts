@@ -20,7 +20,7 @@ import { AGENDA_LIMITS } from "@/types/agenda";
 describe("validateAgendaItemInput", () => {
   describe("title validation", () => {
     it("should reject missing title", () => {
-      const result = validateAgendaItemInput({} as any, 0);
+      const result = validateAgendaItemInput({} as unknown as { title: string }, 0);
       expect(result).toContain("title is required");
     });
 
@@ -61,7 +61,7 @@ describe("validateAgendaItemInput", () => {
 
     it("should accept null description", () => {
       const result = validateAgendaItemInput(
-        { title: "Test", description: null as any },
+        { title: "Test", description: null as unknown as string },
         0
       );
       expect(result).toBeNull();
@@ -69,7 +69,7 @@ describe("validateAgendaItemInput", () => {
 
     it("should reject non-string description", () => {
       const result = validateAgendaItemInput(
-        { title: "Test", description: 123 as any },
+        { title: "Test", description: 123 as unknown as string },
         0
       );
       expect(result).toContain("description must be a string");
@@ -95,7 +95,7 @@ describe("validateAgendaItemInput", () => {
 
     it("should reject non-number duration", () => {
       const result = validateAgendaItemInput(
-        { title: "Test", estimatedDuration: "30" as any },
+        { title: "Test", estimatedDuration: "30" as unknown as number },
         0
       );
       expect(result).toContain("estimatedDuration must be a number");
@@ -138,7 +138,7 @@ describe("validateAgendaItemInput", () => {
 
     it("should reject non-string presenter", () => {
       const result = validateAgendaItemInput(
-        { title: "Test", presenter: 123 as any },
+        { title: "Test", presenter: 123 as unknown as string },
         0
       );
       expect(result).toContain("presenter must be a string");

@@ -6,7 +6,7 @@
  * Handles the business logic of updating agenda state based on incoming events.
  */
 
-import { useCallback, useRef, type MutableRefObject } from "react";
+import { useCallback, type MutableRefObject } from "react";
 import type { AgendaProgressEvent, AgendaItem, AgendaItemStatus, AgendaWithItems } from "./types";
 import { DEBUG, AGENT_IDENTITY_PREFIX } from "./constants";
 

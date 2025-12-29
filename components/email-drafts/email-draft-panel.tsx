@@ -63,7 +63,7 @@ export function EmailDraftPanel({
   isGmailConnected = false,
   onConnectGmail,
   // roomId kept for future meeting context features
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   roomId: _roomId,
 }: EmailDraftPanelProps) {
   const {

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { document } from "@/lib/db/schema";
 import { uploadFile, STORAGE_BUCKETS, STORAGE_PATHS } from "@/lib/supabase";
 import { validateRoomAccess } from "@/lib/db/room-access";
-import { eq, and, count } from "drizzle-orm";
+import { eq, count } from "drizzle-orm";
 import { reportStorageChange } from "@/lib/polar/usage";
 import {
   checkFeatureAccess,

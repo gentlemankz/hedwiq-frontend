@@ -323,7 +323,7 @@ export function DocumentsProvider({ children, initialDocuments = [] }: Documents
    * Handle incoming document reference stream from the agent
    */
   const handleReferenceStream = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     async (reader: TextStreamReader, _participantInfo: ParticipantInfo) => {
       try {
         const rawJson = await reader.readAll();

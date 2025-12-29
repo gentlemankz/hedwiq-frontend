@@ -65,18 +65,14 @@ export function DashboardClient({
   const [instantMeetingError, setInstantMeetingError] = useState<string | null>(
     null
   );
-  const [instantMeetingFolderId, setInstantMeetingFolderId] = useState<string | null>(null);
+  // Track user's explicit folder selection (null means "use default")
+  const [userSelectedFolderId, setUserSelectedFolderId] = useState<string | null>(null);
+  // Effective folder: user's choice or fallback to default
+  const instantMeetingFolderId = userSelectedFolderId ?? defaultFolderId ?? null;
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
   const [calendarEvents, setCalendarEvents] = useState<
     Record<string, CalendarEventPublic>
   >({});
-
-  // Initialize instant meeting folder when default folder becomes available
-  useEffect(() => {
-    if (defaultFolderId && instantMeetingFolderId === null) {
-      setInstantMeetingFolderId(defaultFolderId);
-    }
-  }, [defaultFolderId, instantMeetingFolderId]);
 
   // Handle pending checkout from OAuth flow (Google sign-in/sign-up)
   useEffect(() => {
@@ -132,7 +128,7 @@ export function DashboardClient({
 
       setIsNewMeetingDialogOpen(false);
       // Reset folder to default after navigating
-      setInstantMeetingFolderId(defaultFolderId);
+      setUserSelectedFolderId(null);
       router.push(`/meetings/${roomId}?${params.toString()}`);
     } catch (error) {
       console.error("Failed to start instant meeting:", error);
@@ -333,7 +329,7 @@ export function DashboardClient({
                         <FolderSelect
                           id="instant-meeting-folder"
                           value={instantMeetingFolderId}
-                          onChange={setInstantMeetingFolderId}
+                          onChange={setUserSelectedFolderId}
                           folders={folders}
                           loading={foldersLoading}
                           disabled={isCreatingInstant}
@@ -463,7 +459,7 @@ export function DashboardClient({
               if (!open) {
                 fetchMeetings();
                 // Reset folder to default when closing (so next open starts fresh)
-                setInstantMeetingFolderId(defaultFolderId);
+                setUserSelectedFolderId(null);
               }
             }}
             initialFolderId={instantMeetingFolderId}

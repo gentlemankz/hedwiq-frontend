@@ -148,7 +148,7 @@ const button = {
   marginRight: "8px",
 };
 
-const secondaryButton = {
+const _secondaryButton = {
   ...button,
   backgroundColor: "#f3f4f6",
   color: "#374151",
@@ -213,7 +213,7 @@ export function MeetingInvitationEmail({
   meetingDescription,
   scheduledAt,
   durationMinutes,
-  roomId,
+  roomId: _roomId,
   meetingLink,
   agendaItems,
   calendarLinks,

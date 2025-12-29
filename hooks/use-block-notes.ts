@@ -384,7 +384,7 @@ export function useBlockNotes({
         // If it's a transcript block, also delete the transcript note
         if (block?.type === "transcript") {
           setTranscriptNotes((prevNotes) => {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+             
             const { [block.transcriptNoteId]: _removed, ...rest } = prevNotes;
             return rest;
           });
@@ -478,7 +478,7 @@ export function useBlockNotes({
   const deleteTranscriptNote = React.useCallback(
     (id: string) => {
       setTranscriptNotes((prev) => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         const { [id]: _removed, ...rest } = prev;
         return rest;
       });

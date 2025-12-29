@@ -133,7 +133,7 @@ export function InsightsProvider({ children }: { children: React.ReactNode }) {
    * Handle incoming insight stream from the agent
    */
   const handleInsightStream = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     async (reader: TextStreamReader, _participantInfo: ParticipantInfo) => {
       try {
         const rawJson = await reader.readAll();

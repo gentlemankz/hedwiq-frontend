@@ -562,7 +562,7 @@ export async function requireUsageQuota(
  * });
  * ```
  */
-export function withFeatureGuard<T>(
+export function withFeatureGuard(
   feature: Feature,
   handler: (request: Request, subscription: UserSubscription) => Promise<Response>
 ): (request: Request) => Promise<Response> {

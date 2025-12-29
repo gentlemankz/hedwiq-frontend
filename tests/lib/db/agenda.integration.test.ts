@@ -36,7 +36,6 @@ import {
   reorderAgendaItems,
   deleteAgendaItem,
   updateAgendaItemStatus,
-  getAgendaByRoomId,
 } from "@/lib/db/agenda";
 
 // Type for the mocked database (matches the mock above)
@@ -90,7 +89,7 @@ const mockUpdate = (target: { update: Mock }) => {
   return chain;
 };
 
-const mockDelete = (target: { delete: Mock }) => {
+const _mockDelete = (target: { delete: Mock }) => {
   const chain = {
     where: vi.fn().mockReturnThis(),
   };

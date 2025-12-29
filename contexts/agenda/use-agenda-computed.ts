@@ -28,10 +28,11 @@ export function useAgendaComputed({
   /**
    * Compute items with merged real-time status updates and durations
    */
+  const items = agenda?.items;
   const itemsWithLiveStatus = useMemo(() => {
-    if (!agenda?.items) return [];
+    if (!items) return [];
 
-    return agenda.items.map((item) => {
+    return items.map((item) => {
       const liveStatus = itemStatuses.get(item.id);
       const liveDuration = itemDurations.get(item.id);
 
@@ -48,7 +49,7 @@ export function useAgendaComputed({
       }
       return item;
     });
-  }, [agenda?.items, itemStatuses, itemDurations]);
+  }, [items, itemStatuses, itemDurations]);
 
   /**
    * Current active item
@@ -113,7 +114,7 @@ export function useAgendaComputed({
    */
   const getTopicForTranscript = useCallback(
     (transcriptRef: string): AgendaItem | null => {
-      if (!agenda?.items) return null;
+      if (!items) return null;
 
       // Find item where transcript ref falls between start and end refs
       for (const item of itemsWithLiveStatus) {
@@ -127,7 +128,7 @@ export function useAgendaComputed({
 
       return null;
     },
-    [agenda?.items, itemsWithLiveStatus]
+    [items, itemsWithLiveStatus]
   );
 
   return {

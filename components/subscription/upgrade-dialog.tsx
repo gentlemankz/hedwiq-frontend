@@ -16,12 +16,10 @@ import { cn } from "@/lib/utils";
 import { useSubscriptionContext, type SubscriptionTier } from "@/contexts/subscription-context";
 import {
   type Feature,
-  getFeaturesForTier,
   getFeatureDisplayName,
   getTierDisplayName,
   isTierHigher,
 } from "@/lib/feature-gates";
-import { TIER_LIMITS, isUnlimited } from "@/lib/polar/constants";
 
 // ============================================================================
 // Types
