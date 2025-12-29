@@ -228,7 +228,9 @@ describe("AgendaProgressItem", () => {
       <AgendaProgressItem item={item} isCurrent={true} isLast={false} index={1} />
     );
 
-    expect(container.firstChild).toHaveClass("bg-primary/5");
+    // The highlight is applied to the content column (second child of the outer div)
+    const contentColumn = container.firstChild?.lastChild;
+    expect(contentColumn).toHaveClass("bg-primary/5");
   });
 });
 
