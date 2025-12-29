@@ -1,0 +1,136 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
+jobs:
+  # ============================================
+  # Test Job
+  # ============================================
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test:run
+
+  # ============================================
+  # Build & Deploy Job
+  # ============================================
+  build-and-deploy:
+    name: Build & Deploy
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Azure Login using OIDC (passwordless)
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Fetch build-time secrets from Key Vault
+      - name: Get Build Secrets from Key Vault
+        uses: Azure/get-keyvault-secrets@v1
+        with:
+          keyvault: luframe-secrets
+          secrets: >-
+            NEXT-PUBLIC-LIVEKIT-URL,
+            NEXT-PUBLIC-APP-URL,
+            NEXT-PUBLIC-SUPABASE-URL,
+            NEXT-PUBLIC-SUPABASE-ANON-KEY
+        id: keyvault
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_LIVEKIT_URL=${{ steps.keyvault.outputs.NEXT-PUBLIC-LIVEKIT-URL }}
+            NEXT_PUBLIC_APP_URL=${{ steps.keyvault.outputs.NEXT-PUBLIC-APP-URL }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ steps.keyvault.outputs.NEXT-PUBLIC-SUPABASE-URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ steps.keyvault.outputs.NEXT-PUBLIC-SUPABASE-ANON-KEY }}
+
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USERNAME }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/luframe
+
+            echo "=== Fetching latest secrets from Key Vault ==="
+            sudo ./scripts/fetch-secrets.sh
+
+            echo "=== Logging into GHCR ==="
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            echo "=== Pulling latest frontend image ==="
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+            echo "=== Restarting frontend container ==="
+            docker compose up -d --no-deps frontend
+
+            echo "=== Cleanup old images ==="
+            docker image prune -af --filter "until=24h"
+
+            echo "=== Health check ==="
+            sleep 10
+            curl -f http://localhost:3000/api/health || echo "Health check endpoint not available yet"
+
+            echo "=== Deployment complete! ==="
