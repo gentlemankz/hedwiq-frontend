@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
 
   // Security headers (recommended for production)
   headers: async () => [
+    // Security headers for all routes
     {
       source: '/:path*',
       headers: [
@@ -30,6 +31,46 @@ const nextConfig: NextConfig = {
           key: 'Referrer-Policy',
           value: 'strict-origin-when-cross-origin'
         },
+      ]
+    },
+    // Cache headers for Next.js static assets (immutable, 1 year)
+    {
+      source: '/_next/static/:path*',
+      headers: [
+        {
+          key: 'Cache-Control',
+          value: 'public, max-age=31536000, immutable'
+        }
+      ]
+    },
+    // Cache headers for fonts (immutable, 1 year)
+    {
+      source: '/fonts/:path*',
+      headers: [
+        {
+          key: 'Cache-Control',
+          value: 'public, max-age=31536000, immutable'
+        }
+      ]
+    },
+    // Cache headers for favicon (1 day)
+    {
+      source: '/favicon.ico',
+      headers: [
+        {
+          key: 'Cache-Control',
+          value: 'public, max-age=86400'
+        }
+      ]
+    },
+    // Cache headers for images (1 month)
+    {
+      source: '/images/:path*',
+      headers: [
+        {
+          key: 'Cache-Control',
+          value: 'public, max-age=2592000'
+        }
       ]
     }
   ],
