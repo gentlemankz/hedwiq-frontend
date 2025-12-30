@@ -5,13 +5,20 @@ import type { Session } from "@/lib/auth";
 const protectedRoutes = ["/dashboard", "/settings", "/meetings"];
 const authRoutes = ["/sign-in", "/sign-up", "/forgot-password", "/reset-password"];
 
+// Use internal URL for server-side session checks to avoid Cloudflare bot protection
+// In production: BETTER_AUTH_URL = http://localhost:3000 (from Docker secrets)
+// In development: falls back to request origin
+const getInternalBaseURL = (request: NextRequest) => {
+  return process.env.BETTER_AUTH_URL || request.nextUrl.origin;
+};
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const { data: session } = await betterFetch<Session>(
     "/api/auth/get-session",
     {
-      baseURL: request.nextUrl.origin,
+      baseURL: getInternalBaseURL(request),
       headers: {
         cookie: request.headers.get("cookie") || "",
       },
