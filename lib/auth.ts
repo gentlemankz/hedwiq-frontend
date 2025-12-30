@@ -114,6 +114,10 @@ export const auth = betterAuth({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       prompt: "select_account",
+      // Explicit redirect URI for OAuth callback (uses public URL even when baseURL is internal)
+      redirectURI: process.env.NEXT_PUBLIC_APP_URL
+        ? `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback/google`
+        : undefined,
     },
   },
   plugins: [
