@@ -172,7 +172,7 @@ export function MeetingPersistenceProvider({
         const data = await response.json();
         if (!cancelled && isMountedRef.current) {
           setSessionId(data.sessionId);
-          console.log("[Persistence] Session started:", data.sessionId);
+          console.debug("[Persistence] Session started");
         }
       } catch (err) {
         console.error("[Persistence] Failed to start session:", err);
@@ -193,17 +193,44 @@ export function MeetingPersistenceProvider({
 
   /**
    * End session on unmount
+   *
+   * Uses multiple strategies for reliability during page unload:
+   * 1. Primary: navigator.sendBeacon (most reliable for page unload)
+   * 2. Fallback: fetch with keepalive flag
+   *
+   * sendBeacon is preferred because it's specifically designed for page unload
+   * scenarios and has better browser support for this use case than fetch keepalive.
    */
   useEffect(() => {
     return () => {
       if (sessionId && meetingId) {
-        // Fire and forget - don't block unmount
-        fetch(`/api/meetings/${meetingId}/session`, {
+        const payload = JSON.stringify({ sessionId, source: "frontend" });
+
+        // Strategy 1: Use sendBeacon (most reliable for unload)
+        // sendBeacon only supports POST, so we use a dedicated endpoint
+        const beaconEndpoint = `/api/meetings/${meetingId}/session/end`;
+
+        if (navigator.sendBeacon) {
+          const blob = new Blob([payload], { type: "application/json" });
+          const sent = navigator.sendBeacon(beaconEndpoint, blob);
+
+          if (sent) {
+            // sendBeacon queued successfully - it will be sent even after page unload
+            return;
+          }
+          // If sendBeacon fails (e.g., payload too large), fall through to fetch
+        }
+
+        // Strategy 2: Fallback to fetch with keepalive
+        // This is less reliable during page unload but works in more scenarios
+        const fetchEndpoint = `/api/meetings/${meetingId}/session`;
+        fetch(fetchEndpoint, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId }),
-        }).catch((err) => {
-          console.error("[Persistence] Failed to end session:", err);
+          body: payload,
+          keepalive: true,
+        }).catch(() => {
+          // Silently fail - nothing we can do during unmount
         });
       }
     };
@@ -310,8 +337,8 @@ export function MeetingPersistenceProvider({
         }));
       }
 
-      console.log(
-        `[Persistence] Saved: ${transcription.length} transcripts, ${insights.length} insights, ${documentRefs.length} refs`
+      console.debug(
+        `[Persistence] Saved: ${transcription.length}T, ${insights.length}I, ${documentRefs.length}R`
       );
     } catch (err) {
       console.error("[Persistence] Save failed:", err);
@@ -358,8 +385,6 @@ export function MeetingPersistenceProvider({
       if (isMountedRef.current) {
         setStats((prev) => ({ ...prev, notesSaved: true }));
       }
-
-      console.log("[Persistence] Notes saved");
     } catch (err) {
       console.error("[Persistence] Notes save failed:", err);
     }

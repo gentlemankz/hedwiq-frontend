@@ -249,11 +249,17 @@ export async function createMeetingSession(
  * End a meeting session when user leaves
  *
  * Also reports usage to Polar for billing purposes.
+ * The source parameter is used for tracking/deduplication to distinguish
+ * between frontend-reported and agent-reported usage.
  *
  * @param sessionId - The session ID to end
+ * @param source - Source of the report ("frontend" | "agent"), used for deduplication
  * @returns The session data with duration, or null if session not found
  */
-export async function endMeetingSession(sessionId: string): Promise<{
+export async function endMeetingSession(
+  sessionId: string,
+  source: string = "frontend"
+): Promise<{
   id: string;
   userId: string;
   meetingId: string;
@@ -261,6 +267,8 @@ export async function endMeetingSession(sessionId: string): Promise<{
   durationSeconds: number;
 } | null> {
   const now = new Date();
+
+  console.debug(`[Meeting Session] Ending: session=${sessionId.slice(0, 12)}..., source=${source}`);
 
   // Get the session to calculate duration
   const sessions = await db
@@ -270,13 +278,17 @@ export async function endMeetingSession(sessionId: string): Promise<{
     .limit(1);
 
   if (sessions.length === 0) {
-    console.warn(`Session ${sessionId} not found`);
+    console.warn(`[Meeting Session] Session ${sessionId} not found in database`);
     return null;
   }
 
   const session = sessions[0];
   const durationSeconds = Math.floor(
     (now.getTime() - session.joinedAt.getTime()) / 1000
+  );
+
+  console.debug(
+    `[Meeting Session] Found session: duration=${durationSeconds}s`
   );
 
   // Update the session in database
@@ -294,14 +306,38 @@ export async function endMeetingSession(sessionId: string): Promise<{
   const durationMinutes = Math.ceil(durationSeconds / 60);
 
   if (durationMinutes > 0) {
-    // Fire and forget - don't block session end on usage reporting
+    // Fire-and-forget pattern for Polar reporting
+    // IMPORTANT: We intentionally do NOT await this because:
+    // 1. Session end must not be blocked by Polar availability
+    // 2. Keepalive/sendBeacon requests during page unload need quick responses
+    // 3. Adding latency to "leave meeting" hurts UX
+    //
+    // Trade-off: In serverless, the process may be torn down before this completes.
+    // Mitigation: Usage reconciliation can catch missed events via session duration data.
+    const startTime = Date.now();
+    const SLOW_REPORT_THRESHOLD_MS = 2000;
+
     reportMeetingMinutes(session.userId, durationMinutes, {
       roomId: session.roomId,
       meetingId: session.meetingId,
       sessionId: session.id,
-    }).catch((error) => {
-      console.error("[Meeting Session] Failed to report usage to Polar:", error);
-    });
+      source,
+    })
+      .then((result) => {
+        const elapsed = Date.now() - startTime;
+        if (result.success) {
+          // Log slow reports for monitoring (may indicate Polar latency issues)
+          if (elapsed > SLOW_REPORT_THRESHOLD_MS) {
+            console.warn(`[Meeting Session] Polar report slow: ${elapsed}ms`);
+          }
+        } else {
+          console.error(`[Meeting Session] Polar report failed: ${result.error}`);
+        }
+      })
+      .catch((error) => {
+        // Catch any unhandled rejections to prevent process crashes
+        console.error("[Meeting Session] Polar report exception:", error instanceof Error ? error.message : "Unknown");
+      });
   }
 
   return {

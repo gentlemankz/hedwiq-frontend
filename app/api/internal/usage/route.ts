@@ -227,11 +227,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (!result.success) {
+      console.error(`[Internal Usage API] Failed: ${body.eventType}, error=${result.error}`);
       return NextResponse.json(
         { success: false, error: result.error },
         { status: 500 }
       );
     }
+
+    console.debug(`[Internal Usage API] Success: ${body.eventType}=${body.value}`);
 
     return NextResponse.json({
       success: true,
@@ -240,7 +243,7 @@ export async function POST(request: NextRequest) {
       userId: body.userId,
     });
   } catch (error) {
-    console.error("[Internal Usage API] Error reporting usage:", error);
+    console.error("[Internal Usage API] Exception:", error instanceof Error ? error.message : "Unknown");
     return NextResponse.json(
       { error: "Failed to report usage" },
       { status: 500 }

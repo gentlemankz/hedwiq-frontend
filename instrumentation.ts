@@ -14,8 +14,6 @@
  * - Uses .env.local directly (no file-based secrets)
  */
 
-import { readFileSync, existsSync } from 'fs'
-
 export async function register() {
   // Only run on server (not edge runtime)
   if (process.env.NEXT_RUNTIME === 'edge') {
@@ -26,6 +24,11 @@ export async function register() {
   if (process.env.NODE_ENV !== 'production') {
     return
   }
+
+  // Dynamic import with variable to bypass static analysis
+  // This prevents Next.js bundler from flagging 'fs' in Edge Runtime
+  const fsModule = 'fs'
+  const { readFileSync, existsSync } = await import(/* webpackIgnore: true */ fsModule)
 
   console.log('[instrumentation] Loading secrets from /run/secrets/...')
 

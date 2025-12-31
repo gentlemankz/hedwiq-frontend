@@ -106,13 +106,19 @@ export async function POST(
   }
 }
 
+/** Valid source values for session end tracking */
+const VALID_SOURCES = ["frontend", "agent"] as const;
+type SessionSource = (typeof VALID_SOURCES)[number];
+
 /**
  * PATCH /api/meetings/[meetingId]/session
  *
  * End a session when user leaves a meeting.
+ * Also reports usage to Polar for billing (with source tracking for deduplication).
  *
  * Body:
  * - sessionId: string (required)
+ * - source: string (optional, for deduplication tracking: "frontend" | "agent")
  */
 export async function PATCH(
   request: NextRequest,
@@ -133,7 +139,7 @@ export async function PATCH(
   }
 
   // Parse request body
-  let body: { sessionId?: string };
+  let body: { sessionId?: string; source?: string };
   try {
     body = await request.json();
   } catch {
@@ -147,21 +153,34 @@ export async function PATCH(
     );
   }
 
+  // Validate and sanitize source parameter
+  // Only allow known values to prevent analytics pollution
+  const rawSource = body.source || "frontend";
+  const source: SessionSource = VALID_SOURCES.includes(rawSource as SessionSource)
+    ? (rawSource as SessionSource)
+    : "frontend";
+
   try {
     // Verify the session belongs to the current user
     const isOwner = await validateSessionOwnership(body.sessionId, session.user.id);
     if (!isOwner) {
+      console.warn("[Session API] Ownership validation failed");
       return NextResponse.json(
         { error: "You can only end your own sessions" },
         { status: 403 }
       );
     }
 
-    await endMeetingSession(body.sessionId);
+    const result = await endMeetingSession(body.sessionId, source);
 
-    return NextResponse.json({ success: true });
+    // Reduced logging - only log duration, not PII
+    if (result) {
+      console.debug(`[Session API] Session ended: duration=${result.durationSeconds}s`);
+    }
+
+    return NextResponse.json({ success: true, durationSeconds: result?.durationSeconds });
   } catch (error) {
-    console.error("End session error:", error);
+    console.error("[Session API] End session error:", error instanceof Error ? error.message : "Unknown");
     return NextResponse.json(
       { error: "Failed to end session" },
       { status: 500 }
