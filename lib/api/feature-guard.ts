@@ -29,6 +29,11 @@ import {
   unauthorized,
   quotaExceeded,
 } from "./errors";
+import {
+  IS_PRODUCTION,
+  IS_DEVELOPMENT,
+  PRODUCTION_INDICATORS,
+} from "@/lib/env-detection";
 
 // ============================================================================
 // Types
@@ -122,14 +127,31 @@ export async function getUserSubscription(): Promise<UserSubscription | null> {
         productId: null,
       };
     } catch (polarError) {
-      // If Polar fails, log and default to free tier
+      // SECURITY FIX: Fail closed on Polar API errors in production
+      // Previously defaulted to "free" tier which could allow unauthorized access
       console.error("[FeatureGuard] Polar API error:", polarError);
-      return {
-        userId: session.user.id,
-        tier: "free",
-        status: "none",
-        productId: null,
-      };
+
+      // In development, allow degraded mode for local testing
+      if (IS_DEVELOPMENT && BYPASS_USAGE_CHECKS) {
+        console.warn(
+          "[FeatureGuard] Development mode: Falling back to free tier due to Polar error. " +
+          "In production, this would deny access."
+        );
+        return {
+          userId: session.user.id,
+          tier: "free",
+          status: "none",
+          productId: null,
+        };
+      }
+
+      // FAIL CLOSED: Return null to indicate service unavailable
+      // Callers must handle null as "cannot verify subscription - deny access"
+      console.error(
+        "[FeatureGuard] FAIL_CLOSED: Polar unavailable, denying access. " +
+        "User must retry when billing service is available."
+      );
+      return null;
     }
   } catch (error) {
     console.error("[FeatureGuard] Error getting user subscription:", error);
@@ -305,17 +327,30 @@ export async function requireTier(minimumTier: SubscriptionTier): Promise<UserSu
 // Configuration
 // ============================================================================
 
-/**
- * In development, allow softer degradation when Polar isn't configured.
- * In production, always fail closed for security.
- */
-const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
+// Environment detection is now handled by @/lib/env-detection
+// IS_PRODUCTION, IS_DEVELOPMENT, and PRODUCTION_INDICATORS are imported from there
 
 /**
  * Environment flag to bypass usage checks in development.
  * Set BYPASS_USAGE_CHECKS=true in .env.local for local testing without Polar.
  */
 const BYPASS_USAGE_CHECKS = process.env.BYPASS_USAGE_CHECKS === "true";
+
+// CRITICAL SECURITY: Fail fast if BYPASS_USAGE_CHECKS is enabled in production
+// This prevents accidental billing bypass due to misconfigured environment variables
+if (BYPASS_USAGE_CHECKS && IS_PRODUCTION) {
+  // In production, this would be catastrophic - throw to prevent startup
+  // Using console.error + throw ensures this is logged even if error handlers are async
+  console.error(
+    "[SECURITY CRITICAL] BYPASS_USAGE_CHECKS=true is NOT allowed in production! " +
+    `Production detected via: ${PRODUCTION_INDICATORS.join(", ")}. ` +
+    "This would disable all billing enforcement. Remove this environment variable."
+  );
+  throw new Error(
+    "FATAL: BYPASS_USAGE_CHECKS=true is not allowed in production. " +
+    "This would disable all billing. Remove this environment variable immediately."
+  );
+}
 
 // ============================================================================
 // Usage Checking (for quota-based features)

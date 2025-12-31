@@ -45,7 +45,8 @@ frontend/
 │   │   │   ├── reorder/route.ts      # Bulk reorder folders
 │   │   │   └── [folderId]/route.ts   # Get/update/delete folder
 │   │   ├── internal/                 # Internal service APIs (bearer token auth)
-│   │   │   └── usage/route.ts        # Usage reporting for Python agent (POST report, GET status)
+│   │   │   ├── usage/route.ts        # Usage reporting for Python agent (POST report, GET status)
+│   │   │   └── meeting-host/route.ts # Get meeting host by room ID (for billing target)
 │   │   ├── gmail/                    # Gmail OAuth for Real-Time Actions
 │   │   │   ├── callback/route.ts     # OAuth callback handler
 │   │   │   ├── connect/route.ts      # Start Gmail OAuth flow
@@ -337,6 +338,10 @@ frontend/
 │   │   ├── index.ts                  # Barrel exports for API errors + feature guards
 │   │   ├── errors.ts                 # Standardized API error classes/responses
 │   │   └── feature-guard.ts          # Server-side feature gating and usage/quota checks
+│   ├── env-detection.ts              # Multi-factor production environment detection
+│   ├── error-handling.ts             # Error sanitization for safe client responses
+│   ├── internal-auth.ts              # Internal service token auth (timing-safe, rotation support)
+│   ├── rate-limit.ts                 # Redis-based rate limiting with fallback (Upstash)
 │   ├── auth.ts                       # Better Auth server configuration
 │   ├── auth-client.ts                # Better Auth client configuration
 │   ├── calendar-service.ts           # Calendar sync service layer
@@ -365,7 +370,17 @@ frontend/
 │   │   ├── gmail.ts                  # Gmail integration CRUD operations
 │   │   ├── invitee.ts                # Meeting invitee CRUD
 │   │   ├── meeting.ts                # Meeting CRUD (includes folderId support)
-│   │   ├── meeting-data.ts           # Meeting persistence (sessions, transcripts, insights, notes)
+│   │   ├── meeting-data/             # Meeting persistence (refactored module)
+│   │   │   ├── index.ts              # Barrel exports for all meeting data functions
+│   │   │   ├── types.ts              # TypeScript interfaces for meeting data
+│   │   │   ├── constants.ts          # Session limits, batch sizes, security thresholds
+│   │   │   ├── helpers.ts            # Utility functions (chunk, generateId)
+│   │   │   ├── sessions.ts           # Session CRUD + usage deduplication
+│   │   │   ├── transcription.ts      # Transcription segment persistence
+│   │   │   ├── insights.ts           # AI insight persistence
+│   │   │   ├── document-references.ts # Document reference persistence
+│   │   │   ├── notes.ts              # User notes CRUD
+│   │   │   └── history.ts            # Meeting history queries
 │   │   ├── room-access.ts            # Room access control
 │   │   ├── team.ts                   # Team CRUD, members, hierarchy, permissions, inheritance
 │   │   └── migrations/               # SQL migrations + meta snapshots
@@ -389,6 +404,7 @@ frontend/
 │   │       ├── 0017_add_team_tables.sql
 │   │       ├── 0018_add_external_team_invitation.sql
 │   │       ├── 0019_add_subscription_cache.sql # Polar subscription cache + webhook log (no RLS; timestamps aligned)
+│   │       ├── 0020_add_usage_deduplication.sql # Usage deduplication fields for meeting_session
 │   │       └── meta/
 │   │           ├── _journal.json
 │   │           ├── 0000_snapshot.json

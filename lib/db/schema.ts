@@ -553,6 +553,20 @@ export const meetingSession = pgTable(
     durationSeconds: integer("duration_seconds"),
     /** Whether this is the host's session */
     isHost: boolean("is_host").notNull().default(false),
+    /** When usage was reported to Polar (null if not yet reported) - SECURITY FIX Medium #12 */
+    usageReportedAt: timestamp("usage_reported_at"),
+    /** Source that reported usage ("frontend" or "agent") - for audit trail */
+    usageReportedSource: text("usage_reported_source"),
+    /** Minutes reported to Polar - for reconciliation */
+    usageReportedMinutes: integer("usage_reported_minutes"),
+    /** Billing status for fail-closed enforcement - SECURITY FIX #2 */
+    billingStatus: text("billing_status").$type<"success" | "pending" | "failed">(),
+    /** Error message if billing failed - for debugging/reconciliation */
+    billingError: text("billing_error"),
+    /** Reserved minutes for this session - SECURITY FIX #10 */
+    reservedMinutes: integer("reserved_minutes"),
+    /** Whether reserved minutes were released on early end */
+    reservationReleased: boolean("reservation_released").default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -561,6 +575,8 @@ export const meetingSession = pgTable(
     index("idx_meeting_session_user").on(table.userId),
     index("idx_meeting_session_room").on(table.roomId),
     index("idx_meeting_session_joined").on(table.joinedAt),
+    // Index for billing reconciliation job to find pending sessions
+    index("idx_meeting_session_billing_status").on(table.billingStatus),
   ]
 );
 

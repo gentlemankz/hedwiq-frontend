@@ -14,7 +14,6 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
 import {
   reportMeetingMinutes,
   reportEmailDraft,
@@ -25,49 +24,12 @@ import {
   USAGE_EVENTS,
 } from "@/lib/polar/usage";
 import { TIER_LIMITS } from "@/lib/polar/constants";
-
-// ============================================================================
-// Authentication Helper
-// ============================================================================
-
-const INTERNAL_SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN;
-
-/**
- * Timing-safe string comparison to prevent timing attacks
- * Uses Node.js crypto.timingSafeEqual for proper constant-time comparison
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  // Convert strings to buffers - use same length to prevent length-based leaks
-  const bufferA = Buffer.from(a);
-  const bufferB = Buffer.from(b);
-
-  // If lengths differ, we still need to do constant-time work
-  // Compare against a dummy to maintain timing consistency
-  if (bufferA.length !== bufferB.length) {
-    // Create a buffer of same length as A for constant-time comparison
-    const dummy = Buffer.alloc(bufferA.length);
-    cryptoTimingSafeEqual(bufferA, dummy);
-    return false;
-  }
-
-  return cryptoTimingSafeEqual(bufferA, bufferB);
-}
-
-function validateServiceToken(request: NextRequest): boolean {
-  if (!INTERNAL_SERVICE_TOKEN) {
-    console.warn("[Internal Usage API] INTERNAL_SERVICE_TOKEN not configured");
-    return false;
-  }
-
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return false;
-  }
-
-  const token = authHeader.substring(7);
-  // Use timing-safe comparison to prevent timing attacks
-  return timingSafeEqual(token, INTERNAL_SERVICE_TOKEN);
-}
+import {
+  checkUsageReportStatus,
+  markUsageReported,
+} from "@/lib/db/meeting-data";
+import { sanitizeError, ERROR_MESSAGES } from "@/lib/error-handling";
+import { isValidServiceToken } from "@/lib/internal-auth";
 
 // ============================================================================
 // Types
@@ -83,11 +45,12 @@ interface UsageReportBody {
 }
 
 // Per-event-type validation constraints
+// SECURITY FIX (High #8): Aligned with MAX_SESSION_DURATION_SECONDS in meeting-data.ts
 const VALUE_CONSTRAINTS: Record<UsageEventType, { min: number; max: number; description: string }> = {
   "meeting-minutes": {
     min: 1,
-    max: 1440, // Max 24 hours per single session
-    description: "Meeting minutes must be between 1 and 1440 (24 hours)",
+    max: 480, // Max 8 hours per single session (aligned with session duration cap)
+    description: "Meeting minutes must be between 1 and 480 (8 hours max per session)",
   },
   "email-drafts": {
     min: 1,
@@ -123,9 +86,10 @@ const VALUE_CONSTRAINTS: Record<UsageEventType, { min: number; max: number; desc
  */
 export async function POST(request: NextRequest) {
   // Validate service token
-  if (!validateServiceToken(request)) {
+  // SECURITY FIX #15: Generic error message to avoid confirming auth mechanism
+  if (!isValidServiceToken(request, "Internal Usage API")) {
     return NextResponse.json(
-      { error: "Unauthorized", message: "Invalid or missing service token" },
+      { error: "Unauthorized" },
       { status: 401 }
     );
   }
@@ -196,14 +160,45 @@ export async function POST(request: NextRequest) {
 
   try {
     let result;
+    const metadata = body.metadata as {
+      roomId?: string;
+      meetingId?: string;
+      sessionId?: string;
+      source?: string;
+    } | undefined;
 
     switch (body.eventType) {
       case USAGE_EVENTS.MEETING_MINUTES:
+        // SECURITY FIX (Medium #12): Check deduplication if sessionId is provided
+        if (metadata?.sessionId) {
+          const reportStatus = await checkUsageReportStatus(metadata.sessionId);
+          if (reportStatus.reported) {
+            console.info(
+              `[Internal Usage API] DEDUP: Usage already reported for session ${metadata.sessionId}. ` +
+              `Original: ${reportStatus.reportedMinutes}min by ${reportStatus.reportedSource}. ` +
+              `Skipping duplicate from agent.`
+            );
+            return NextResponse.json({
+              success: true,
+              deduplicated: true,
+              message: "Usage already reported for this session",
+              originalSource: reportStatus.reportedSource,
+              originalMinutes: reportStatus.reportedMinutes,
+            });
+          }
+        }
+
         result = await reportMeetingMinutes(
           body.userId,
           body.value,
-          body.metadata as { roomId?: string; meetingId?: string; sessionId?: string }
+          metadata
         );
+
+        // Mark usage as reported if successful and sessionId is provided
+        if (result.success && metadata?.sessionId) {
+          const source = metadata.source || "agent";
+          await markUsageReported(metadata.sessionId, source, body.value);
+        }
         break;
 
       case USAGE_EVENTS.EMAIL_DRAFTS:
@@ -243,10 +238,11 @@ export async function POST(request: NextRequest) {
       userId: body.userId,
     });
   } catch (error) {
-    console.error("[Internal Usage API] Exception:", error instanceof Error ? error.message : "Unknown");
+    // SECURITY FIX (Medium #15): Sanitize error message
+    const safeError = sanitizeError(error, "Internal Usage API", ERROR_MESSAGES.INTERNAL_ERROR);
     return NextResponse.json(
-      { error: "Failed to report usage" },
-      { status: 500 }
+      { error: safeError.message },
+      { status: safeError.status }
     );
   }
 }
@@ -269,9 +265,10 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   // Validate service token
-  if (!validateServiceToken(request)) {
+  // SECURITY FIX #15: Generic error message to avoid confirming auth mechanism
+  if (!isValidServiceToken(request, "Internal Usage API")) {
     return NextResponse.json(
-      { error: "Unauthorized", message: "Invalid or missing service token" },
+      { error: "Unauthorized" },
       { status: 401 }
     );
   }
@@ -337,10 +334,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
-    console.error("[Internal Usage API] Error checking usage:", error);
+    // SECURITY FIX (Medium #15): Sanitize error message
+    const safeError = sanitizeError(error, "Internal Usage API", ERROR_MESSAGES.INTERNAL_ERROR);
     return NextResponse.json(
-      { error: "Failed to check usage" },
-      { status: 500 }
+      { error: safeError.message },
+      { status: safeError.status }
     );
   }
 }

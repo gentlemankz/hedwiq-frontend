@@ -9,6 +9,10 @@ import {
   validateSessionOwnership,
 } from "@/lib/db/meeting-data";
 import { canUserStartMeeting } from "@/lib/polar/usage";
+import {
+  sanitizeError,
+  ERROR_MESSAGES,
+} from "@/lib/error-handling";
 
 /**
  * POST /api/meetings/[meetingId]/session
@@ -79,13 +83,49 @@ export async function POST(
       );
     }
 
-    // Create meeting session
-    const sessionId = await createMeetingSession({
-      meetingId,
-      userId: session.user.id,
-      roomId: body.roomId,
-      isHost,
-    });
+    // Create meeting session with quota reservation
+    // SECURITY FIX #10: Pass remaining minutes to enable atomic quota reservation
+    // This prevents multiple tabs from over-consuming quota
+    let sessionId: string;
+    try {
+      sessionId = await createMeetingSession(
+        {
+          meetingId,
+          userId: session.user.id,
+          roomId: body.roomId,
+          isHost,
+        },
+        limitCheck.remainingMinutes // Pass remaining for quota reservation
+      );
+    } catch (sessionError) {
+      // SECURITY FIX (Medium #10): Handle concurrent session limit or quota error
+      const errorMessage = sessionError instanceof Error ? sessionError.message : "Failed to create session";
+
+      // Check if this is a concurrent session limit error
+      if (errorMessage.includes("concurrent sessions")) {
+        return NextResponse.json(
+          {
+            error: "CONCURRENT_SESSION_LIMIT",
+            message: errorMessage,
+          },
+          { status: 429 } // Too Many Requests
+        );
+      }
+
+      // Check if this is a quota reservation error
+      if (errorMessage.includes("already reserved")) {
+        return NextResponse.json(
+          {
+            error: "QUOTA_RESERVED",
+            message: errorMessage,
+          },
+          { status: 429 } // Too Many Requests
+        );
+      }
+
+      // Re-throw other errors
+      throw sessionError;
+    }
 
     return NextResponse.json({
       sessionId,
@@ -98,10 +138,12 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error("Create session error:", error);
+    // SECURITY FIX (Medium #15): Sanitize error message
+    // Don't expose internal error details to clients
+    const safeError = sanitizeError(error, "Session API", ERROR_MESSAGES.SESSION_CREATE_FAILED);
     return NextResponse.json(
-      { error: "Failed to create session" },
-      { status: 500 }
+      { error: safeError.message },
+      { status: safeError.status }
     );
   }
 }
@@ -175,15 +217,35 @@ export async function PATCH(
 
     // Reduced logging - only log duration, not PII
     if (result) {
-      console.debug(`[Session API] Session ended: duration=${result.durationSeconds}s`);
+      console.debug(`[Session API] Session ended: duration=${result.durationSeconds}s, billing=${result.billingStatus}`);
     }
 
-    return NextResponse.json({ success: true, durationSeconds: result?.durationSeconds });
+    return NextResponse.json({
+      success: true,
+      durationSeconds: result?.durationSeconds,
+      billingStatus: result?.billingStatus,
+    });
   } catch (error) {
-    console.error("[Session API] End session error:", error instanceof Error ? error.message : "Unknown");
+    // Check if this is a billing error (fail-closed behavior)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes("Billing service unavailable")) {
+      // SECURITY FIX #2: Return 503 for billing failures
+      // The session has been recorded - billing will be retried
+      return NextResponse.json(
+        {
+          error: "BILLING_UNAVAILABLE",
+          message: "Session recorded but billing is temporarily unavailable. Your usage will be processed shortly.",
+          retryable: true,
+        },
+        { status: 503 }
+      );
+    }
+
+    // SECURITY FIX (Medium #15): Sanitize error message
+    const safeError = sanitizeError(error, "Session API", ERROR_MESSAGES.INTERNAL_ERROR);
     return NextResponse.json(
-      { error: "Failed to end session" },
-      { status: 500 }
+      { error: safeError.message },
+      { status: safeError.status }
     );
   }
 }
@@ -216,10 +278,11 @@ export async function GET(
 
     return NextResponse.json({ session: activeSession });
   } catch (error) {
-    console.error("Get session error:", error);
+    // SECURITY FIX (Medium #15): Sanitize error message
+    const safeError = sanitizeError(error, "Session API", ERROR_MESSAGES.INTERNAL_ERROR);
     return NextResponse.json(
-      { error: "Failed to get session" },
-      { status: 500 }
+      { error: safeError.message },
+      { status: safeError.status }
     );
   }
 }
