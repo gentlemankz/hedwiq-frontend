@@ -23,6 +23,7 @@ import {
   buildOAuthCallbackURL,
 } from "@/lib/polar/auth-flow";
 import { GoogleIcon } from "@/components/icons";
+import { TermsPrivacyLinks } from "@/components/legal";
 
 function SignInContent() {
   const router = useRouter();
@@ -332,9 +333,7 @@ function SignInContent() {
               Sign up
             </Link>
           </p>
-          <p className="text-center text-xs text-muted-foreground">
-            By signing in, you agree to our Terms of Service and Privacy Policy
-          </p>
+          <TermsPrivacyLinks action="signing in" />
         </CardContent>
       </Card>
     </div>

@@ -11,6 +11,9 @@ import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Cal
 import { FolderSelect } from "@/components/folders";
 import { useFolders } from "@/hooks/use-folders";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { DisconnectReason } from "livekit-client";
+import { MeetingEndedScreen } from "./components/meeting-ended-screen";
 import { useMediaDevices } from "@/hooks/use-media-devices";
 import { sanitizeUsername } from "@/lib/validation";
 import type { User } from "@/types/user";
@@ -131,6 +134,8 @@ export function PreJoinScreen({
   instantMeetingFolderId,
   limitExceeded,
 }: PreJoinScreenProps) {
+  const router = useRouter();
+
   // Folder data for organizing meetings (standalone fetch, works outside SidebarProvider)
   const { folders, foldersLoading, defaultFolderId } = useFolders();
 
@@ -334,6 +339,17 @@ export function PreJoinScreen({
 
   // Combine error messages - show only one at a time
   const displayError = error || permissionError;
+
+  // Check if meeting has already ended - show appropriate message instead of pre-join
+  if (meetingData?.meeting?.status === "ended") {
+    return (
+      <MeetingEndedScreen
+        reason={DisconnectReason.ROOM_CLOSED}
+        meetingName={meetingData.meeting.title}
+        onGoToDashboard={() => router.push("/dashboard")}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">

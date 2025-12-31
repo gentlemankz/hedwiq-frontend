@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { LiveKitRoom } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { RoomOptions, VideoPresets } from "livekit-client";
+import { RoomOptions, VideoPresets, DisconnectReason } from "livekit-client";
 import { PreJoinScreen, UserChoices, MeetingData, LimitExceededData } from "./pre-join-screen";
+import { MeetingEndedScreen } from "./components/meeting-ended-screen";
 import { MeetingLayout } from "./components/meeting-layout";
 import { InsightsProvider } from "@/contexts/insights-context";
 import { DocumentsProvider } from "@/contexts/documents-context";
@@ -13,6 +14,7 @@ import { ActionsProvider } from "@/contexts/actions-context";
 import { EmailDraftsProvider } from "@/contexts/email-drafts-context";
 import { MeetingPersistenceProvider } from "@/contexts/meeting-persistence-context";
 import { agendaItemsToDraft } from "@/lib/utils/meeting-form";
+import { getDisconnectResult, canRejoinMeeting } from "@/lib/meeting";
 import type { User } from "@/types/user";
 import type { AgendaItemInput, AgendaPublishResponse } from "@/types/agenda";
 import type { Meeting } from "@/types/meeting";
@@ -32,10 +34,14 @@ interface InstantMeetingParams {
 
 export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [userChoices, setUserChoices] = useState<UserChoices | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Meeting ended state - tracks why the meeting ended for proper UX
+  const [meetingEndedReason, setMeetingEndedReason] = useState<DisconnectReason | null>(null);
 
   // Limit exceeded state for showing upgrade prompt
   const [limitExceeded, setLimitExceeded] = useState<LimitExceededData | null>(null);
@@ -328,7 +334,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
     [roomId, meetingData, user.id, instantMeetingParams]
   );
 
-  const handleDisconnect = useCallback(async () => {
+  const handleDisconnect = useCallback(async (reason?: DisconnectReason) => {
     // Cancel any pending request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -356,11 +362,40 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
       }
     }
 
-    setToken(null);
-    setUserChoices(null);
-    setIsConnecting(false);
-    setError(null);
-  }, [meetingData, user.id]);
+    // Use shared utility to determine the appropriate action
+    const result = getDisconnectResult(reason);
+
+    // Helper to reset connection state
+    const resetConnectionState = () => {
+      setToken(null);
+      setUserChoices(null);
+      setIsConnecting(false);
+    };
+
+    switch (result.action) {
+      case "navigate_dashboard":
+        router.push("/dashboard");
+        break;
+
+      case "show_meeting_ended":
+        if (result.reason !== undefined) {
+          setMeetingEndedReason(result.reason);
+        }
+        resetConnectionState();
+        setError(null);
+        break;
+
+      case "show_prejoin_error":
+        resetConnectionState();
+        setError(result.errorMessage ?? null);
+        break;
+
+      case "show_prejoin":
+        resetConnectionState();
+        setError(null);
+        break;
+    }
+  }, [meetingData, user.id, router]);
 
   // Handle LiveKit errors - clear token to return to PreJoin screen
   const handleError = useCallback((err: Error) => {
@@ -392,6 +427,23 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
       dynacast: true,
     };
   }, [userChoices]);
+
+  // Show meeting ended screen if meeting was ended by host or user was removed
+  if (meetingEndedReason !== null) {
+    return (
+      <MeetingEndedScreen
+        reason={meetingEndedReason}
+        meetingName={meetingData?.meeting?.title}
+        onGoToDashboard={() => router.push("/dashboard")}
+        onRejoin={
+          // Allow rejoin based on disconnect reason (e.g., duplicate identity, server shutdown)
+          canRejoinMeeting(meetingEndedReason)
+            ? () => setMeetingEndedReason(null)
+            : undefined
+        }
+      />
+    );
+  }
 
   // Show pre-join screen if not connected
   if (!token || !userChoices) {

@@ -16,6 +16,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Mic, MicOff, Video, VideoOff, Monitor, PhoneOff, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -207,30 +217,85 @@ const ChatToggleButton = React.memo(function ChatToggleButton({
 });
 
 // ============================================================================
-// Leave Button
+// Leave Button with Confirmation Dialog
 // ============================================================================
 
 function LeaveButton() {
+  const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const { buttonProps } = useDisconnectButton({});
 
+  // Hidden button ref - used to trigger the actual disconnect with proper event
+  const hiddenButtonRef = React.useRef<HTMLButtonElement>(null);
+
+  const handleLeaveClick = React.useCallback(() => {
+    setShowConfirmDialog(true);
+  }, []);
+
+  const handleConfirmLeave = React.useCallback(() => {
+    setShowConfirmDialog(false);
+    // Trigger the actual disconnect via the hidden button's click
+    // This ensures proper event handling without unsafe type assertions
+    hiddenButtonRef.current?.click();
+  }, []);
+
+  // Cleanup dialog state on unmount to prevent memory leaks
+  React.useEffect(() => {
+    return () => {
+      setShowConfirmDialog(false);
+    };
+  }, []);
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="destructive"
-          size="icon"
-          className="h-12 w-12 rounded-full"
-          onClick={buttonProps.onClick}
-          disabled={buttonProps.disabled}
-          aria-label="Leave meeting"
-        >
-          <PhoneOff className="h-5 w-5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>Leave Meeting</p>
-      </TooltipContent>
-    </Tooltip>
+    <>
+      {/* Hidden button that has the actual disconnect handler */}
+      <button
+        ref={hiddenButtonRef}
+        onClick={buttonProps.onClick}
+        disabled={buttonProps.disabled}
+        style={{ display: "none" }}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="destructive"
+            size="icon"
+            className="h-12 w-12 rounded-full"
+            onClick={handleLeaveClick}
+            disabled={buttonProps.disabled}
+            aria-label="Leave meeting"
+          >
+            <PhoneOff className="h-5 w-5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Leave Meeting</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave Meeting?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to leave this meeting? You can rejoin later if the meeting is still active.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            {/* AlertDialogCancel automatically closes the dialog via onOpenChange */}
+            <AlertDialogCancel>Stay in Meeting</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmLeave}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Leave Meeting
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
