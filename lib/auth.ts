@@ -18,17 +18,27 @@ import {
   handleSubscriptionRevoked,
   handleSubscriptionStatusChange,
 } from "@/lib/polar/webhook-handlers";
+import { getSecretOrDefault } from "@/lib/secrets";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+// ============================================================================
+// Secrets Configuration (supports both file-based and env var secrets)
+// ============================================================================
+
+const BETTER_AUTH_URL = getSecretOrDefault("BETTER_AUTH_URL", "http://localhost:3000");
+const BETTER_AUTH_TRUSTED_ORIGINS = getSecretOrDefault("BETTER_AUTH_TRUSTED_ORIGINS", "http://localhost:3000");
+const GOOGLE_CLIENT_ID = getSecretOrDefault("GOOGLE_CLIENT_ID", "");
+const GOOGLE_CLIENT_SECRET = getSecretOrDefault("GOOGLE_CLIENT_SECRET", "");
 
 // ============================================================================
 // Polar Configuration
 // ============================================================================
 
-// Validate required environment variables at startup
-const POLAR_ACCESS_TOKEN = process.env.POLAR_ACCESS_TOKEN;
-const POLAR_WEBHOOK_SECRET = process.env.POLAR_WEBHOOK_SECRET;
-const POLAR_ENVIRONMENT = process.env.POLAR_ENVIRONMENT || "sandbox";
+// Use getSecretOrDefault for file-based secrets in production
+const POLAR_ACCESS_TOKEN = getSecretOrDefault("POLAR_ACCESS_TOKEN", "");
+const POLAR_WEBHOOK_SECRET = getSecretOrDefault("POLAR_WEBHOOK_SECRET", "");
+const POLAR_ENVIRONMENT = getSecretOrDefault("POLAR_ENVIRONMENT", "sandbox");
 
 // Log warning if Polar is not fully configured (but don't throw to allow graceful degradation)
 if (!POLAR_ACCESS_TOKEN) {
@@ -48,8 +58,8 @@ const polarClient = POLAR_ACCESS_TOKEN
 
 export const auth = betterAuth({
   appName: "Luframe",
-  baseURL: process.env.BETTER_AUTH_URL,
-  trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",") || [],
+  baseURL: BETTER_AUTH_URL,
+  trustedOrigins: BETTER_AUTH_TRUSTED_ORIGINS.split(",").filter(Boolean),
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: {
@@ -111,13 +121,11 @@ export const auth = betterAuth({
   },
   socialProviders: {
     google: {
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: GOOGLE_CLIENT_ID,
+      clientSecret: GOOGLE_CLIENT_SECRET,
       prompt: "select_account",
       // Explicit redirect URI for OAuth callback (uses public URL even when baseURL is internal)
-      redirectURI: process.env.NEXT_PUBLIC_APP_URL
-        ? `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback/google`
-        : undefined,
+      redirectURI: APP_URL ? `${APP_URL}/api/auth/callback/google` : undefined,
     },
   },
   plugins: [
