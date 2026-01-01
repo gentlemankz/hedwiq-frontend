@@ -33,10 +33,17 @@ COPY . .
 RUN npm run postinstall || true
 
 # Build-time environment variables (public only - these are embedded in JS)
+# These MUST be converted from ARG to ENV so Next.js can access them during build
 ARG NEXT_PUBLIC_LIVEKIT_URL
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+# Convert ARGs to ENVs - required for Next.js to embed them in the client bundle
+ENV NEXT_PUBLIC_LIVEKIT_URL=$NEXT_PUBLIC_LIVEKIT_URL
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 # Disable Next.js telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1
