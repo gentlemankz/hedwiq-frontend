@@ -143,8 +143,8 @@ export const auth = betterAuth({
               // Checkout plugin - enables seamless checkout integration
               checkout({
                 products: POLAR_CHECKOUT_PRODUCTS,
-                // Redirect URL after successful checkout
-                successUrl: "/dashboard?checkout=success",
+                // Redirect URL after successful checkout (absolute URL to avoid proxy issues)
+                successUrl: `${APP_URL}/dashboard?checkout=success`,
                 // Only allow authenticated users to checkout
                 authenticatedUsersOnly: true,
               }),
