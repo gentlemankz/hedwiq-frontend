@@ -127,8 +127,10 @@ export const auth = betterAuth({
       ? [
           polar({
             client: polarClient,
-            // Automatically create a Polar customer when a user signs up
-            createCustomerOnSignUp: true,
+            // Disabled: Was crashing auth flow when Polar customer already exists with different external_id
+            // Error: "Customer external ID cannot be updated"
+            // Customers will be created on-demand during checkout instead
+            createCustomerOnSignUp: false,
             use: [
               // Checkout plugin - enables seamless checkout integration
               checkout({
