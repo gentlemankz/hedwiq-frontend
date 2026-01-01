@@ -254,7 +254,7 @@ In Google Cloud Console > APIs & Services > OAuth consent screen:
 1. Set User Type: "External"
 2. App information:
    - App name: `Luframe`
-   - User support email: `support@luframe.com`
+   - User support email: `admin@luframe.com`
    - App logo: Your 120x120 PNG
 3. App domain:
    - Homepage: `https://luframe.com`
