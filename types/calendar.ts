@@ -163,7 +163,6 @@ export const GOOGLE_CALENDAR_OAUTH = {
   /** OAuth scopes required for calendar access */
   SCOPES: [
     "https://www.googleapis.com/auth/calendar.events",
-    "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/userinfo.email",
   ],
   /** OAuth authorization endpoint */
