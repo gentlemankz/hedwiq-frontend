@@ -2,7 +2,7 @@ import { betterFetch } from "@better-fetch/fetch";
 import { NextRequest, NextResponse } from "next/server";
 import type { Session } from "@/lib/auth";
 
-const protectedRoutes = ["/dashboard", "/settings", "/meetings"];
+const protectedRoutes = ["/dashboard", "/settings", "/meetings", "/checkout"];
 const authRoutes = ["/sign-in", "/sign-up", "/forgot-password", "/reset-password"];
 
 // Use internal URL for server-side session checks to avoid Cloudflare bot protection
@@ -50,6 +50,7 @@ export const config = {
     "/dashboard/:path*",
     "/settings/:path*",
     "/meetings/:path*",
+    "/checkout/:path*",
     "/sign-in",
     "/sign-up",
     "/forgot-password",

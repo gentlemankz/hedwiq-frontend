@@ -144,7 +144,7 @@ export const auth = betterAuth({
               checkout({
                 products: POLAR_CHECKOUT_PRODUCTS,
                 // Redirect URL after successful checkout (absolute URL to avoid proxy issues)
-                successUrl: `${APP_URL}/dashboard?checkout=success`,
+                successUrl: `${APP_URL}/checkout/success`,
                 // Only allow authenticated users to checkout
                 authenticatedUsersOnly: true,
               }),
