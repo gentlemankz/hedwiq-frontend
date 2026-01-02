@@ -165,6 +165,8 @@ export async function POST(request: NextRequest) {
       meetingId?: string;
       sessionId?: string;
       source?: string;
+      actionId?: string;
+      idempotencyKey?: string;
     } | undefined;
 
     switch (body.eventType) {
@@ -205,7 +207,12 @@ export async function POST(request: NextRequest) {
         result = await reportEmailDraft(
           body.userId,
           body.value,
-          body.metadata as { meetingId?: string; actionType?: string }
+          body.metadata as {
+            meetingId?: string;
+            actionType?: string;
+            actionId?: string;
+            idempotencyKey?: string;
+          }
         );
         break;
 

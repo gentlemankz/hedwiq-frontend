@@ -1258,6 +1258,12 @@ export const subscriptionCache = pgTable(
     /** Start of current usage period (for display) */
     usagePeriodStart: timestamp("usage_period_start").notNull().defaultNow(),
 
+    // Idempotency tracking for deduplication (separate keys for each usage type)
+    /** Last idempotency key for minutes increments (prevents duplicate reports on retry) */
+    lastMinutesIdempotencyKey: text("last_minutes_idempotency_key"),
+    /** Last idempotency key for email drafts increments */
+    lastDraftsIdempotencyKey: text("last_drafts_idempotency_key"),
+
     // Metadata
     /** Last time this cache was synced with Polar */
     lastSyncedAt: timestamp("last_synced_at"),
