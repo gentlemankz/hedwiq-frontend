@@ -30,11 +30,28 @@ export default async function DashboardLayout({
   }
 
   // Fetch initial folders and teams for the sidebar
-  const [initialFolders, initialTeams, initialHierarchy] = await Promise.all([
+  // Use Promise.allSettled to handle partial failures gracefully
+  const [foldersResult, teamsResult, hierarchyResult] = await Promise.allSettled([
     listFoldersByUser(session.user.id, { includeMeetingCounts: true }),
     listTeamsForUser(session.user.id),
     getTeamHierarchyForUser(session.user.id),
   ]);
+
+  // Extract results with fallbacks for failed fetches
+  const initialFolders = foldersResult.status === "fulfilled" ? foldersResult.value : [];
+  const initialTeams = teamsResult.status === "fulfilled" ? teamsResult.value : [];
+  const initialHierarchy = hierarchyResult.status === "fulfilled" ? hierarchyResult.value : [];
+
+  // Log any failures for debugging
+  if (foldersResult.status === "rejected") {
+    console.error("[Dashboard] Failed to fetch folders:", foldersResult.reason);
+  }
+  if (teamsResult.status === "rejected") {
+    console.error("[Dashboard] Failed to fetch teams:", teamsResult.reason);
+  }
+  if (hierarchyResult.status === "rejected") {
+    console.error("[Dashboard] Failed to fetch team hierarchy:", hierarchyResult.reason);
+  }
 
   return (
     <SubscriptionProvider>

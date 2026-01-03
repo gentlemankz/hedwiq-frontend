@@ -108,36 +108,77 @@ export async function createFolder(params: {
 export async function getOrCreateDefaultFolder(userId: string): Promise<Folder> {
   const folderId = generateFolderId(userId);
 
-  // Use transaction for atomicity
-  return db.transaction(async (tx) => {
-    // Attempt to insert with conflict handling
-    // If another concurrent request already created the default folder,
-    // this will do nothing due to the unique constraint on (userId, isDefault=true)
-    await tx
-      .insert(meetingFolder)
-      .values({
-        id: folderId,
-        userId,
-        name: DEFAULT_FOLDER_NAME,
-        isDefault: true,
-        orderIndex: 0,
-      })
-      .onConflictDoNothing();
+  try {
+    // Use transaction for atomicity
+    return await db.transaction(async (tx) => {
+      // First, check if default folder already exists
+      const [existingFolder] = await tx
+        .select()
+        .from(meetingFolder)
+        .where(and(eq(meetingFolder.userId, userId), eq(meetingFolder.isDefault, true)))
+        .limit(1);
 
-    // Now fetch the default folder (either just created or existing)
-    const [folder] = await tx
-      .select()
-      .from(meetingFolder)
-      .where(and(eq(meetingFolder.userId, userId), eq(meetingFolder.isDefault, true)))
-      .limit(1);
+      if (existingFolder) {
+        return rowToFolder(existingFolder);
+      }
 
-    if (!folder) {
-      // This should never happen if the unique constraint exists
-      throw new Error("Failed to create or retrieve default folder");
-    }
+      // No default folder exists, create one
+      // Use try-catch for the INSERT to handle race conditions gracefully
+      try {
+        const [inserted] = await tx
+          .insert(meetingFolder)
+          .values({
+            id: folderId,
+            userId,
+            name: DEFAULT_FOLDER_NAME,
+            isDefault: true,
+            orderIndex: 0,
+          })
+          .returning();
 
-    return rowToFolder(folder);
-  });
+        if (inserted) {
+          return rowToFolder(inserted);
+        }
+      } catch (insertError) {
+        // INSERT failed - likely due to race condition (another request created it first)
+        // or unique constraint on name. Log and try to fetch existing.
+        console.warn("[Folder] INSERT failed, attempting to fetch existing:", insertError);
+      }
+
+      // If INSERT failed or didn't return, try to fetch again
+      const [folder] = await tx
+        .select()
+        .from(meetingFolder)
+        .where(and(eq(meetingFolder.userId, userId), eq(meetingFolder.isDefault, true)))
+        .limit(1);
+
+      if (!folder) {
+        // Last resort: create with a different name to avoid name conflicts
+        console.error("[Folder] Failed to create or retrieve default folder, creating fallback");
+        const fallbackId = generateFolderId(userId);
+        const [fallbackFolder] = await tx
+          .insert(meetingFolder)
+          .values({
+            id: fallbackId,
+            userId,
+            name: `${DEFAULT_FOLDER_NAME} (${Date.now()})`,
+            isDefault: true,
+            orderIndex: 0,
+          })
+          .returning();
+
+        if (!fallbackFolder) {
+          throw new Error("Failed to create default folder after all attempts");
+        }
+        return rowToFolder(fallbackFolder);
+      }
+
+      return rowToFolder(folder);
+    });
+  } catch (error) {
+    console.error("[Folder] getOrCreateDefaultFolder failed:", error);
+    throw error;
+  }
 }
 
 /**
