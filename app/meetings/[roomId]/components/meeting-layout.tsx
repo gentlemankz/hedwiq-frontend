@@ -50,6 +50,8 @@ interface MeetingLayoutProps {
   meetingName?: string;
   /** Meeting scheduled time */
   meetingScheduledAt?: Date;
+  /** Meeting goal/purpose (from template or custom) */
+  meetingGoal?: string;
 }
 
 export function MeetingLayout({
@@ -58,6 +60,7 @@ export function MeetingLayout({
   roomId,
   meetingName,
   meetingScheduledAt,
+  meetingGoal,
 }: MeetingLayoutProps) {
   // Debug logging for room context
   if (DEBUG) {
@@ -66,6 +69,7 @@ export function MeetingLayout({
       agendaVersion,
       meetingName,
       meetingScheduledAt,
+      meetingGoal,
     });
   }
 
@@ -79,6 +83,7 @@ export function MeetingLayout({
         roomId={roomId}
         meetingName={meetingName}
         meetingScheduledAt={meetingScheduledAt}
+        meetingGoal={meetingGoal}
       />
     </AgendaProvider>
   );
@@ -89,6 +94,7 @@ interface MeetingLayoutInnerProps {
   roomId: string;
   meetingName?: string;
   meetingScheduledAt?: Date;
+  meetingGoal?: string;
 }
 
 function MeetingLayoutInner({
@@ -96,6 +102,7 @@ function MeetingLayoutInner({
   roomId,
   meetingName,
   meetingScheduledAt,
+  meetingGoal,
 }: MeetingLayoutInnerProps) {
   const [showSidebar, setShowSidebar] = useState(initialShowTranscription);
   const [showEmailDrafts, setShowEmailDrafts] = useState(false);
@@ -328,6 +335,7 @@ function MeetingLayoutInner({
                 onDocumentReferenceClick={handleDocumentReferenceClick}
                 meetingName={meetingName}
                 meetingScheduledAt={meetingScheduledAt}
+                meetingGoal={meetingGoal}
                 onAddNote={handleAddNote}
                 hasNotesForTranscript={hasNotesForTranscript}
                 onTranscriptionUpdate={handleTranscriptionUpdate}
@@ -338,6 +346,7 @@ function MeetingLayoutInner({
                 onDocumentReferenceClick={handleDocumentReferenceClick}
                 meetingName={meetingName}
                 meetingScheduledAt={meetingScheduledAt}
+                meetingGoal={meetingGoal}
                 onAddNote={handleAddNote}
                 hasNotesForTranscript={hasNotesForTranscript}
                 onTranscriptionUpdate={handleTranscriptionUpdate}
@@ -425,6 +434,7 @@ interface TranscriptPanelProps {
   onDocumentReferenceClick: (reference: DocumentReference) => void;
   meetingName?: string;
   meetingScheduledAt?: Date;
+  meetingGoal?: string;
   onAddNote?: (reference: TranscriptReference, content: string) => void;
   hasNotesForTranscript?: (transcriptId: string) => boolean;
   onTranscriptionUpdate?: (entries: TranscriptionEntry[]) => void;
@@ -439,6 +449,7 @@ function TranscriptPanel({
   onDocumentReferenceClick,
   meetingName,
   meetingScheduledAt,
+  meetingGoal,
   onAddNote,
   hasNotesForTranscript,
   onTranscriptionUpdate,
@@ -449,6 +460,7 @@ function TranscriptPanel({
       <MeetingInfoHeader
         meetingName={meetingName}
         scheduledAt={meetingScheduledAt}
+        meetingGoal={meetingGoal}
       />
 
       {/* Transcript */}
@@ -477,6 +489,7 @@ interface SplitSidebarContentProps {
   onDocumentReferenceClick: (reference: DocumentReference) => void;
   meetingName?: string;
   meetingScheduledAt?: Date;
+  meetingGoal?: string;
   onAddNote?: (reference: TranscriptReference, content: string) => void;
   hasNotesForTranscript?: (transcriptId: string) => boolean;
   onTranscriptionUpdate?: (entries: TranscriptionEntry[]) => void;
@@ -487,6 +500,7 @@ function SplitSidebarContent({
   onDocumentReferenceClick,
   meetingName,
   meetingScheduledAt,
+  meetingGoal,
   onAddNote,
   hasNotesForTranscript,
   onTranscriptionUpdate,
@@ -509,6 +523,7 @@ function SplitSidebarContent({
           onDocumentReferenceClick={onDocumentReferenceClick}
           meetingName={meetingName}
           meetingScheduledAt={meetingScheduledAt}
+          meetingGoal={meetingGoal}
           onAddNote={onAddNote}
           hasNotesForTranscript={hasNotesForTranscript}
           onTranscriptionUpdate={onTranscriptionUpdate}

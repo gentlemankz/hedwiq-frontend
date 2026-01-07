@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar, Info, FolderClosed, Zap } from "lucide-react";
+import { AlertCircle, ArrowLeft, FileText, ChevronDown, ChevronUp, ListTodo, Calendar, Info, FolderClosed, Zap, LayoutTemplate } from "lucide-react";
 import { FolderSelect } from "@/components/folders";
 import { useFolders } from "@/hooks/use-folders";
 import Link from "next/link";
@@ -26,6 +26,9 @@ import { MediaControls } from "./components/media-controls";
 import { UsernameForm } from "./components/username-form";
 import { DocumentUpload } from "@/components/documents";
 import { AgendaBuilder } from "./components/agenda-builder";
+import { TemplatePicker, TemplateCustomizer } from "@/components/templates";
+import type { TemplateWithItems } from "@/types/template";
+import type { TemplateCustomization } from "@/components/templates";
 
 /** Maximum length for meeting name */
 const MAX_MEETING_NAME_LENGTH = 100;
@@ -74,6 +77,12 @@ export interface UserChoices extends LocalUserChoices {
   scheduledAt?: Date;
   /** Folder ID for organizing the meeting */
   folderId?: string;
+  /** Template ID used to create this meeting */
+  templateId?: string;
+  /** Meeting goal/purpose from template or custom */
+  meetingGoal?: string;
+  /** Answers to planning questions (questionId -> answer) */
+  planningAnswers?: Record<string, string>;
 }
 
 /**
@@ -238,6 +247,15 @@ export function PreJoinScreen({
   const [agendaItems, setAgendaItems] = useState<DraftAgendaItem[]>([]);
   const [isAgendaSectionExpanded, setIsAgendaSectionExpanded] = useState(false);
 
+  // Template state - for instant meetings
+  const [isTemplateSectionExpanded, setIsTemplateSectionExpanded] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateWithItems | null>(null);
+  const [showTemplateCustomizer, setShowTemplateCustomizer] = useState(false);
+  // Applied template data (after customization)
+  const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
+  const [meetingGoal, setMeetingGoal] = useState<string>("");
+  const [planningAnswers, setPlanningAnswers] = useState<Record<string, string>>({});
+
   // Initialize form from meeting data when it loads
   // Using startTransition to mark these updates as non-urgent (recommended pattern for async prop initialization)
   useEffect(() => {
@@ -299,6 +317,58 @@ export function PreJoinScreen({
     setAgendaItems(items);
   }, []);
 
+  // Handle template selection from picker
+  const handleSelectTemplate = useCallback((template: TemplateWithItems | null) => {
+    setSelectedTemplate(template);
+    if (template) {
+      setShowTemplateCustomizer(true);
+    } else {
+      setShowTemplateCustomizer(false);
+    }
+  }, []);
+
+  // Handle applying template customization (quick-apply agenda and goal)
+  const handleApplyTemplateCustomization = useCallback((customization: TemplateCustomization) => {
+    if (!selectedTemplate) return;
+
+    // Apply template data
+    setAppliedTemplateId(selectedTemplate.id);
+    setMeetingGoal(customization.meetingGoal);
+    setPlanningAnswers(customization.planningAnswers);
+
+    // Apply meeting name if provided
+    if (customization.title) {
+      setMeetingName(customization.title);
+    }
+
+    // Convert template agenda items to draft format
+    if (selectedTemplate.agendaItems && selectedTemplate.agendaItems.length > 0) {
+      const convertedItems: DraftAgendaItem[] = selectedTemplate.agendaItems
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((item) => ({
+          id: `template-${item.id}-${Date.now()}`,
+          title: item.title,
+          description: item.description || undefined,
+          estimatedDuration: item.estimatedDuration,
+        }));
+      setAgendaItems(convertedItems);
+      setIsAgendaSectionExpanded(true);
+    }
+
+    // Collapse template section and show success
+    setShowTemplateCustomizer(false);
+    setIsTemplateSectionExpanded(false);
+  }, [selectedTemplate]);
+
+  // Handle clearing template selection
+  const handleClearTemplate = useCallback(() => {
+    setSelectedTemplate(null);
+    setShowTemplateCustomizer(false);
+    setAppliedTemplateId(null);
+    setMeetingGoal("");
+    setPlanningAnswers({});
+  }, []);
+
   // Handle form submission - combines username with device settings
   const handleUsernameSubmit = useCallback(
     (username: string) => {
@@ -318,6 +388,10 @@ export function PreJoinScreen({
         meetingName: meetingName.trim() || undefined,
         scheduledAt: scheduledAt ?? undefined,
         folderId: folderId || undefined,
+        // Template fields
+        templateId: appliedTemplateId || undefined,
+        meetingGoal: meetingGoal.trim() || undefined,
+        planningAnswers: Object.keys(planningAnswers).length > 0 ? planningAnswers : undefined,
       });
     },
     [
@@ -334,6 +408,9 @@ export function PreJoinScreen({
       meetingName,
       scheduledAt,
       folderId,
+      appliedTemplateId,
+      meetingGoal,
+      planningAnswers,
     ]
   );
 
@@ -419,6 +496,68 @@ export function PreJoinScreen({
             onToggleAudio={toggleAudio}
             onAudioDeviceChange={setSelectedAudioDevice}
           />
+
+          {/* Template Selection Section - Only for instant meetings */}
+          {!meetingData?.meeting && (
+            <div className="border rounded-lg">
+              <button
+                type="button"
+                onClick={() => setIsTemplateSectionExpanded(!isTemplateSectionExpanded)}
+                className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <LayoutTemplate className="size-5 text-muted-foreground" />
+                  <div>
+                    <span className="font-medium">Use a Template</span>
+                    {appliedTemplateId && selectedTemplate && (
+                      <span className="ml-2 text-sm text-primary">
+                        {selectedTemplate.name} applied
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {appliedTemplateId && (
+                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                      Template Applied
+                    </span>
+                  )}
+                  {isTemplateSectionExpanded ? (
+                    <ChevronUp className="size-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="size-5 text-muted-foreground" />
+                  )}
+                </div>
+              </button>
+
+              {isTemplateSectionExpanded && (
+                <div className="border-t p-4">
+                  {showTemplateCustomizer && selectedTemplate ? (
+                    <TemplateCustomizer
+                      template={selectedTemplate}
+                      onBack={handleClearTemplate}
+                      onApply={handleApplyTemplateCustomization}
+                      showSaveAsTemplate={false}
+                      className="max-h-[400px] overflow-y-auto"
+                    />
+                  ) : (
+                    <>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Start with a template to quickly set up your meeting agenda and goals.
+                      </p>
+                      <TemplatePicker
+                        selectedTemplateId={appliedTemplateId}
+                        onSelectTemplate={handleSelectTemplate}
+                        showScratchOption={false}
+                        compact
+                        className="max-h-[300px] overflow-y-auto"
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Meeting Info Section */}
           <div className="space-y-4 border rounded-lg p-4">

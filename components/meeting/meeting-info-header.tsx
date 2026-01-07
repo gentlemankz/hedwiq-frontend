@@ -13,6 +13,8 @@ interface MeetingInfoHeaderProps {
   meetingName?: string;
   /** Scheduled meeting time (Date object or ISO string) */
   scheduledAt?: Date | string;
+  /** Meeting goal/purpose (from template or custom) */
+  meetingGoal?: string;
   /** Optional className for styling */
   className?: string;
 }
@@ -40,6 +42,7 @@ function parseDate(value: Date | string | undefined): Date | null {
 export const MeetingInfoHeader = memo(function MeetingInfoHeader({
   meetingName,
   scheduledAt,
+  meetingGoal,
   className,
 }: MeetingInfoHeaderProps) {
   // Parse and memoize date to avoid recalculating on every render
@@ -83,6 +86,11 @@ export const MeetingInfoHeader = memo(function MeetingInfoHeader({
         {formattedDate && formattedTime && (
           <p className="text-sm text-muted-foreground mt-0.5">
             {formattedDate} &bull; {formattedTime}
+          </p>
+        )}
+        {meetingGoal && (
+          <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+            <span className="font-medium text-foreground">Goal:</span> {meetingGoal}
           </p>
         )}
       </div>

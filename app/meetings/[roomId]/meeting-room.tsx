@@ -503,6 +503,7 @@ export function MeetingRoom({ roomId, user }: MeetingRoomProps) {
                     roomId={roomId}
                     meetingName={userChoices.meetingName}
                     meetingScheduledAt={userChoices.scheduledAt}
+                    meetingGoal={userChoices.meetingGoal}
                   />
                 </DocumentsProvider>
               </EmailDraftsProvider>
