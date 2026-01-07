@@ -395,6 +395,7 @@ export const ROLE_PERMISSIONS = {
     canCreateSubteam: true,
     canDeleteTeam: true,
     canTransferOwnership: true,
+    canManageTemplates: true,
   },
   admin: {
     canViewTeam: true,
@@ -407,6 +408,7 @@ export const ROLE_PERMISSIONS = {
     canCreateSubteam: true,
     canDeleteTeam: false,
     canTransferOwnership: false,
+    canManageTemplates: true,
   },
   member: {
     canViewTeam: true,
@@ -419,6 +421,7 @@ export const ROLE_PERMISSIONS = {
     canCreateSubteam: false,
     canDeleteTeam: false,
     canTransferOwnership: false,
+    canManageTemplates: false,
   },
 } as const;
 

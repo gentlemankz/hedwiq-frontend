@@ -41,6 +41,7 @@ import {
   EditTeamDialog,
   DeleteTeamDialog,
   InviteTeamMemberInput,
+  TeamTemplatesSection,
   type TeamInviteEntry,
 } from "@/components/teams";
 import { getInitials } from "@/lib/utils";
@@ -187,6 +188,7 @@ export function TeamDetailView({
   const canInviteMembers = canPerformAction(userRole, "canInviteMembers");
   const canRemoveMembers = canPerformAction(userRole, "canRemoveMembers");
   const canChangeRoles = canPerformAction(userRole, "canChangeRoles");
+  const canManageTemplates = canPerformAction(userRole, "canManageTemplates");
 
   // Active and pending members
   const activeMembers = members.filter((m) => m.status === "active");
@@ -836,6 +838,12 @@ export function TeamDetailView({
             </CardContent>
           </Card>
         )}
+
+        {/* Team Templates */}
+        <TeamTemplatesSection
+          team={team}
+          canManageTemplates={canManageTemplates}
+        />
 
         {/* Dialogs */}
         <CreateTeamDialog

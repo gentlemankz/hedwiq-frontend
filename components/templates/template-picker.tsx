@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   Empty,
   EmptyHeader,
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/empty";
 import { TemplateCard } from "./template-card";
 import { useTemplates } from "@/hooks/use-templates";
-import { Search, FileText } from "lucide-react";
+import { Search, FileText, Users } from "lucide-react";
 import type { TemplateWithItems, TemplateCategory } from "@/types/template";
 import { TEMPLATE_CATEGORIES } from "@/types/template";
 import { categoryIcons } from "@/lib/templates/category-icons";
@@ -56,21 +57,37 @@ export function TemplatePicker({
     sortOrder: "desc",
   });
 
-  // Group templates by category for better organization
+  // Separate team templates from other templates
+  const { teamTemplates, otherTemplates } = useMemo(() => {
+    const team: TemplateWithItems[] = [];
+    const other: TemplateWithItems[] = [];
+
+    for (const template of templates) {
+      if (template.scope === "team") {
+        team.push(template);
+      } else {
+        other.push(template);
+      }
+    }
+
+    return { teamTemplates: team, otherTemplates: other };
+  }, [templates]);
+
+  // Group non-team templates by category for better organization
   const groupedTemplates = useMemo(() => {
     if (categoryFilter !== "all") {
-      return { [categoryFilter]: templates };
+      return { [categoryFilter]: otherTemplates };
     }
 
     const groups: Partial<Record<TemplateCategory, TemplateWithItems[]>> = {};
-    for (const template of templates) {
+    for (const template of otherTemplates) {
       if (!groups[template.category]) {
         groups[template.category] = [];
       }
       groups[template.category]!.push(template);
     }
     return groups;
-  }, [templates, categoryFilter]);
+  }, [otherTemplates, categoryFilter]);
 
   const handleSelectTemplate = (template: TemplateWithItems) => {
     if (selectedTemplateId === template.id) {
@@ -188,6 +205,37 @@ export function TemplatePicker({
             </Empty>
           )}
 
+          {/* Team Templates Section - show at top when available */}
+          {!error && teamTemplates.length > 0 && (
+            <div>
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
+                <Users className="size-4" />
+                Team Templates
+                <Badge variant="secondary" className="text-xs">
+                  {teamTemplates.length}
+                </Badge>
+              </div>
+              <div
+                className={cn(
+                  "grid gap-4",
+                  compact
+                    ? "grid-cols-2 md:grid-cols-3"
+                    : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+                )}
+              >
+                {teamTemplates.map((template) => (
+                  <TemplateCard
+                    key={template.id}
+                    template={template}
+                    isSelected={selectedTemplateId === template.id}
+                    onSelect={handleSelectTemplate}
+                    compact={compact}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Templates by category - only show when no error */}
           {!error && (
             categoryFilter === "all" ? (
@@ -229,7 +277,7 @@ export function TemplatePicker({
                     : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
                 )}
               >
-                {templates.map((template) => (
+                {otherTemplates.map((template) => (
                   <TemplateCard
                     key={template.id}
                     template={template}

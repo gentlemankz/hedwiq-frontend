@@ -87,6 +87,14 @@ interface TemplateEditorProps {
   readOnly?: boolean;
   /** Custom class name */
   className?: string;
+  /** Default scope for new templates */
+  defaultScope?: "team" | "personal";
+  /** Default team ID for new team templates */
+  defaultTeamId?: string;
+  /** Hide the back button (useful in dialogs) */
+  hideBackButton?: boolean;
+  /** Hide the scope selector (useful when scope is predetermined) */
+  hideScopeSelector?: boolean;
 }
 
 // ============================================================================
@@ -147,24 +155,40 @@ export function TemplateEditor({
   serverError,
   readOnly = false,
   className,
+  defaultScope,
+  defaultTeamId,
+  hideBackButton = false,
+  hideScopeSelector = false,
 }: TemplateEditorProps) {
   const isEditing = !!template;
   const isDisabled = isLoading || readOnly;
-  const [formData, setFormData] = useState<TemplateEditorFormData>(() =>
-    getDefaultFormData(template)
-  );
+  const [formData, setFormData] = useState<TemplateEditorFormData>(() => {
+    const data = getDefaultFormData(template);
+    // Apply defaults for new templates
+    if (!template) {
+      if (defaultScope) data.scope = defaultScope;
+      if (defaultTeamId) data.teamId = defaultTeamId;
+    }
+    return data;
+  });
   const [fieldErrors, setFieldErrors] = useState<TemplateFieldErrors>({});
   const [agendaError, setAgendaError] = useState<string>();
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
   // Reset form when template changes (track by ID for stability)
   useEffect(() => {
-    setFormData(getDefaultFormData(template));
+    const data = getDefaultFormData(template);
+    // Apply defaults for new templates (when no template is provided)
+    if (!template) {
+      if (defaultScope) data.scope = defaultScope;
+      if (defaultTeamId) data.teamId = defaultTeamId;
+    }
+    setFormData(data);
     setFieldErrors({});
     setAgendaError(undefined);
     setHasSubmitted(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [template?.id]);
+  }, [template?.id, defaultScope, defaultTeamId]);
 
   // Validate on change after first submit
   const validateField = useCallback(
@@ -284,7 +308,7 @@ export function TemplateEditor({
     <div className={cn("space-y-6", className)}>
       {/* Header */}
       <div className="flex items-center gap-4">
-        {onBack && (
+        {onBack && !hideBackButton && (
           <Button type="button" variant="ghost" size="icon" onClick={onBack} disabled={isLoading}>
             <ArrowLeft className="size-4" />
           </Button>
@@ -400,8 +424,8 @@ export function TemplateEditor({
                 <p className="text-xs text-muted-foreground">{selectedCategory.description}</p>
               </div>
 
-              {/* Scope (only for new templates) */}
-              {!isEditing && (
+              {/* Scope (only for new templates, hidden when hideScopeSelector) */}
+              {!isEditing && !hideScopeSelector && (
                 <div className="space-y-2">
                   <Label htmlFor="template-scope">Visibility</Label>
                   <Select

@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, ListChecks, Calendar, Check } from "lucide-react";
+import { Clock, ListChecks, Calendar, Check, Users } from "lucide-react";
 import type { TemplateWithItems } from "@/types/template";
 import { TEMPLATE_CATEGORIES } from "@/types/template";
 import { categoryIcons } from "@/lib/templates/category-icons";
@@ -63,6 +63,12 @@ export function TemplateCard({
           {template.scope === "system" && (
             <Badge variant="outline" className="text-muted-foreground">
               System
+            </Badge>
+          )}
+          {template.scope === "team" && template.team && (
+            <Badge variant="outline" className="gap-1 text-muted-foreground">
+              <Users className="size-3" />
+              {template.team.name}
             </Badge>
           )}
         </div>
