@@ -370,6 +370,14 @@ export const meeting = pgTable(
     folderId: text("folder_id").references(() => meetingFolder.id, {
       onDelete: "set null",
     }),
+    /** Template used to create this meeting (null if created without template) */
+    templateId: text("template_id"),
+    /** Meeting goal/purpose (may come from template or be custom) */
+    meetingGoal: text("meeting_goal"),
+    /** Answers to planning questions (JSONB: { questionId: answer }) */
+    planningAnswers: jsonb("planning_answers")
+      .$type<Record<string, string>>()
+      .default({}),
 
     // Meeting details
     /** Meeting title/name */
@@ -410,6 +418,8 @@ export const meeting = pgTable(
     // Note: room_id unique index is auto-created by .unique() constraint
     // Composite index for listing meetings by host with status filter
     index("idx_meeting_host_status").on(table.hostId, table.status),
+    // Index for finding meetings created from a template
+    index("idx_meeting_template").on(table.templateId),
   ]
 );
 
@@ -1180,6 +1190,132 @@ export const pendingExternalTeamInvitation = pgTable(
     index("idx_ext_team_invite_expires").on(table.expiresAt),
     // Note: Partial unique index (team_id, email WHERE status='pending')
     // is created in the migration file as Drizzle doesn't support partial indexes directly
+  ]
+);
+
+// ============================================================================
+// Meeting Template Tables (Meeting Templates Feature)
+// ============================================================================
+
+/**
+ * Meeting Template - Reusable structures for creating meetings.
+ * Three scopes: system (built-in), team (shared), personal (private).
+ * Templates include default settings, agenda items, and planning questions.
+ */
+export const meetingTemplate = pgTable(
+  "meeting_template",
+  {
+    /** Unique template identifier (e.g., tpl-{timestamp}-{random}) */
+    id: text("id").primaryKey(),
+    /** Template name (3-100 chars) */
+    name: text("name").notNull(),
+    /** Template description (optional, up to 500 chars) */
+    description: text("description"),
+    /** Category: sync, tactical, strategic, one_on_one, workshop, decision */
+    category: text("category").notNull().default("tactical"),
+    /** Scope: system, team, personal */
+    scope: text("scope").notNull().default("personal"),
+    /** Team ID (required if scope = 'team') */
+    teamId: text("team_id").references(() => team.id, { onDelete: "cascade" }),
+    /** User who created the template (null for system templates) */
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** Default meeting duration in minutes */
+    defaultDuration: integer("default_duration").notNull().default(60),
+    /** Suggested cadence (daily, weekly, biweekly, monthly, quarterly, etc.) */
+    suggestedCadence: text("suggested_cadence"),
+    /** Default meeting goal/purpose */
+    defaultGoal: text("default_goal"),
+    /** Default meeting settings (transcription, insights, recording) */
+    defaultSettings: jsonb("default_settings")
+      .$type<MeetingSettings>()
+      .default({}),
+    /** Whether this template is archived */
+    isArchived: boolean("is_archived").notNull().default(false),
+    /** Number of times this template has been used */
+    usageCount: integer("usage_count").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_meeting_template_scope").on(table.scope),
+    index("idx_meeting_template_category").on(table.category),
+    index("idx_meeting_template_team").on(table.teamId),
+    index("idx_meeting_template_creator").on(table.createdBy),
+    index("idx_meeting_template_archived").on(table.isArchived),
+    // Composite index for listing templates by scope and category
+    index("idx_meeting_template_scope_category").on(table.scope, table.category),
+  ]
+);
+
+/**
+ * Template Agenda Item - Predefined agenda structure for templates.
+ * When creating a meeting from a template, these become actual agenda items.
+ */
+export const templateAgendaItem = pgTable(
+  "template_agenda_item",
+  {
+    /** Unique item identifier */
+    id: text("id").primaryKey(),
+    /** Parent template */
+    templateId: text("template_id")
+      .notNull()
+      .references(() => meetingTemplate.id, { onDelete: "cascade" }),
+    /** Display order (0-based) */
+    orderIndex: integer("order_index").notNull(),
+    /** Topic title (required, 1-200 chars) */
+    title: text("title").notNull(),
+    /** Topic description (optional, up to 500 chars) */
+    description: text("description"),
+    /** Estimated duration in minutes */
+    estimatedDuration: integer("estimated_duration").notNull().default(5),
+    /** Whether this item is required in meetings using this template */
+    isRequired: boolean("is_required").notNull().default(false),
+    /** Presenter role: host, participant, anyone */
+    presenterRole: text("presenter_role"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_template_agenda_item_template").on(table.templateId),
+    index("idx_template_agenda_item_order").on(
+      table.templateId,
+      table.orderIndex
+    ),
+  ]
+);
+
+/**
+ * Template Planning Question - Questions to answer before starting a meeting.
+ * Helps meeting organizers prepare effectively.
+ */
+export const templatePlanningQuestion = pgTable(
+  "template_planning_question",
+  {
+    /** Unique question identifier */
+    id: text("id").primaryKey(),
+    /** Parent template */
+    templateId: text("template_id")
+      .notNull()
+      .references(() => meetingTemplate.id, { onDelete: "cascade" }),
+    /** Display order (0-based) */
+    orderIndex: integer("order_index").notNull(),
+    /** The question text (up to 300 chars) */
+    question: text("question").notNull(),
+    /** Question category: goal, attendees, preparation, outcome */
+    category: text("category").notNull().default("preparation"),
+    /** Whether an answer is required before starting */
+    isRequired: boolean("is_required").notNull().default(false),
+    /** Placeholder text for the answer input */
+    placeholder: text("placeholder"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_template_planning_question_template").on(table.templateId),
+    index("idx_template_planning_question_order").on(
+      table.templateId,
+      table.orderIndex
+    ),
   ]
 );
 

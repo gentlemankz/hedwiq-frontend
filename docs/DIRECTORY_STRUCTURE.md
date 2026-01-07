@@ -82,6 +82,11 @@ frontend/
 │   │   │           ├── route.ts      # Update/delete an agenda item
 │   │   │           └── status/route.ts # Manual status override (fallback)
 │   │   ├── rsvp/[token]/route.ts     # Public RSVP status endpoint
+│   │   ├── templates/                # Meeting template APIs
+│   │   │   ├── route.ts              # List/create templates
+│   │   │   └── [id]/
+│   │   │       ├── route.ts          # Get/update/delete a template
+│   │   │       └── duplicate/route.ts # Duplicate a template
 │   │   └── teams/                    # Team workspace APIs
 │   │       ├── route.ts              # List/create teams
 │   │       ├── check-emails/route.ts # Check if emails have accounts (for external invite detection)
@@ -313,6 +318,7 @@ frontend/
 │   ├── better-auth-llm.txt           # Better Auth LLM context
 │   ├── livekit-llm.txt               # LiveKit LLM context
 │   ├── AGENDA_FEATURE_PLAN.md        # Agenda feature implementation plan
+│   ├── CODE_REVIEW.md                # Meeting templates code review findings
 │   ├── CODE_REVIEW_INVITEE_FEATURE.md # Invitee feature code review
 │   ├── CODE_REVIEW_TEAM_WORKSPACE.md # Team workspace code review
 │   ├── DASHBOARD_SIDEBAR_FOLDERS_PLAN.md # Dashboard folders plan
@@ -320,6 +326,7 @@ frontend/
 │   ├── DOCUMENT_REFERENCE_PLAN.md    # Document reference feature plan
 │   ├── HIDDEN_AGENT_IMPLEMENTATION_PLAN.md # Hidden agent plan
 │   ├── MEETING_SCHEDULING_CALENDAR_PLAN.md # Meeting scheduling plan
+│   ├── MEETING_TEMPLATES_PLAN.md     # Meeting templates feature plan
 │   ├── PHASE2_INSIGHTS_PLAN.md       # Phase 2 insights plan
 │   ├── REAL_TIME_ACTIONS_PLAN.md     # Real-time actions feature plan
 │   └── TEAM_WORKSPACE_PLAN.md        # Team workspace feature plan
@@ -383,6 +390,7 @@ frontend/
 │   │   │   └── history.ts            # Meeting history queries
 │   │   ├── room-access.ts            # Room access control
 │   │   ├── team.ts                   # Team CRUD, members, hierarchy, permissions, inheritance
+│   │   ├── template.ts               # Meeting template CRUD operations
 │   │   └── migrations/               # SQL migrations + meta snapshots
 │   │       ├── 0000_shallow_freak.sql
 │   │       ├── 0001_right_professor_monster.sql
@@ -405,6 +413,9 @@ frontend/
 │   │       ├── 0018_add_external_team_invitation.sql
 │   │       ├── 0019_add_subscription_cache.sql # Polar subscription cache + webhook log (no RLS; timestamps aligned)
 │   │       ├── 0020_add_usage_deduplication.sql # Usage deduplication fields for meeting_session
+│   │       ├── 0021_add_subscription_cache_idempotency.sql # Subscription cache idempotency
+│   │       ├── 0022_add_meeting_templates.sql # Meeting template tables + indexes
+│   │       ├── 0023_add_template_constraints.sql # Template table constraints (CHECK, UNIQUE, FK)
 │   │       └── meta/
 │   │           ├── _journal.json
 │   │           ├── 0000_snapshot.json
@@ -431,6 +442,9 @@ frontend/
 │   │   ├── index.ts                  # Exposes storage helpers/types
 │   │   ├── client.ts                 # Browser Supabase client
 │   │   └── server.ts                 # Server Supabase client + storage helpers (delete returns success/deleted/error)
+│   ├── templates/                    # Meeting template utilities
+│   │   ├── seed-templates.ts         # System template seeding function
+│   │   └── system-templates.ts       # System template definitions
 │   ├── utils/
 │   │   └── meeting-form.ts           # Meeting form utilities
 │   └── validation/
@@ -438,7 +452,8 @@ frontend/
 │       ├── folder.ts                 # Folder validation schemas
 │       ├── invitee.ts                # Invitee validation schemas
 │       ├── meeting.ts                # Meeting validation schemas
-│       └── team.ts                   # Team validation schemas
+│       ├── team.ts                   # Team validation schemas
+│       └── template.ts               # Template validation schemas
 ├── types/
 │   ├── action.ts                     # Action item types, status enum, priority levels
 │   ├── agenda.ts                     # Agenda types
@@ -453,6 +468,7 @@ frontend/
 │   ├── meeting-history.ts            # Types for meeting history (includes folderId, sessions, transcripts, insights, notes, stats)
 │   ├── persistence.ts                # Shared persistence types (TranscriptionEntry)
 │   ├── team.ts                       # Team types, roles, permissions, limits, external invitation types
+│   ├── template.ts                   # Meeting template types, categories, scopes
 │   ├── transcript-note.ts            # Transcript note types
 │   └── user.ts                       # User types
 ├── tests/
