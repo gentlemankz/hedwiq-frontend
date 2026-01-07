@@ -16,6 +16,7 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  FileText,
 } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -67,6 +68,11 @@ interface DashboardSidebarProps {
 // ============================================================================
 
 const bottomNavItems = [
+  {
+    title: "Templates",
+    href: "/dashboard/templates",
+    icon: FileText,
+  },
   {
     title: "Integrations",
     href: "/dashboard/integrations",

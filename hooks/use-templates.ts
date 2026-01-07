@@ -6,8 +6,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type {
   TemplateWithItems,
-  TemplateCategory,
-  TemplateScope,
   ListTemplatesParams,
 } from "@/types/template";
 

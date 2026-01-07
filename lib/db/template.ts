@@ -602,38 +602,64 @@ export async function incrementTemplateUsageCount(
     .where(eq(meetingTemplate.id, templateId));
 }
 
+export interface DuplicateTemplateOptions {
+  name?: string;
+  description?: string;
+  category?: TemplateCategory;
+  teamId?: string | null;
+}
+
 /**
- * Duplicate a template to the user's personal templates.
+ * Duplicate a template.
  * Can duplicate any readable template (system, own personal, or team member's team template).
- * The duplicate is always created as a personal template owned by the user.
+ * By default creates a personal template, but can create team template if teamId is provided.
  */
 export async function duplicateTemplate(
   templateId: string,
   userId: string,
-  newName?: string
+  options: DuplicateTemplateOptions | string = {}
 ): Promise<TemplateWithItems> {
+  // Support legacy API: if options is a string, treat it as the name
+  const opts: DuplicateTemplateOptions = typeof options === 'string'
+    ? { name: options }
+    : options;
+
   // Get the source template (authorization is handled by getTemplateById)
   const source = await getTemplateById(templateId, userId);
   if (!source) {
     throw new Error("Template not found or not accessible");
   }
 
+  // Determine scope and teamId
+  const targetTeamId = opts.teamId ?? null;
+  const targetScope: TemplateScope = targetTeamId ? "team" : "personal";
+
+  // If creating a team template, verify user has admin/owner role
+  if (targetTeamId) {
+    const canCreateTeamTemplate = await hasTeamAdminRole(targetTeamId, userId);
+    if (!canCreateTeamTemplate) {
+      throw new Error("Only team admins and owners can create team templates");
+    }
+  }
+
   const newTemplateId = generateTemplateId();
-  const duplicatedName = newName || `${source.name} (Copy)`;
+  const duplicatedName = opts.name || `${source.name} (Copy)`;
+  const duplicatedDescription = opts.description !== undefined ? opts.description : source.description;
+  const duplicatedCategory = opts.category || source.category;
 
   // Use transaction to ensure atomicity
   const { templateRow, agendaItems, planningQuestions } = await db.transaction(
     async (tx) => {
-      // Insert duplicated template as personal
+      // Insert duplicated template
       const [insertedTemplate] = await tx
         .insert(meetingTemplate)
         .values({
           id: newTemplateId,
           name: duplicatedName,
-          description: source.description,
-          category: source.category,
-          scope: "personal", // Always create as personal template
-          teamId: null, // Personal templates have no team
+          description: duplicatedDescription,
+          category: duplicatedCategory,
+          scope: targetScope,
+          teamId: targetTeamId,
           createdBy: userId,
           defaultDuration: source.defaultDuration,
           suggestedCadence: source.suggestedCadence,
@@ -698,11 +724,22 @@ export async function duplicateTemplate(
     .where(eq(user.id, userId))
     .limit(1);
 
+  // Get team info if it's a team template
+  let teamInfo = null;
+  if (targetTeamId) {
+    const [teamRow] = await db
+      .select({ id: team.id, name: team.name })
+      .from(team)
+      .where(eq(team.id, targetTeamId))
+      .limit(1);
+    teamInfo = teamRow || null;
+  }
+
   return {
     ...mapTemplateRow(templateRow),
     agendaItems: agendaItems.map(mapAgendaItemRow),
     planningQuestions: planningQuestions.map(mapPlanningQuestionRow),
-    team: null, // Personal templates have no team
+    team: teamInfo,
     creator: creatorRow || null,
   };
 }

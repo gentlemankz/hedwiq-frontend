@@ -14,7 +14,6 @@ import {
   Users,
   FolderClosed,
   UsersRound,
-  FileText,
   ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -92,7 +91,7 @@ export function ScheduleMeetingDialog({
 }: ScheduleMeetingDialogProps) {
   const router = useRouter();
   const { folders, foldersLoading, defaultFolderId } = useSidebarContext();
-  const { teamHierarchy, teamsLoading } = useTeamContext();
+  const { teams, teamHierarchy, teamsLoading } = useTeamContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -610,6 +609,7 @@ export function ScheduleMeetingDialog({
                 template={selectedTemplate}
                 onBack={handleBackToTemplates}
                 onApply={handleApplyTemplate}
+                teams={teams.map((t) => ({ id: t.id, name: t.name }))}
               />
             </div>
           </>

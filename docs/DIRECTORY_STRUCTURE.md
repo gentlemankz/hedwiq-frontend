@@ -111,6 +111,9 @@ frontend/
 │   │   ├── dashboard-client.tsx      # Client component for home page
 │   │   ├── integrations/
 │   │   │   └── page.tsx              # Calendar + Gmail integration cards
+│   │   ├── templates/                # Template management surface
+│   │   │   ├── page.tsx              # Auth-gated server route that fetches teams for save-to-team
+│   │   │   └── templates-page-client.tsx # Template browsing, editing, creation, and deletion UI
 │   │   ├── past-meetings/
 │   │   │   ├── page.tsx              # All folders overview + meetings list
 │   │   │   └── [folderId]/
@@ -230,10 +233,16 @@ frontend/
 │   │   └── team-sidebar-section.tsx  # Teams section in sidebar with invitations
 │   ├── templates/                    # Meeting template UI components
 │   │   ├── index.ts                  # Barrel exports
-│   │   ├── planning-questions-form.tsx # Planning questions form + usePlanningAnswers hook
 │   │   ├── template-card.tsx         # Template preview card with category/usage info
-│   │   ├── template-customizer.tsx   # Customize template before creating meeting
-│   │   └── template-picker.tsx       # Template selection grid with search/filter
+│   │   ├── template-picker.tsx       # Template selection grid with search/filter
+│   │   ├── template-customizer.tsx   # Customize template before scheduling + save-as flow
+│   │   ├── planning-questions-form.tsx # Planning questions form + usePlanningAnswers hook
+│   │   ├── template-agenda-editor.tsx # Agenda editor with reorder, presenter roles, duration totals
+│   │   ├── template-planning-questions-editor.tsx # Planning questions editor with categories + reorder
+│   │   ├── template-editor.tsx       # Full create/edit form for personal/team templates with validation
+│   │   ├── template-browser-dialog.tsx # Filter/search templates with edit/duplicate/delete actions
+│   │   ├── save-as-template-dialog.tsx # Save customized meetings as new personal/team templates
+│   │   └── duplicate-template-dialog.tsx # Duplicate templates with category/scope selection
 │   ├── transcript-notes/
 │   │   ├── index.ts
 │   │   ├── add-transcript-note-popover.tsx
@@ -346,7 +355,9 @@ frontend/
 │   ├── use-mobile.ts                 # Mobile detection hook
 │   ├── use-notes-panel.ts            # Legacy notes panel state
 │   ├── use-subscription.ts           # Subscription hook with feature-gating helpers and upgrade prompts
-│   └── use-templates.ts              # Template fetching hook with SWR + AbortController
+│   ├── use-templates.ts              # Template fetching hook with scope/category filters and abortable requests
+│   ├── use-reorderable-list.ts       # Stable IDs + move helpers for agenda/questions editors
+│   └── use-template-validation.ts    # Shared name/description validation for template dialogs
 ├── lib/
 │   ├── api/                          # API utilities for server routes
 │   │   ├── index.ts                  # Barrel exports for API errors + feature guards

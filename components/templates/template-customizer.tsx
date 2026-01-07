@@ -20,6 +20,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { PlanningQuestionsForm, usePlanningAnswers } from "./planning-questions-form";
+import { SaveAsTemplateDialog, useSaveAsTemplate } from "./save-as-template-dialog";
 import {
   Clock,
   ListChecks,
@@ -27,6 +28,7 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowLeft,
+  BookmarkPlus,
 } from "lucide-react";
 import type { TemplateWithItems } from "@/types/template";
 import { TEMPLATE_CATEGORIES } from "@/types/template";
@@ -45,6 +47,9 @@ interface TemplateCustomizerProps {
   template: TemplateWithItems;
   onBack?: () => void;
   onApply: (customization: TemplateCustomization) => void;
+  onSaveAsTemplate?: (templateId: string) => void;
+  teams?: { id: string; name: string }[];
+  showSaveAsTemplate?: boolean;
   className?: string;
 }
 
@@ -52,6 +57,9 @@ export function TemplateCustomizer({
   template,
   onBack,
   onApply,
+  onSaveAsTemplate,
+  teams = [],
+  showSaveAsTemplate = true,
   className,
 }: TemplateCustomizerProps) {
   // Form state
@@ -64,6 +72,20 @@ export function TemplateCustomizer({
   // Collapsible sections
   const [showAgenda, setShowAgenda] = useState(false);
   const [showQuestions, setShowQuestions] = useState(template.planningQuestions.length > 0);
+
+  // Save as Template
+  const { isOpen: saveAsTemplateOpen, setIsOpen: setSaveAsTemplateOpen, handleSave: handleSaveAsTemplate } = useSaveAsTemplate({
+    onSuccess: onSaveAsTemplate,
+  });
+
+  // Get current customization state
+  const currentCustomization: TemplateCustomization = useMemo(() => ({
+    title,
+    description,
+    duration,
+    meetingGoal,
+    planningAnswers: answers,
+  }), [title, description, duration, meetingGoal, answers]);
 
   const categoryInfo = TEMPLATE_CATEGORIES[template.category];
   const hasQuestions = template.planningQuestions.length > 0;
@@ -295,10 +317,34 @@ export function TemplateCustomizer({
         </Collapsible>
       )}
 
-      {/* Apply Button */}
-      <Button onClick={handleApply} className="w-full">
-        Use This Template
-      </Button>
+      {/* Action Buttons */}
+      <div className="space-y-2">
+        <Button onClick={handleApply} className="w-full">
+          Use This Template
+        </Button>
+
+        {showSaveAsTemplate && (
+          <>
+            <Button
+              variant="outline"
+              onClick={() => setSaveAsTemplateOpen(true)}
+              className="w-full"
+            >
+              <BookmarkPlus className="mr-2 size-4" />
+              Save as Template
+            </Button>
+
+            <SaveAsTemplateDialog
+              baseTemplate={template}
+              customization={currentCustomization}
+              teams={teams}
+              onSave={handleSaveAsTemplate}
+              open={saveAsTemplateOpen}
+              onOpenChange={setSaveAsTemplateOpen}
+            />
+          </>
+        )}
+      </div>
     </div>
   );
 }
