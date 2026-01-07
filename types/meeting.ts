@@ -50,6 +50,12 @@ export interface Meeting {
   hostId: string;
   /** Folder ID for organization (null if not assigned) */
   folderId: string | null;
+  /** Template ID used to create this meeting (null if created without template) */
+  templateId: string | null;
+  /** Meeting goal/purpose (may come from template or be custom) */
+  meetingGoal: string | null;
+  /** Answers to planning questions (questionId -> answer) */
+  planningAnswers: Record<string, string>;
   /** Meeting title */
   title: string;
   /** Meeting description (optional) */

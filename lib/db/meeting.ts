@@ -61,6 +61,9 @@ function rowToMeeting(row: typeof meeting.$inferSelect): Meeting {
     roomId: row.roomId,
     hostId: row.hostId,
     folderId: row.folderId,
+    templateId: row.templateId,
+    meetingGoal: row.meetingGoal,
+    planningAnswers: (row.planningAnswers as Record<string, string>) ?? {},
     title: row.title,
     description: row.description,
     type: row.type as MeetingType,
@@ -94,6 +97,9 @@ export async function createMeeting(params: {
   settings?: MeetingSettings;
   folderId?: string;
   roomId?: string; // Optional: use this room ID instead of generating a new one
+  templateId?: string; // Optional: template used to create this meeting
+  meetingGoal?: string; // Optional: meeting goal/purpose
+  planningAnswers?: Record<string, string>; // Optional: answers to planning questions
 }): Promise<Meeting> {
   const meetingId = generateMeetingId();
   // Use provided roomId or generate a new one
@@ -106,6 +112,9 @@ export async function createMeeting(params: {
       roomId,
       hostId: params.hostId,
       folderId: params.folderId ?? null,
+      templateId: params.templateId ?? null,
+      meetingGoal: params.meetingGoal?.trim() || null,
+      planningAnswers: params.planningAnswers ?? {},
       title: params.title.trim(),
       description: params.description?.trim() || null,
       type: params.type,

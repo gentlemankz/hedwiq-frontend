@@ -228,6 +228,12 @@ frontend/
 │   │   ├── team-members-dialog.tsx   # Dialog for managing team members + external invitations
 │   │   ├── team-sidebar-item.tsx     # Individual team item in sidebar (memoized)
 │   │   └── team-sidebar-section.tsx  # Teams section in sidebar with invitations
+│   ├── templates/                    # Meeting template UI components
+│   │   ├── index.ts                  # Barrel exports
+│   │   ├── planning-questions-form.tsx # Planning questions form + usePlanningAnswers hook
+│   │   ├── template-card.tsx         # Template preview card with category/usage info
+│   │   ├── template-customizer.tsx   # Customize template before creating meeting
+│   │   └── template-picker.tsx       # Template selection grid with search/filter
 │   ├── transcript-notes/
 │   │   ├── index.ts
 │   │   ├── add-transcript-note-popover.tsx
@@ -339,7 +345,8 @@ frontend/
 │   ├── use-media-devices.ts          # Media device selection utilities
 │   ├── use-mobile.ts                 # Mobile detection hook
 │   ├── use-notes-panel.ts            # Legacy notes panel state
-│   └── use-subscription.ts           # Subscription hook with feature-gating helpers and upgrade prompts
+│   ├── use-subscription.ts           # Subscription hook with feature-gating helpers and upgrade prompts
+│   └── use-templates.ts              # Template fetching hook with SWR + AbortController
 ├── lib/
 │   ├── api/                          # API utilities for server routes
 │   │   ├── index.ts                  # Barrel exports for API errors + feature guards
@@ -443,6 +450,7 @@ frontend/
 │   │   ├── client.ts                 # Browser Supabase client
 │   │   └── server.ts                 # Server Supabase client + storage helpers (delete returns success/deleted/error)
 │   ├── templates/                    # Meeting template utilities
+│   │   ├── category-icons.tsx        # Category icon mapping for template UI
 │   │   ├── seed-templates.ts         # System template seeding function
 │   │   └── system-templates.ts       # System template definitions
 │   ├── utils/

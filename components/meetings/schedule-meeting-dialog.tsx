@@ -14,6 +14,8 @@ import {
   Users,
   FolderClosed,
   UsersRound,
+  FileText,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,7 +56,7 @@ import {
 } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { TIME_OPTIONS, draftItemsToApiInput } from "@/lib/utils/meeting-form";
-import { DURATION_OPTIONS, MEETING_LIMITS } from "@/types/meeting";
+import { DURATION_OPTIONS, MEETING_LIMITS, type MeetingSettings } from "@/types/meeting";
 import {
   getMeetingFieldErrors,
   hasMeetingFieldErrors,
@@ -65,8 +67,10 @@ import { AgendaBuilder } from "@/app/meetings/[roomId]/components/agenda-builder
 import { InviteeInput, type InviteeEntry } from "@/components/meetings/invitee-input";
 import { TeamInviteeSelector, type SelectedTeam } from "@/components/meetings/team-invitee-selector";
 import { FolderSelect } from "@/components/folders";
+import { TemplatePicker, TemplateCustomizer, type TemplateCustomization } from "@/components/templates";
 import { useSidebarContext } from "@/contexts/sidebar-context";
 import { useTeamContext } from "@/contexts/team-context";
+import type { TemplateWithItems } from "@/types/template";
 
 interface ScheduleMeetingDialogProps {
   open: boolean;
@@ -91,6 +95,14 @@ export function ScheduleMeetingDialog({
   const { teamHierarchy, teamsLoading } = useTeamContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // Template selection state
+  type DialogStep = "template" | "customize" | "form";
+  const [dialogStep, setDialogStep] = useState<DialogStep>("template");
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateWithItems | null>(null);
+  const [meetingGoal, setMeetingGoal] = useState("");
+  const [planningAnswers, setPlanningAnswers] = useState<Record<string, string>>({});
+  const [meetingSettings, setMeetingSettings] = useState<MeetingSettings | null>(null);
 
   // Ref for timeout cleanup to prevent memory leaks
   const successTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -252,6 +264,12 @@ export function ScheduleMeetingDialog({
           addToCalendar: addToCalendar && calendarStatus?.connected,
           agendaItems: agendaItemsInput,
           folderId: folderId || undefined,
+          // Template data
+          templateId: selectedTemplate?.id || undefined,
+          meetingGoal: meetingGoal.trim() || undefined,
+          planningAnswers: Object.keys(planningAnswers).length > 0 ? planningAnswers : undefined,
+          // Meeting settings from template
+          settings: meetingSettings || undefined,
         }),
       });
 
@@ -396,11 +414,72 @@ export function ScheduleMeetingDialog({
     setApiError(null);
     setCalendarSyncResult(null);
     setIsSuccess(false);
+    // Reset template state
+    setDialogStep("template");
+    setSelectedTemplate(null);
+    setMeetingGoal("");
+    setPlanningAnswers({});
+    setMeetingSettings(null);
     // Keep addToCalendar if calendar is connected
     if (!calendarStatus?.connected) {
       setAddToCalendar(false);
     }
   }, [defaultFolderId, initialFolderId, calendarStatus?.connected]);
+
+  // Handle template selection from picker
+  const handleSelectTemplate = (template: TemplateWithItems | null) => {
+    setSelectedTemplate(template);
+    if (template) {
+      // Go to customize step when a template is selected
+      setDialogStep("customize");
+    } else {
+      // "Start from scratch" - go directly to form
+      setDialogStep("form");
+      setTitle("");
+      setDescription("");
+      setDuration(30);
+      setMeetingGoal("");
+      setPlanningAnswers({});
+      setMeetingSettings(null);
+      setAgendaItems([]);
+    }
+  };
+
+  // Handle customization completion
+  const handleApplyTemplate = (customization: TemplateCustomization) => {
+    setTitle(customization.title);
+    setDescription(customization.description);
+    setDuration(customization.duration);
+    setMeetingGoal(customization.meetingGoal);
+    setPlanningAnswers(customization.planningAnswers);
+
+    // Apply template default settings (transcription, insights, recording)
+    if (selectedTemplate?.defaultSettings) {
+      setMeetingSettings(selectedTemplate.defaultSettings);
+    }
+
+    // Convert template agenda items to draft agenda items
+    if (selectedTemplate?.agendaItems) {
+      const draftItems: DraftAgendaItem[] = selectedTemplate.agendaItems
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((item, index) => ({
+          id: `template-${item.id}`,
+          title: item.title,
+          description: item.description || undefined,
+          estimatedDuration: item.estimatedDuration,
+          orderIndex: index,
+        }));
+      setAgendaItems(draftItems);
+    }
+
+    setDialogStep("form");
+  };
+
+  // Go back to template selection
+  const handleBackToTemplates = () => {
+    setDialogStep("template");
+    setSelectedTemplate(null);
+  };
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
@@ -412,9 +491,37 @@ export function ScheduleMeetingDialog({
   const isFormValid =
     title.trim().length >= MEETING_LIMITS.MIN_TITLE_LENGTH && date;
 
+  // Determine dialog title based on step
+  const getDialogTitle = () => {
+    switch (dialogStep) {
+      case "template":
+        return "Choose a Template";
+      case "customize":
+        return "Customize Template";
+      case "form":
+        return selectedTemplate ? "Schedule Meeting" : "Schedule a Meeting";
+    }
+  };
+
+  const getDialogDescription = () => {
+    switch (dialogStep) {
+      case "template":
+        return "Start with a template or create a meeting from scratch.";
+      case "customize":
+        return "Customize the template before scheduling your meeting.";
+      case "form":
+        return selectedTemplate
+          ? `Based on "${selectedTemplate.name}" template.`
+          : "Set up a meeting for a future date and time.";
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
+      <DialogContent className={cn(
+        "max-h-[85vh] flex flex-col",
+        dialogStep === "template" ? "sm:max-w-[700px]" : "sm:max-w-[500px]"
+      )}>
         {/* Success State */}
         {isSuccess ? (
           <>
@@ -475,13 +582,57 @@ export function ScheduleMeetingDialog({
               )}
             </div>
           </>
-        ) : (
+        ) : dialogStep === "template" ? (
+          /* Template Selection Step */
           <>
             <DialogHeader className="flex-shrink-0">
-              <DialogTitle>Schedule a Meeting</DialogTitle>
-              <DialogDescription>
-                Set up a meeting for a future date and time.
-              </DialogDescription>
+              <DialogTitle>{getDialogTitle()}</DialogTitle>
+              <DialogDescription>{getDialogDescription()}</DialogDescription>
+            </DialogHeader>
+            <div className="py-4 overflow-y-auto flex-1 pr-2">
+              <TemplatePicker
+                selectedTemplateId={selectedTemplate?.id || null}
+                onSelectTemplate={handleSelectTemplate}
+                showScratchOption
+                compact
+              />
+            </div>
+          </>
+        ) : dialogStep === "customize" && selectedTemplate ? (
+          /* Template Customization Step */
+          <>
+            <DialogHeader className="flex-shrink-0">
+              <DialogTitle>{getDialogTitle()}</DialogTitle>
+              <DialogDescription>{getDialogDescription()}</DialogDescription>
+            </DialogHeader>
+            <div className="py-4 overflow-y-auto flex-1 pr-2">
+              <TemplateCustomizer
+                template={selectedTemplate}
+                onBack={handleBackToTemplates}
+                onApply={handleApplyTemplate}
+              />
+            </div>
+          </>
+        ) : (
+          /* Form Step */
+          <>
+            <DialogHeader className="flex-shrink-0">
+              <div className="flex items-center gap-2">
+                {selectedTemplate && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onClick={handleBackToTemplates}
+                  >
+                    <ArrowLeft className="size-4" />
+                  </Button>
+                )}
+                <div>
+                  <DialogTitle>{getDialogTitle()}</DialogTitle>
+                  <DialogDescription>{getDialogDescription()}</DialogDescription>
+                </div>
+              </div>
             </DialogHeader>
 
             <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-2">

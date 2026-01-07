@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { createMeeting, listMeetingsForUser } from "@/lib/db/meeting";
 import { createAgenda } from "@/lib/db/agenda";
 import { isFolderOwner } from "@/lib/db/folder";
+import { getTemplateById } from "@/lib/db/template";
 import { validateCreateMeetingRequest } from "@/lib/validation/meeting";
 import { validateAgendaItems } from "@/lib/validation/agenda";
 import { parseFolderIdParam } from "@/lib/validation/folder";
@@ -139,6 +140,9 @@ export async function POST(request: NextRequest) {
     agendaItems?: AgendaItemInput[];
     folderId?: string;
     roomId?: string; // Optional: use this room ID instead of generating a new one
+    templateId?: string; // Optional: template used to create this meeting
+    meetingGoal?: string; // Optional: meeting goal/purpose
+    planningAnswers?: Record<string, string>; // Optional: answers to planning questions
   };
 
   try {
@@ -164,6 +168,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Validate template access if templateId is provided
+  // getTemplateById has built-in access control and returns null if user can't access
+  if (body.templateId) {
+    const template = await getTemplateById(body.templateId, session.user.id);
+    if (!template) {
+      return NextResponse.json(
+        { error: "Invalid template ID or access denied" },
+        { status: 400 }
+      );
+    }
+  }
+
   try {
     const meeting = await createMeeting({
       hostId: session.user.id,
@@ -176,6 +192,9 @@ export async function POST(request: NextRequest) {
       settings: body.settings,
       folderId: body.folderId,
       roomId: body.roomId, // Optional: use provided room ID for instant meetings
+      templateId: body.templateId,
+      meetingGoal: body.meetingGoal,
+      planningAnswers: body.planningAnswers,
     });
 
     // Create agenda if items were provided

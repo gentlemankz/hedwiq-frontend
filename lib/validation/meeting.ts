@@ -5,7 +5,8 @@
  * Used by API routes AND frontend components to ensure consistent validation.
  */
 
-import { MEETING_LIMITS, type MeetingType, type MeetingStatus } from "@/types/meeting";
+import { MEETING_LIMITS, type MeetingType, type MeetingStatus, type MeetingSettings } from "@/types/meeting";
+import { TEMPLATE_LIMITS } from "@/types/template";
 
 // ============================================================================
 // Types
@@ -210,6 +211,166 @@ export function validateFolderId(folderId: unknown): ValidationResult {
   return { isValid: true };
 }
 
+// ============================================================================
+// Template-Related Validation
+// ============================================================================
+
+/**
+ * Template ID validation regex.
+ * Format: tpl-{base36 timestamp (8-9 chars)}-{6 alphanumeric chars}
+ */
+const TEMPLATE_ID_REGEX = /^tpl-[a-z0-9]{8,9}-[a-z0-9]{6}$/;
+
+/**
+ * Maximum template ID length to prevent abuse.
+ */
+const MAX_TEMPLATE_ID_LENGTH = 24;
+
+/**
+ * Maximum length for planning answer values.
+ * Should be generous but bounded to prevent abuse.
+ */
+const MAX_PLANNING_ANSWER_LENGTH = 2000;
+
+/**
+ * Maximum number of planning answers.
+ */
+const MAX_PLANNING_ANSWERS = TEMPLATE_LIMITS.MAX_PLANNING_QUESTIONS;
+
+/**
+ * Validates a template ID (optional field).
+ */
+export function validateTemplateId(templateId: unknown): ValidationResult {
+  // Allow undefined, null, or empty string (no template)
+  if (templateId === undefined || templateId === null || templateId === "") {
+    return { isValid: true };
+  }
+
+  if (typeof templateId !== "string") {
+    return { isValid: false, error: "templateId must be a string" };
+  }
+
+  if (templateId.length > MAX_TEMPLATE_ID_LENGTH) {
+    return { isValid: false, error: "Invalid template ID" };
+  }
+
+  if (!TEMPLATE_ID_REGEX.test(templateId)) {
+    return { isValid: false, error: "Invalid template ID format" };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates a meeting goal (optional field).
+ * Uses same length limit as template description.
+ */
+export function validateMeetingGoal(meetingGoal: unknown): ValidationResult {
+  if (meetingGoal === undefined || meetingGoal === null || meetingGoal === "") {
+    return { isValid: true }; // Optional field
+  }
+
+  if (typeof meetingGoal !== "string") {
+    return { isValid: false, error: "meetingGoal must be a string" };
+  }
+
+  if (meetingGoal.length > TEMPLATE_LIMITS.MAX_DESCRIPTION_LENGTH) {
+    return {
+      isValid: false,
+      error: `meetingGoal must be ${TEMPLATE_LIMITS.MAX_DESCRIPTION_LENGTH} characters or less`,
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates planning answers (optional field).
+ * Must be an object with string keys and string values.
+ */
+export function validatePlanningAnswers(planningAnswers: unknown): ValidationResult {
+  if (planningAnswers === undefined || planningAnswers === null) {
+    return { isValid: true }; // Optional field
+  }
+
+  if (typeof planningAnswers !== "object" || Array.isArray(planningAnswers)) {
+    return { isValid: false, error: "planningAnswers must be an object" };
+  }
+
+  const entries = Object.entries(planningAnswers as Record<string, unknown>);
+
+  if (entries.length > MAX_PLANNING_ANSWERS) {
+    return {
+      isValid: false,
+      error: `planningAnswers cannot have more than ${MAX_PLANNING_ANSWERS} entries`,
+    };
+  }
+
+  for (const [key, value] of entries) {
+    // Validate key (question ID) - should be a reasonable string
+    if (typeof key !== "string" || key.length === 0 || key.length > 100) {
+      return { isValid: false, error: "Invalid planning answer key" };
+    }
+
+    // Validate value (answer) - must be a string with length limit
+    if (typeof value !== "string") {
+      return { isValid: false, error: "Planning answer values must be strings" };
+    }
+
+    if (value.length > MAX_PLANNING_ANSWER_LENGTH) {
+      return {
+        isValid: false,
+        error: `Planning answers must be ${MAX_PLANNING_ANSWER_LENGTH} characters or less`,
+      };
+    }
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Valid keys for MeetingSettings.
+ */
+const VALID_SETTINGS_KEYS: (keyof MeetingSettings)[] = [
+  "transcriptionEnabled",
+  "insightsEnabled",
+  "recordingEnabled",
+];
+
+/**
+ * Validates meeting settings (optional field).
+ * Must be an object with only allowed boolean fields.
+ */
+export function validateMeetingSettings(settings: unknown): ValidationResult {
+  if (settings === undefined || settings === null) {
+    return { isValid: true }; // Optional field
+  }
+
+  if (typeof settings !== "object" || Array.isArray(settings)) {
+    return { isValid: false, error: "settings must be an object" };
+  }
+
+  const settingsObj = settings as Record<string, unknown>;
+  const keys = Object.keys(settingsObj);
+
+  // Check for unknown keys
+  for (const key of keys) {
+    if (!VALID_SETTINGS_KEYS.includes(key as keyof MeetingSettings)) {
+      return { isValid: false, error: `Unknown settings key: ${key}` };
+    }
+  }
+
+  // Validate each value is a boolean
+  for (const key of VALID_SETTINGS_KEYS) {
+    const value = settingsObj[key];
+    if (value !== undefined && typeof value !== "boolean") {
+      return { isValid: false, error: `settings.${key} must be a boolean` };
+    }
+  }
+
+  return { isValid: true };
+}
+
 /**
  * Validates a complete create meeting request.
  */
@@ -220,6 +381,10 @@ export function validateCreateMeetingRequest(body: {
   scheduledAt?: unknown;
   durationMinutes?: unknown;
   folderId?: unknown;
+  templateId?: unknown;
+  meetingGoal?: unknown;
+  planningAnswers?: unknown;
+  settings?: unknown;
 }): ValidationResult & { parsedDate?: Date } {
   // Validate title (required)
   const titleValidation = validateMeetingTitle(body.title);
@@ -256,6 +421,30 @@ export function validateCreateMeetingRequest(body: {
   const folderValidation = validateFolderId(body.folderId);
   if (!folderValidation.isValid) {
     return folderValidation;
+  }
+
+  // Validate templateId (optional)
+  const templateIdValidation = validateTemplateId(body.templateId);
+  if (!templateIdValidation.isValid) {
+    return templateIdValidation;
+  }
+
+  // Validate meetingGoal (optional)
+  const goalValidation = validateMeetingGoal(body.meetingGoal);
+  if (!goalValidation.isValid) {
+    return goalValidation;
+  }
+
+  // Validate planningAnswers (optional)
+  const answersValidation = validatePlanningAnswers(body.planningAnswers);
+  if (!answersValidation.isValid) {
+    return answersValidation;
+  }
+
+  // Validate settings (optional)
+  const settingsValidation = validateMeetingSettings(body.settings);
+  if (!settingsValidation.isValid) {
+    return settingsValidation;
   }
 
   return { isValid: true, parsedDate: scheduledValidation.parsedDate };
