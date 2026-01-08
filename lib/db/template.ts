@@ -742,6 +742,23 @@ export interface DuplicateTemplateOptions {
   description?: string;
   category?: TemplateCategory;
   teamId?: string | null;
+  // Customization options - when provided, these override the source template values
+  defaultDuration?: number;
+  suggestedCadence?: string;
+  defaultGoal?: string;
+  agendaItems?: {
+    title: string;
+    description?: string;
+    estimatedDuration: number;
+    isRequired?: boolean;
+    presenterRole?: string | null;
+  }[];
+  planningQuestions?: {
+    question: string;
+    category: string;
+    isRequired?: boolean;
+    placeholder?: string;
+  }[];
 }
 
 /**
@@ -782,6 +799,16 @@ export async function duplicateTemplate(
   const duplicatedDescription = opts.description !== undefined ? opts.description : source.description;
   const duplicatedCategory = opts.category || source.category;
 
+  // Use custom values if provided, otherwise use source values
+  const finalDuration = opts.defaultDuration ?? source.defaultDuration;
+  const finalCadence = opts.suggestedCadence !== undefined ? opts.suggestedCadence : source.suggestedCadence;
+  const finalGoal = opts.defaultGoal !== undefined ? opts.defaultGoal : source.defaultGoal;
+
+  // Use custom agenda items if provided, otherwise use source items
+  const finalAgendaItems = opts.agendaItems ?? source.agendaItems;
+  // Use custom planning questions if provided, otherwise use source questions
+  const finalPlanningQuestions = opts.planningQuestions ?? source.planningQuestions;
+
   // Use transaction to ensure atomicity
   const { templateRow, agendaItems, planningQuestions } = await db.transaction(
     async (tx) => {
@@ -796,48 +823,48 @@ export async function duplicateTemplate(
           scope: targetScope,
           teamId: targetTeamId,
           createdBy: userId,
-          defaultDuration: source.defaultDuration,
-          suggestedCadence: source.suggestedCadence,
-          defaultGoal: source.defaultGoal,
+          defaultDuration: finalDuration,
+          suggestedCadence: finalCadence || null,
+          defaultGoal: finalGoal || null,
           defaultSettings: source.defaultSettings,
           isArchived: false,
           usageCount: 0,
         })
         .returning();
 
-      // Duplicate agenda items
+      // Insert agenda items (from customization or source)
       const insertedAgendaItems =
-        source.agendaItems.length > 0
+        finalAgendaItems.length > 0
           ? await tx
               .insert(templateAgendaItem)
               .values(
-                source.agendaItems.map((item, index) => ({
+                finalAgendaItems.map((item, index) => ({
                   id: generateTemplateAgendaItemId(newTemplateId, index),
                   templateId: newTemplateId,
                   orderIndex: index,
                   title: item.title,
-                  description: item.description,
+                  description: item.description || null,
                   estimatedDuration: item.estimatedDuration,
-                  isRequired: item.isRequired,
-                  presenterRole: item.presenterRole,
+                  isRequired: item.isRequired ?? false,
+                  presenterRole: item.presenterRole || null,
                 }))
               )
               .returning()
           : [];
 
-      // Duplicate planning questions
+      // Insert planning questions (from customization or source)
       const insertedPlanningQuestions =
-        source.planningQuestions.length > 0
+        finalPlanningQuestions.length > 0
           ? await tx
               .insert(templatePlanningQuestion)
               .values(
-                source.planningQuestions.map((q, index) => ({
+                finalPlanningQuestions.map((q, index) => ({
                   id: generatePlanningQuestionId(newTemplateId, index),
                   templateId: newTemplateId,
                   orderIndex: index,
                   question: q.question,
                   category: q.category,
-                  isRequired: q.isRequired,
+                  isRequired: q.isRequired ?? false,
                   placeholder: q.placeholder || null,
                 }))
               )

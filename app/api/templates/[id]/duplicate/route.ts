@@ -18,11 +18,32 @@ interface RouteContext {
   }>;
 }
 
+interface AgendaItemInput {
+  title: string;
+  description?: string;
+  estimatedDuration: number;
+  isRequired?: boolean;
+  presenterRole?: string | null;
+}
+
+interface PlanningQuestionInput {
+  question: string;
+  category: string;
+  isRequired?: boolean;
+  placeholder?: string;
+}
+
 interface DuplicateTemplateBody {
   name?: string;
   description?: string;
   category?: string;
   teamId?: string | null;
+  // Customization options
+  defaultDuration?: number;
+  suggestedCadence?: string;
+  defaultGoal?: string;
+  agendaItems?: AgendaItemInput[];
+  planningQuestions?: PlanningQuestionInput[];
 }
 
 const validCategories = Object.keys(TEMPLATE_CATEGORIES);
@@ -133,6 +154,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       description: body.description,
       category: body.category as TemplateCategory | undefined,
       teamId: body.teamId,
+      // Customization options
+      defaultDuration: body.defaultDuration,
+      suggestedCadence: body.suggestedCadence,
+      defaultGoal: body.defaultGoal,
+      agendaItems: body.agendaItems,
+      planningQuestions: body.planningQuestions,
     });
 
     const response: CreateTemplateResponse = { template };

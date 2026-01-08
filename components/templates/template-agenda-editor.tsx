@@ -53,6 +53,26 @@ import {
 import { TEMPLATE_LIMITS, type TemplateAgendaItemInput, type PresenterRole } from "@/types/template";
 import { useReorderableList, useStableItemIds } from "@/hooks/use-reorderable-list";
 
+// Drag and drop imports
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
+
 // Duration options for agenda items
 const AGENDA_DURATION_OPTIONS = [
   { value: 5, label: "5 min" },
@@ -269,95 +289,16 @@ export function TemplateAgendaEditor({
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {items.map((item, index) => (
-            <div
-              key={itemIds[index]}
-              className="flex items-start gap-2 rounded-lg border bg-card p-3 group"
-            >
-              {/* Drag handle / order indicator */}
-              <div className="flex flex-col items-center gap-0.5 pt-0.5">
-                <GripVertical className="size-4 text-muted-foreground/50" />
-                <span className="flex size-5 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                  {index + 1}
-                </span>
-              </div>
-
-              {/* Item content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium truncate">{item.title}</span>
-                  {item.isRequired && (
-                    <span className="shrink-0 text-xs text-orange-600 dark:text-orange-400">
-                      Required
-                    </span>
-                  )}
-                </div>
-                {item.description && (
-                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                    {item.description}
-                  </p>
-                )}
-                <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Clock className="size-3" />
-                    {item.estimatedDuration} min
-                  </span>
-                  {item.presenterRole && (
-                    <span className="capitalize">{item.presenterRole}</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Actions */}
-              {!readOnly && (
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    onClick={() => handleMoveUp(index)}
-                    disabled={index === 0}
-                  >
-                    <ChevronUp className="size-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    onClick={() => handleMoveDown(index)}
-                    disabled={index === items.length - 1}
-                  >
-                    <ChevronDown className="size-4" />
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button type="button" variant="ghost" size="icon" className="size-7">
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEditClick(index)}>
-                        <Pencil className="mr-2 size-4" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                      onClick={() => setDeleteIndex(index)}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="mr-2 size-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              )}
-            </div>
-          ))}
-        </div>
+        <SortableAgendaList
+          items={items}
+          itemIds={itemIds}
+          readOnly={readOnly}
+          onReorder={onChange}
+          onMoveUp={handleMoveUp}
+          onMoveDown={handleMoveDown}
+          onEdit={handleEditClick}
+          onDelete={setDeleteIndex}
+        />
       )}
 
       {/* Max items warning */}
@@ -551,6 +492,355 @@ function AgendaItemDialog({
         </Button>
       </DialogFooter>
     </DialogContent>
+  );
+}
+
+// ============================================================================
+// Sortable Agenda List Component (Drag and Drop)
+// ============================================================================
+
+interface SortableAgendaListProps {
+  items: TemplateAgendaItemInput[];
+  itemIds: string[];
+  readOnly: boolean;
+  onReorder: (items: TemplateAgendaItemInput[]) => void;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
+  onEdit: (index: number) => void;
+  onDelete: (index: number) => void;
+}
+
+function SortableAgendaList({
+  items,
+  itemIds,
+  readOnly,
+  onReorder,
+  onMoveUp,
+  onMoveDown,
+  onEdit,
+  onDelete,
+}: SortableAgendaListProps) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 8px of movement required before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      if (over && active.id !== over.id) {
+        const oldIndex = itemIds.indexOf(String(active.id));
+        const newIndex = itemIds.indexOf(String(over.id));
+
+        if (oldIndex !== -1 && newIndex !== -1) {
+          onReorder(arrayMove(items, oldIndex, newIndex));
+        }
+      }
+    },
+    [items, itemIds, onReorder]
+  );
+
+  // If readOnly, don't use drag and drop
+  if (readOnly) {
+    return (
+      <div className="space-y-2">
+        {items.map((item, index) => (
+          <AgendaItemCard
+            key={itemIds[index]}
+            item={item}
+            index={index}
+            totalItems={items.length}
+            readOnly={readOnly}
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+      modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+    >
+      <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+        <div className="space-y-2">
+          {items.map((item, index) => (
+            <SortableAgendaItem
+              key={itemIds[index]}
+              id={itemIds[index]}
+              item={item}
+              index={index}
+              totalItems={items.length}
+              onMoveUp={onMoveUp}
+              onMoveDown={onMoveDown}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+// ============================================================================
+// Sortable Agenda Item Component
+// ============================================================================
+
+interface SortableAgendaItemProps {
+  id: string;
+  item: TemplateAgendaItemInput;
+  index: number;
+  totalItems: number;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
+  onEdit: (index: number) => void;
+  onDelete: (index: number) => void;
+}
+
+function SortableAgendaItem({
+  id,
+  item,
+  index,
+  totalItems,
+  onMoveUp,
+  onMoveDown,
+  onEdit,
+  onDelete,
+}: SortableAgendaItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-start gap-2 rounded-lg border bg-card p-3 group",
+        isDragging && "opacity-50 shadow-lg z-50"
+      )}
+    >
+      {/* Drag handle */}
+      <div className="flex flex-col items-center gap-0.5 pt-0.5">
+        <button
+          type="button"
+          className="cursor-grab active:cursor-grabbing touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-4 text-muted-foreground/50 hover:text-muted-foreground" />
+        </button>
+        <span className="flex size-5 items-center justify-center rounded-full bg-muted text-xs font-medium">
+          {index + 1}
+        </span>
+      </div>
+
+      {/* Item content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium truncate">{item.title}</span>
+          {item.isRequired && (
+            <span className="shrink-0 text-xs text-orange-600 dark:text-orange-400">
+              Required
+            </span>
+          )}
+        </div>
+        {item.description && (
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+            {item.description}
+          </p>
+        )}
+        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Clock className="size-3" />
+            {item.estimatedDuration} min
+          </span>
+          {item.presenterRole && (
+            <span className="capitalize">{item.presenterRole}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={() => onMoveUp(index)}
+          disabled={index === 0}
+        >
+          <ChevronUp className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={() => onMoveDown(index)}
+          disabled={index === totalItems - 1}
+        >
+          <ChevronDown className="size-4" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="icon" className="size-7">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onEdit(index)}>
+              <Pencil className="mr-2 size-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onDelete(index)}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="mr-2 size-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Non-Sortable Agenda Item Card (for read-only mode)
+// ============================================================================
+
+interface AgendaItemCardProps {
+  item: TemplateAgendaItemInput;
+  index: number;
+  totalItems: number;
+  readOnly: boolean;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
+  onEdit: (index: number) => void;
+  onDelete: (index: number) => void;
+}
+
+function AgendaItemCard({
+  item,
+  index,
+  totalItems,
+  readOnly,
+  onMoveUp,
+  onMoveDown,
+  onEdit,
+  onDelete,
+}: AgendaItemCardProps) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border bg-card p-3 group">
+      {/* Order indicator */}
+      <div className="flex flex-col items-center gap-0.5 pt-0.5">
+        <GripVertical className="size-4 text-muted-foreground/50" />
+        <span className="flex size-5 items-center justify-center rounded-full bg-muted text-xs font-medium">
+          {index + 1}
+        </span>
+      </div>
+
+      {/* Item content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium truncate">{item.title}</span>
+          {item.isRequired && (
+            <span className="shrink-0 text-xs text-orange-600 dark:text-orange-400">
+              Required
+            </span>
+          )}
+        </div>
+        {item.description && (
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+            {item.description}
+          </p>
+        )}
+        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Clock className="size-3" />
+            {item.estimatedDuration} min
+          </span>
+          {item.presenterRole && (
+            <span className="capitalize">{item.presenterRole}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions (only for non-readOnly) */}
+      {!readOnly && (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => onMoveUp(index)}
+            disabled={index === 0}
+          >
+            <ChevronUp className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => onMoveDown(index)}
+            disabled={index === totalItems - 1}
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="icon" className="size-7">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEdit(index)}>
+                <Pencil className="mr-2 size-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onDelete(index)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="mr-2 size-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+    </div>
   );
 }
 

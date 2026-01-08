@@ -85,6 +85,8 @@ interface TemplateEditorProps {
   serverError?: string;
   /** Whether the template is read-only (e.g., system templates) */
   readOnly?: boolean;
+  /** Whether we're customizing a system template (allows editing, saves as personal copy) */
+  isCustomizing?: boolean;
   /** Custom class name */
   className?: string;
   /** Default scope for new templates */
@@ -154,14 +156,16 @@ export function TemplateEditor({
   isLoading = false,
   serverError,
   readOnly = false,
+  isCustomizing = false,
   className,
   defaultScope,
   defaultTeamId,
   hideBackButton = false,
   hideScopeSelector = false,
 }: TemplateEditorProps) {
-  const isEditing = !!template;
-  const isDisabled = isLoading || readOnly;
+  const isEditing = !!template && !isCustomizing;
+  // When customizing, we allow editing (not disabled) but treat it as creating a new template
+  const isDisabled = isLoading || (readOnly && !isCustomizing);
   const [formData, setFormData] = useState<TemplateEditorFormData>(() => {
     const data = getDefaultFormData(template);
     // Apply defaults for new templates
@@ -315,17 +319,25 @@ export function TemplateEditor({
         )}
         <div className="flex-1">
           <h2 className="text-xl font-semibold">
-            {readOnly ? "View Template" : isEditing ? "Edit Template" : "Create Template"}
+            {readOnly && !isCustomizing
+              ? "View Template"
+              : isCustomizing
+                ? "Customize Template"
+                : isEditing
+                  ? "Edit Template"
+                  : "Create Template"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {readOnly
+            {readOnly && !isCustomizing
               ? "Viewing system template details"
-              : isEditing
-                ? "Update your meeting template"
-                : "Create a reusable meeting template"}
+              : isCustomizing
+                ? "Customize this template and save it as your own"
+                : isEditing
+                  ? "Update your meeting template"
+                  : "Create a reusable meeting template"}
           </p>
         </div>
-        {!readOnly && (
+        {(!readOnly || isCustomizing) && (
           <Button onClick={handleSubmit} disabled={isLoading}>
             {isLoading ? (
               <>
@@ -335,7 +347,7 @@ export function TemplateEditor({
             ) : (
               <>
                 <Save className="mr-2 size-4" />
-                {isEditing ? "Save Changes" : "Create Template"}
+                {isCustomizing ? "Save as My Template" : isEditing ? "Save Changes" : "Create Template"}
               </>
             )}
           </Button>
@@ -562,7 +574,7 @@ export function TemplateEditor({
                 items={formData.agendaItems}
                 onChange={handleAgendaChange}
                 error={agendaError}
-                readOnly={readOnly}
+                readOnly={readOnly && !isCustomizing}
               />
             </CardContent>
           </Card>
@@ -579,7 +591,7 @@ export function TemplateEditor({
               <TemplatePlanningQuestionsEditor
                 questions={formData.planningQuestions}
                 onChange={handleQuestionsChange}
-                readOnly={readOnly}
+                readOnly={readOnly && !isCustomizing}
               />
             </CardContent>
           </Card>

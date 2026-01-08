@@ -10,14 +10,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, FileText, Users, Building2 } from "lucide-react";
+import { Plus, FileText, Users, Building2, Copy } from "lucide-react";
 import {
   TemplateEditor,
   useTemplateEditor,
   TemplateBrowserDialog,
   useTemplateBrowser,
 } from "@/components/templates";
-import type { TemplateWithItems } from "@/types/template";
+import type { TemplateWithItems, CreateTemplateRequest, UpdateTemplateRequest } from "@/types/template";
 import { useTemplates } from "@/hooks/use-templates";
 
 interface TemplatesPageClientProps {
@@ -25,12 +25,14 @@ interface TemplatesPageClientProps {
   teams: { id: string; name: string }[];
 }
 
-type PageView = "browse" | "create" | "edit";
+type PageView = "browse" | "create" | "edit" | "customize";
 
 export function TemplatesPageClient({ userId: _userId, teams }: TemplatesPageClientProps) {
   const [view, setView] = useState<PageView>("browse");
   const [editingTemplate, setEditingTemplate] = useState<TemplateWithItems | null>(null);
   const [activeTab, setActiveTab] = useState<"personal" | "team" | "system">("personal");
+  const [customizeLoading, setCustomizeLoading] = useState(false);
+  const [customizeError, setCustomizeError] = useState<string>();
 
   // Fetch templates for inline browsing
   const {
@@ -45,9 +47,9 @@ export function TemplatesPageClient({ userId: _userId, teams }: TemplatesPageCli
   // Template browser dialog hook (for advanced browsing)
   const browserDialog = useTemplateBrowser();
 
-  // Template editor hook
+  // Template editor hook (for create/edit)
   const templateEditor = useTemplateEditor({
-    template: editingTemplate || undefined,
+    template: view === "edit" ? editingTemplate || undefined : undefined,
     onSuccess: () => {
       refetchTemplates();
       setView("browse");
@@ -55,19 +57,76 @@ export function TemplatesPageClient({ userId: _userId, teams }: TemplatesPageCli
     },
   });
 
+  // Handle customization submit (duplicate API)
+  const handleCustomizeSubmit = useCallback(
+    async (data: CreateTemplateRequest | UpdateTemplateRequest) => {
+      if (!editingTemplate) return;
+
+      setCustomizeLoading(true);
+      setCustomizeError(undefined);
+
+      try {
+        const response = await fetch(`/api/templates/${editingTemplate.id}/duplicate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: data.name,
+            description: data.description,
+            category: data.category,
+            // Additional customizations are passed through the data
+            defaultDuration: data.defaultDuration,
+            suggestedCadence: data.suggestedCadence,
+            defaultGoal: data.defaultGoal,
+            agendaItems: data.agendaItems,
+            planningQuestions: data.planningQuestions,
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ error: "Failed to save template" }));
+          throw new Error(error.error || "Failed to save template");
+        }
+
+        refetchTemplates();
+        setView("browse");
+        setEditingTemplate(null);
+        setActiveTab("personal"); // Switch to personal templates to see the new copy
+      } catch (err) {
+        setCustomizeError(err instanceof Error ? err.message : "An error occurred");
+      } finally {
+        setCustomizeLoading(false);
+      }
+    },
+    [editingTemplate, refetchTemplates]
+  );
+
   // Handle template selection from browser dialog
   const handleSelectFromBrowser = useCallback((template: TemplateWithItems | null) => {
     if (template) {
       setEditingTemplate(template);
-      setView("edit");
+      // System templates go to customize mode, others go to edit
+      setView(template.scope === "system" ? "customize" : "edit");
       browserDialog.setIsOpen(false);
     }
   }, [browserDialog]);
 
-  // Handle edit from inline list
+  // Handle edit from inline list (for non-system templates)
   const handleEditTemplate = useCallback((template: TemplateWithItems) => {
     setEditingTemplate(template);
     setView("edit");
+  }, []);
+
+  // Handle customize from inline list (for system templates)
+  const handleCustomizeTemplate = useCallback((template: TemplateWithItems) => {
+    setEditingTemplate(template);
+    setCustomizeError(undefined);
+    setView("customize");
+  }, []);
+
+  // Handle view details (read-only view)
+  const handleViewTemplate = useCallback((template: TemplateWithItems) => {
+    setEditingTemplate(template);
+    setView("edit"); // Uses readOnly prop
   }, []);
 
   // Handle create new
@@ -168,6 +227,8 @@ export function TemplatesPageClient({ userId: _userId, teams }: TemplatesPageCli
                   templates={templates}
                   loading={templatesLoading}
                   onEdit={handleEditTemplate}
+                  onCustomize={handleCustomizeTemplate}
+                  onView={handleViewTemplate}
                   onDelete={handleDeleteSuccess}
                   emptyMessage="No system templates available."
                   readOnly
@@ -183,6 +244,18 @@ export function TemplatesPageClient({ userId: _userId, teams }: TemplatesPageCli
               onDelete={() => handleDeleteSuccess()}
             />
           </>
+        ) : view === "customize" ? (
+          /* Customize System Template View */
+          <TemplateEditor
+            template={editingTemplate || undefined}
+            teams={teams}
+            onSubmit={handleCustomizeSubmit}
+            onBack={handleBack}
+            isLoading={customizeLoading}
+            serverError={customizeError}
+            readOnly={true}
+            isCustomizing={true}
+          />
         ) : (
           /* Create/Edit View */
           <TemplateEditor
@@ -208,6 +281,8 @@ interface TemplateGridProps {
   templates: TemplateWithItems[];
   loading: boolean;
   onEdit: (template: TemplateWithItems) => void;
+  onCustomize?: (template: TemplateWithItems) => void;
+  onView?: (template: TemplateWithItems) => void;
   onDelete: () => void;
   emptyMessage: string;
   emptyAction?: React.ReactNode;
@@ -218,6 +293,8 @@ function TemplateGrid({
   templates,
   loading,
   onEdit,
+  onCustomize,
+  onView,
   onDelete,
   emptyMessage,
   emptyAction,
@@ -314,15 +391,28 @@ function TemplateGrid({
               </div>
             )}
             {readOnly && (
-              <div className="mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => onEdit(template)}
-                >
-                  View Details
-                </Button>
+              <div className="flex items-center gap-2 mt-4">
+                {onView && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => onView(template)}
+                  >
+                    View Details
+                  </Button>
+                )}
+                {onCustomize && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="flex-1 gap-1"
+                    onClick={() => onCustomize(template)}
+                  >
+                    <Copy className="size-3" />
+                    Customize
+                  </Button>
+                )}
               </div>
             )}
           </CardContent>
