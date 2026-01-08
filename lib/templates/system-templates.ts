@@ -46,17 +46,17 @@ export interface SystemTemplateDefinition {
 
 export const SYSTEM_TEMPLATES: SystemTemplateDefinition[] = [
   // -------------------------------------------------------------------------
-  // Daily Standup (Sync)
+  // Daily Sync (Sync)
   // -------------------------------------------------------------------------
   {
     id: "tpl-system-daily-standup",
-    name: "Daily Standup",
+    name: "Daily Sync",
     description:
-      "Quick daily sync for teams to share progress, plans, and blockers. Keep it short and focused.",
+      "Keep rhythm and visibility. 5-10 min stand-up, no slides. End with one clear priority per person. Skip if not needed.",
     category: "sync",
-    defaultDuration: 15,
+    defaultDuration: 10,
     suggestedCadence: "daily",
-    defaultGoal: "Share daily updates and identify blockers",
+    defaultGoal: "Keep rhythm and visibility across the team",
     defaultSettings: {
       transcriptionEnabled: true,
       insightsEnabled: true,
@@ -64,23 +64,23 @@ export const SYSTEM_TEMPLATES: SystemTemplateDefinition[] = [
     },
     agendaItems: [
       {
-        title: "What did you accomplish yesterday?",
-        description: "Share completed tasks and progress made",
-        estimatedDuration: 5,
+        title: "What's done?",
+        description: "Quick update on completed work since last sync",
+        estimatedDuration: 3,
         isRequired: true,
         presenterRole: "anyone",
       },
       {
-        title: "What will you work on today?",
-        description: "Share planned tasks and priorities for the day",
-        estimatedDuration: 5,
+        title: "What's next?",
+        description: "One clear priority per person for today",
+        estimatedDuration: 3,
         isRequired: true,
         presenterRole: "anyone",
       },
       {
-        title: "Any blockers or concerns?",
-        description: "Raise issues that need help or attention",
-        estimatedDuration: 5,
+        title: "What's blocked?",
+        description: "Raise blockers that need attention - keep it brief",
+        estimatedDuration: 4,
         isRequired: true,
         presenterRole: "anyone",
       },
@@ -92,21 +92,27 @@ export const SYSTEM_TEMPLATES: SystemTemplateDefinition[] = [
         isRequired: false,
         placeholder: "e.g., Team members with time constraints",
       },
+      {
+        question: "Is this sync necessary today?",
+        category: "goal",
+        isRequired: false,
+        placeholder: "Skip if not needed — never do it out of habit",
+      },
     ],
   },
 
   // -------------------------------------------------------------------------
-  // Weekly Team Tactical (Tactical)
+  // Weekly Tactical (Tactical)
   // -------------------------------------------------------------------------
   {
     id: "tpl-system-weekly-tactical",
-    name: "Weekly Team Tactical",
+    name: "Weekly Tactical",
     description:
-      "Structured weekly meeting to review metrics, discuss priorities, and align on upcoming work.",
+      "Turn information into execution. Start with data, not opinions. End with clear action owners. Limit to 45-60 min.",
     category: "tactical",
-    defaultDuration: 60,
+    defaultDuration: 45,
     suggestedCadence: "weekly",
-    defaultGoal: "Review progress and align on weekly priorities",
+    defaultGoal: "Turn information into execution with clear action owners",
     defaultSettings: {
       transcriptionEnabled: true,
       insightsEnabled: true,
@@ -179,17 +185,17 @@ export const SYSTEM_TEMPLATES: SystemTemplateDefinition[] = [
   },
 
   // -------------------------------------------------------------------------
-  // Monthly Planning (Strategic)
+  // Monthly Strategy (Strategic)
   // -------------------------------------------------------------------------
   {
     id: "tpl-system-monthly-planning",
-    name: "Monthly Planning",
+    name: "Monthly Strategy",
     description:
-      "Strategic session for reviewing the month and planning ahead. Focus on goals, wins, and learning.",
+      "Step back to think long-term. Focus on what's working, what's changing, and what needs redesign. Make one big decision — not ten small ones.",
     category: "strategic",
     defaultDuration: 90,
     suggestedCadence: "monthly",
-    defaultGoal: "Review monthly progress and set next month priorities",
+    defaultGoal: "Step back to think long-term and make strategic decisions",
     defaultSettings: {
       transcriptionEnabled: true,
       insightsEnabled: true,
@@ -275,11 +281,11 @@ export const SYSTEM_TEMPLATES: SystemTemplateDefinition[] = [
     id: "tpl-system-one-on-one",
     name: "1-on-1 Meeting",
     description:
-      "Dedicated time for manager-direct report conversations. Focus on growth, feedback, and support.",
+      "Build trust and coach growth. Focus on development, well-being, and blind spots. Let the direct report speak 70% of the time.",
     category: "one_on_one",
-    defaultDuration: 30,
-    suggestedCadence: "weekly",
-    defaultGoal: "Connect, provide support, and discuss growth",
+    defaultDuration: 45,
+    suggestedCadence: "biweekly",
+    defaultGoal: "Build trust, coach growth, and discuss development",
     defaultSettings: {
       transcriptionEnabled: true,
       insightsEnabled: true,
@@ -287,36 +293,36 @@ export const SYSTEM_TEMPLATES: SystemTemplateDefinition[] = [
     },
     agendaItems: [
       {
-        title: "Check-in",
-        description: "How are you doing? Personal and professional well-being",
+        title: "Personal Check-in",
+        description: "How are you doing? Start with well-being, not work",
         estimatedDuration: 5,
         isRequired: true,
         presenterRole: "participant",
       },
       {
-        title: "Updates & Progress",
-        description: "Share updates on current work and projects",
-        estimatedDuration: 8,
+        title: "What's on your mind?",
+        description: "Open space for the direct report to lead the conversation",
+        estimatedDuration: 15,
         isRequired: true,
         presenterRole: "participant",
       },
       {
-        title: "Challenges & Support Needed",
-        description: "Discuss blockers and areas where you need help",
-        estimatedDuration: 7,
+        title: "Support & Blockers",
+        description: "What's one thing I can do to help you succeed this week?",
+        estimatedDuration: 10,
         isRequired: true,
         presenterRole: "participant",
       },
       {
-        title: "Feedback",
-        description: "Give and receive feedback",
-        estimatedDuration: 5,
-        isRequired: false,
+        title: "Development & Growth",
+        description: "Career goals, skills to develop, blind spots to address",
+        estimatedDuration: 10,
+        isRequired: true,
         presenterRole: "anyone",
       },
       {
-        title: "Growth & Development",
-        description: "Career goals, learning opportunities, skill development",
+        title: "Feedback Exchange",
+        description: "Bidirectional feedback - talk about people, not just projects",
         estimatedDuration: 5,
         isRequired: false,
         presenterRole: "anyone",
@@ -328,6 +334,12 @@ export const SYSTEM_TEMPLATES: SystemTemplateDefinition[] = [
         category: "goal",
         isRequired: true,
         placeholder: "Top 1-2 topics you want to cover",
+      },
+      {
+        question: "What's one thing I can do to help you succeed this week?",
+        category: "goal",
+        isRequired: false,
+        placeholder: "Support needed from your manager",
       },
       {
         question: "Is there any feedback you want to share or receive?",
@@ -677,6 +689,217 @@ export const SYSTEM_TEMPLATES: SystemTemplateDefinition[] = [
         category: "preparation",
         isRequired: false,
         placeholder: "Links to project documentation",
+      },
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // Quarterly Offsite (Strategic)
+  // -------------------------------------------------------------------------
+  {
+    id: "tpl-system-quarterly-offsite",
+    name: "Quarterly Offsite",
+    description:
+      "Reset energy, direction, and culture. Focus on strategy, alignment, and team connection away from daily work.",
+    category: "strategic",
+    defaultDuration: 480, // 8 hours (1 day, can extend to 2 days)
+    suggestedCadence: "quarterly",
+    defaultGoal: "Reset energy, align on strategy, and strengthen team connection",
+    defaultSettings: {
+      transcriptionEnabled: true,
+      insightsEnabled: true,
+      recordingEnabled: true,
+    },
+    agendaItems: [
+      {
+        title: "Opening & Context Setting",
+        description: "Welcome, set the tone, and share the offsite objectives",
+        estimatedDuration: 30,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Quarter in Review",
+        description: "Reflect on wins, challenges, and key learnings from the past quarter",
+        estimatedDuration: 60,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Strategic Discussion",
+        description: "Deep dive into strategic priorities and market/industry changes",
+        estimatedDuration: 90,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Team Connection Activity",
+        description: "Shared experience to strengthen relationships (workshop, activity, or discussion)",
+        estimatedDuration: 60,
+        isRequired: true,
+        presenterRole: "anyone",
+      },
+      {
+        title: "Alignment Session",
+        description: "Ensure everyone is aligned on direction, priorities, and expectations",
+        estimatedDuration: 60,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Next Quarter Planning",
+        description: "Define key objectives and initiatives for the upcoming quarter",
+        estimatedDuration: 90,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Commitments & Closing",
+        description: "Capture commitments, action items, and close with energy",
+        estimatedDuration: 30,
+        isRequired: true,
+        presenterRole: "host",
+      },
+    ],
+    planningQuestions: [
+      {
+        question: "What is the primary theme or focus for this offsite?",
+        category: "goal",
+        isRequired: true,
+        placeholder: "e.g., Growth strategy, Team culture, Product roadmap",
+      },
+      {
+        question: "What strategic decisions need to be made?",
+        category: "outcome",
+        isRequired: true,
+        placeholder: "List key decisions to reach by end of offsite",
+      },
+      {
+        question: "What data, reports, or materials should be prepared?",
+        category: "preparation",
+        isRequired: false,
+        placeholder: "Quarterly metrics, market research, competitive analysis",
+      },
+      {
+        question: "What team-building activity would resonate with the group?",
+        category: "preparation",
+        isRequired: false,
+        placeholder: "e.g., Workshop, outdoor activity, shared meal",
+      },
+      {
+        question: "Is there an offsite location booked?",
+        category: "preparation",
+        isRequired: false,
+        placeholder: "Location details or 'virtual' if remote",
+      },
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // Annual Vision Summit (Strategic)
+  // -------------------------------------------------------------------------
+  {
+    id: "tpl-system-annual-vision-summit",
+    name: "Annual Vision Summit",
+    description:
+      "Look beyond the quarter to define purpose, identity, and long-term direction. Leave with a unifying story.",
+    category: "strategic",
+    defaultDuration: 480, // 8 hours (1 day)
+    suggestedCadence: "annual",
+    defaultGoal: "Define long-term vision, purpose, and strategic direction",
+    defaultSettings: {
+      transcriptionEnabled: true,
+      insightsEnabled: true,
+      recordingEnabled: true,
+    },
+    agendaItems: [
+      {
+        title: "Why Do We Exist?",
+        description: "Revisit and reaffirm the organization's purpose and mission",
+        estimatedDuration: 60,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Year in Review",
+        description: "Celebrate achievements, acknowledge challenges, and extract lessons",
+        estimatedDuration: 60,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "External Perspectives",
+        description: "Share insights from customers, market trends, and industry changes",
+        estimatedDuration: 45,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Vision Crafting",
+        description: "Define or refine the 3-5 year vision for the organization",
+        estimatedDuration: 90,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Strategic Pillars",
+        description: "Identify key strategic priorities that will drive the vision",
+        estimatedDuration: 60,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Identity & Culture",
+        description: "Discuss organizational identity, values, and cultural aspirations",
+        estimatedDuration: 45,
+        isRequired: true,
+        presenterRole: "anyone",
+      },
+      {
+        title: "The Unifying Story",
+        description: "Craft a compelling narrative that captures the vision and inspires action",
+        estimatedDuration: 45,
+        isRequired: true,
+        presenterRole: "host",
+      },
+      {
+        title: "Commitments & Next Steps",
+        description: "Define immediate actions and how the vision translates to annual goals",
+        estimatedDuration: 30,
+        isRequired: true,
+        presenterRole: "host",
+      },
+    ],
+    planningQuestions: [
+      {
+        question: "What is the current state of our vision and mission?",
+        category: "preparation",
+        isRequired: true,
+        placeholder: "Link to current vision/mission statements",
+      },
+      {
+        question: "What external perspectives should we incorporate?",
+        category: "preparation",
+        isRequired: true,
+        placeholder: "Customer feedback, market research, industry reports",
+      },
+      {
+        question: "Who should facilitate the vision discussion?",
+        category: "attendees",
+        isRequired: false,
+        placeholder: "Internal leader or external facilitator",
+      },
+      {
+        question: "What is the desired outcome for this summit?",
+        category: "outcome",
+        isRequired: true,
+        placeholder: "e.g., Updated vision statement, 3-year roadmap, team alignment",
+      },
+      {
+        question: "How will we communicate the vision after the summit?",
+        category: "outcome",
+        isRequired: false,
+        placeholder: "All-hands meeting, written document, video message",
       },
     ],
   },

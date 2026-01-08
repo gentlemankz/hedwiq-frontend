@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -33,19 +31,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  EmptyDescription,
-} from "@/components/ui/empty";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTemplates } from "@/hooks/use-templates";
 import { useSession } from "@/lib/auth-client";
-import { categoryIcons } from "@/lib/templates/category-icons";
+import { categoryIconComponents, categoryColors } from "@/lib/templates/category-icons";
 import {
   Search,
-  FileText,
   Plus,
   MoreHorizontal,
   Pencil,
@@ -59,6 +55,13 @@ import {
   Building,
   Check,
   Archive,
+  LayoutGrid,
+  SearchX,
+  AlertCircle,
+  X,
+  Loader2,
+  Sparkles,
+  FolderOpen,
 } from "lucide-react";
 import {
   TEMPLATE_CATEGORIES,
@@ -221,167 +224,260 @@ export function TemplateBrowserDialog({
   // Order for displaying scope groups
   const scopeOrder: TemplateScope[] = ["system", "team", "personal"];
 
+  // Reference to search input for focus
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Clear search
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    searchInputRef.current?.focus();
+  }, []);
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
-        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <DialogTitle>{title}</DialogTitle>
-                <DialogDescription>{description}</DialogDescription>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
+          {/* Header */}
+          <div className="px-6 py-5 border-b bg-muted/30">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <DialogTitle className="text-xl">{title}</DialogTitle>
+                <DialogDescription className="text-sm">{description}</DialogDescription>
               </div>
               {showCreateButton && onCreate && (
-                <Button onClick={onCreate} className="shrink-0">
-                  <Plus className="mr-2 size-4" />
+                <Button onClick={onCreate} size="sm" className="shrink-0 gap-2">
+                  <Plus className="size-4" />
                   New Template
                 </Button>
               )}
             </div>
-          </DialogHeader>
 
-          {/* Filters */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search templates..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-
-            {/* Scope filter */}
-            <Tabs
-              value={scopeFilter}
-              onValueChange={(v) => setScopeFilter(v as FilterScope)}
-            >
-              <TabsList className="h-9">
-                <TabsTrigger value="all" className="text-xs">
-                  All
-                </TabsTrigger>
-                <TabsTrigger value="system" className="gap-1 text-xs">
-                  {scopeIcons.system}
-                  <span className="hidden sm:inline">System</span>
-                </TabsTrigger>
-                <TabsTrigger value="team" className="gap-1 text-xs">
-                  {scopeIcons.team}
-                  <span className="hidden sm:inline">Team</span>
-                </TabsTrigger>
-                <TabsTrigger value="personal" className="gap-1 text-xs">
-                  {scopeIcons.personal}
-                  <span className="hidden sm:inline">Personal</span>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-
-          {/* Category filter */}
-          <Tabs
-            value={categoryFilter}
-            onValueChange={(v) => setCategoryFilter(v as TemplateCategory | "all")}
-          >
-            <TabsList className="h-9 w-full justify-start overflow-x-auto">
-              <TabsTrigger value="all" className="text-xs">
-                All Categories
-              </TabsTrigger>
-              {(Object.keys(TEMPLATE_CATEGORIES) as TemplateCategory[]).map((cat) => (
-                <TabsTrigger key={cat} value={cat} className="gap-1 text-xs shrink-0">
-                  {categoryIcons[cat]}
-                  <span className="hidden md:inline">{TEMPLATE_CATEGORIES[cat].label}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-
-          {/* Templates list */}
-          <ScrollArea className="flex-1 -mx-6 px-6">
-            {/* Loading */}
-            {isLoading && (
-              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-28 rounded-lg" />
-                ))}
-              </div>
-            )}
-
-            {/* Error */}
-            {error && !isLoading && (
-              <Empty>
-                <EmptyMedia variant="icon">
-                  <FileText />
-                </EmptyMedia>
-                <EmptyHeader>
-                  <EmptyTitle>Failed to load templates</EmptyTitle>
-                  <EmptyDescription>{error}</EmptyDescription>
-                </EmptyHeader>
-                <Button onClick={() => refetch()} variant="outline" size="sm">
-                  Try Again
-                </Button>
-              </Empty>
-            )}
-
-            {/* Empty */}
-            {!isLoading && !error && templates.length === 0 && (
-              <Empty>
-                <EmptyMedia variant="icon">
-                  <FileText />
-                </EmptyMedia>
-                <EmptyHeader>
-                  <EmptyTitle>No templates found</EmptyTitle>
-                  <EmptyDescription>
-                    {searchQuery
-                      ? "Try adjusting your search or filters"
-                      : "Create your first template to get started"}
-                  </EmptyDescription>
-                </EmptyHeader>
-                {showCreateButton && onCreate && (
-                  <Button onClick={onCreate} variant="outline" size="sm">
-                    <Plus className="mr-2 size-4" />
-                    Create Template
-                  </Button>
+            {/* Search and Filters */}
+            <div className="mt-5 space-y-4">
+              {/* Search bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  ref={searchInputRef}
+                  placeholder="Search by name, description, or category..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-10 h-11 bg-background border-muted-foreground/20 focus-visible:ring-primary/20"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-muted transition-colors"
+                    aria-label="Clear search"
+                  >
+                    <X className="size-4 text-muted-foreground" />
+                  </button>
                 )}
-              </Empty>
-            )}
+                {isLoading && searchQuery && (
+                  <div className="absolute right-10 top-1/2 -translate-y-1/2">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
 
-            {/* Templates by scope */}
-            {!isLoading && !error && templates.length > 0 && (
-              <div className="space-y-6 pb-4">
-                {scopeOrder.map((scope) => {
-                  const scopeTemplates = groupedTemplates[scope];
-                  if (!scopeTemplates?.length) return null;
+              {/* Scope filter tabs */}
+              <div className="flex flex-wrap items-center gap-2">
+                {(["all", "system", "team", "personal"] as FilterScope[]).map((scope) => {
+                  const isActive = scopeFilter === scope;
+                  const icon = scope === "all" ? <LayoutGrid className="size-4" /> : scopeIcons[scope as TemplateScope];
+                  const label = scope === "all" ? "All" : scopeLabels[scope as TemplateScope];
 
                   return (
-                    <div key={scope}>
-                      {scopeFilter === "all" && (
-                        <div className="flex items-center gap-2 mb-3 text-sm font-medium text-muted-foreground">
-                          {scopeIcons[scope]}
-                          {scopeLabels[scope]} Templates
-                          <span className="text-xs">({scopeTemplates.length})</span>
-                        </div>
+                    <button
+                      key={scope}
+                      type="button"
+                      onClick={() => setScopeFilter(scope)}
+                      className={cn(
+                        "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                        isActive
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "bg-background border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5"
                       )}
-                      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-                        {scopeTemplates.map((template) => (
-                          <TemplateListItem
-                            key={template.id}
-                            template={template}
-                            isSelected={selectedTemplateId === template.id}
-                            onSelect={handleSelect}
-                            onEdit={canModifyTemplate(template) && onEdit ? onEdit : undefined}
-                            onDuplicate={onDuplicate}
-                            onDelete={canModifyTemplate(template) && onDelete ? () => setDeleteTemplate(template) : undefined}
-                            showActions={showActions}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                    >
+                      {icon}
+                      <span>{label}</span>
+                    </button>
                   );
                 })}
               </div>
-            )}
+
+              {/* Category filter pills */}
+              <TooltipProvider delayDuration={300}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground mr-1">Categories:</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setCategoryFilter("all")}
+                        className={cn(
+                          "inline-flex items-center justify-center size-9 rounded-lg transition-all duration-200",
+                          categoryFilter === "all"
+                            ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/20"
+                            : "bg-background border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5"
+                        )}
+                      >
+                        <LayoutGrid className="size-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      <p>All Categories</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <div className="w-px h-6 bg-border mx-1" />
+
+                  {(Object.keys(TEMPLATE_CATEGORIES) as TemplateCategory[]).map((cat) => {
+                    const Icon = categoryIconComponents[cat];
+                    const colors = categoryColors[cat];
+                    const isActive = categoryFilter === cat;
+                    const catInfo = TEMPLATE_CATEGORIES[cat];
+
+                    return (
+                      <Tooltip key={cat}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => setCategoryFilter(cat)}
+                            className={cn(
+                              "inline-flex items-center justify-center size-9 rounded-lg transition-all duration-200 border",
+                              isActive
+                                ? cn(colors.bg, colors.text, colors.border, "shadow-sm ring-2 ring-offset-1", colors.border.replace("border-", "ring-").replace("dark:", ""))
+                                : "bg-background border-border text-muted-foreground hover:border-primary/30 hover:bg-muted"
+                            )}
+                          >
+                            <Icon className="size-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>{catInfo.label}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </TooltipProvider>
+            </div>
+          </div>
+
+          {/* Templates list */}
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="px-6 py-4">
+              {/* Loading */}
+              {isLoading && (
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <TemplateCardSkeleton key={i} />
+                  ))}
+                </div>
+              )}
+
+              {/* Error */}
+              {error && !isLoading && (
+                <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-destructive/20 bg-destructive/5 py-16 text-center">
+                  <div className="flex size-16 items-center justify-center rounded-2xl bg-destructive/10 mb-5">
+                    <AlertCircle className="size-8 text-destructive" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-destructive">Failed to load templates</h3>
+                  <p className="mt-2 text-sm text-muted-foreground max-w-sm">{error}</p>
+                  <Button onClick={() => refetch()} variant="outline" size="sm" className="mt-5 gap-2">
+                    <Loader2 className="size-4" />
+                    Try Again
+                  </Button>
+                </div>
+              )}
+
+              {/* Empty */}
+              {!isLoading && !error && templates.length === 0 && (
+                <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-muted-foreground/20 bg-gradient-to-b from-muted/30 to-muted/10 py-16 text-center">
+                  <div className="relative mb-5">
+                    <div className="flex size-20 items-center justify-center rounded-2xl bg-muted shadow-sm">
+                      {searchQuery ? (
+                        <SearchX className="size-10 text-muted-foreground/70" />
+                      ) : (
+                        <FolderOpen className="size-10 text-muted-foreground/70" />
+                      )}
+                    </div>
+                    {!searchQuery && (
+                      <div className="absolute -top-1 -right-1 flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+                        <Sparkles className="size-4" />
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="text-lg font-semibold">
+                    {searchQuery ? "No matching templates" : "No templates yet"}
+                  </h3>
+                  <p className="mt-2 text-sm text-muted-foreground max-w-sm">
+                    {searchQuery
+                      ? `No templates found matching "${searchQuery}". Try a different search term or browse all categories.`
+                      : "Create your first template to streamline your meetings and save time."}
+                  </p>
+                  {searchQuery ? (
+                    <Button onClick={handleClearSearch} variant="outline" size="sm" className="mt-5 gap-2">
+                      <X className="size-4" />
+                      Clear Search
+                    </Button>
+                  ) : showCreateButton && onCreate ? (
+                    <Button onClick={onCreate} size="sm" className="mt-5 gap-2">
+                      <Plus className="size-4" />
+                      Create Your First Template
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Templates by scope */}
+              {!isLoading && !error && templates.length > 0 && (
+                <div className="space-y-8">
+                  {scopeOrder.map((scope) => {
+                    const scopeTemplates = groupedTemplates[scope];
+                    if (!scopeTemplates?.length) return null;
+
+                    return (
+                      <div key={scope}>
+                        {scopeFilter === "all" && (
+                          <div className="flex items-center gap-2 mb-4">
+                            <div className={cn(
+                              "flex items-center justify-center size-7 rounded-lg",
+                              scope === "system" && "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400",
+                              scope === "team" && "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400",
+                              scope === "personal" && "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"
+                            )}>
+                              {scopeIcons[scope]}
+                            </div>
+                            <span className="text-sm font-semibold">{scopeLabels[scope]} Templates</span>
+                            <Badge variant="secondary" className="ml-1 text-xs">
+                              {scopeTemplates.length}
+                            </Badge>
+                          </div>
+                        )}
+                        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+                          {scopeTemplates.map((template) => (
+                            <TemplateListItem
+                              key={template.id}
+                              template={template}
+                              isSelected={selectedTemplateId === template.id}
+                              onSelect={handleSelect}
+                              onEdit={canModifyTemplate(template) && onEdit ? onEdit : undefined}
+                              onDuplicate={onDuplicate}
+                              onDelete={canModifyTemplate(template) && onDelete ? () => setDeleteTemplate(template) : undefined}
+                              showActions={showActions}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </ScrollArea>
         </DialogContent>
       </Dialog>
@@ -412,6 +508,35 @@ export function TemplateBrowserDialog({
 }
 
 // ============================================================================
+// Template Card Skeleton
+// ============================================================================
+
+function TemplateCardSkeleton() {
+  return (
+    <div className="relative flex flex-col rounded-xl border bg-card p-4 animate-pulse">
+      {/* Header */}
+      <div className="flex items-start gap-2 mb-3">
+        <Skeleton className="h-6 w-20 rounded-full" />
+      </div>
+
+      {/* Title and description */}
+      <div className="flex-1 min-w-0 space-y-2">
+        <Skeleton className="h-5 w-3/4" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-2/3" />
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center gap-3 mt-4 pt-3 border-t">
+        <Skeleton className="h-4 w-16" />
+        <Skeleton className="h-4 w-12" />
+        <Skeleton className="h-4 w-20" />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Template List Item
 // ============================================================================
 
@@ -435,14 +560,17 @@ function TemplateListItem({
   showActions,
 }: TemplateListItemProps) {
   const categoryInfo = TEMPLATE_CATEGORIES[template.category];
+  const colors = categoryColors[template.category];
+  const CategoryIcon = categoryIconComponents[template.category];
   const agendaItemCount = template.agendaItems?.length ?? 0;
   const hasActions = showActions && (onEdit || onDuplicate || onDelete);
 
   return (
     <div
       className={cn(
-        "relative flex flex-col rounded-lg border bg-card p-3 transition-all hover:border-primary/50 hover:shadow-sm",
-        isSelected && "border-primary ring-2 ring-primary/20",
+        "group relative flex flex-col rounded-xl border bg-card p-4 transition-all duration-200",
+        "hover:border-primary/40 hover:shadow-md hover:shadow-primary/5",
+        isSelected && "border-primary ring-2 ring-primary/20 bg-primary/5",
         onSelect && "cursor-pointer"
       )}
       onClick={() => onSelect?.(template)}
@@ -458,19 +586,22 @@ function TemplateListItem({
     >
       {/* Selected indicator */}
       {isSelected && (
-        <div className="absolute top-2 right-2 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <Check className="size-3" />
+        <div className="absolute top-3 right-3 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+          <Check className="size-3.5" />
         </div>
       )}
 
       {/* Header */}
-      <div className="flex items-start gap-2 mb-2">
-        <Badge variant="secondary" className="gap-1 shrink-0">
-          {categoryIcons[template.category]}
+      <div className="flex items-start gap-2 mb-3">
+        <div className={cn(
+          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border",
+          colors.bg, colors.text, colors.border
+        )}>
+          <CategoryIcon className="size-3.5" />
           {categoryInfo.label}
-        </Badge>
+        </div>
         {template.isArchived && (
-          <Badge variant="outline" className="gap-1 text-muted-foreground">
+          <Badge variant="outline" className="gap-1 text-muted-foreground text-xs">
             <Archive className="size-3" />
             Archived
           </Badge>
@@ -479,31 +610,37 @@ function TemplateListItem({
 
       {/* Title and description */}
       <div className="flex-1 min-w-0">
-        <p className="font-medium truncate pr-8">{template.name}</p>
-        {template.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+        <p className="font-semibold text-[15px] truncate pr-8 group-hover:text-primary transition-colors">
+          {template.name}
+        </p>
+        {template.description ? (
+          <p className="text-sm text-muted-foreground line-clamp-2 mt-1 leading-relaxed">
             {template.description}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground/60 italic mt-1">
+            No description
           </p>
         )}
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t">
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Clock className="size-3" />
+      <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/60">
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5 bg-muted/50 px-2 py-1 rounded-md">
+            <Clock className="size-3.5" />
             {template.defaultDuration} min
           </span>
           {agendaItemCount > 0 && (
-            <span className="flex items-center gap-1">
-              <ListChecks className="size-3" />
-              {agendaItemCount}
+            <span className="flex items-center gap-1.5 bg-muted/50 px-2 py-1 rounded-md">
+              <ListChecks className="size-3.5" />
+              {agendaItemCount} {agendaItemCount === 1 ? "item" : "items"}
             </span>
           )}
           {template.suggestedCadence && (
-            <span className="flex items-center gap-1">
-              <Calendar className="size-3" />
-              <span className="capitalize truncate max-w-[60px]">
+            <span className="hidden sm:flex items-center gap-1.5 bg-muted/50 px-2 py-1 rounded-md">
+              <Calendar className="size-3.5" />
+              <span className="capitalize">
                 {template.suggestedCadence.replace("-", " ")}
               </span>
             </span>
@@ -517,7 +654,7 @@ function TemplateListItem({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0"
+                className="size-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreHorizontal className="size-4" />

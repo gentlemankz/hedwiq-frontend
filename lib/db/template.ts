@@ -25,7 +25,71 @@ import type {
   CreateTemplateRequest,
   UpdateTemplateRequest,
 } from "@/types/template";
-import { isSystemTemplate } from "@/lib/templates/system-templates";
+import {
+  isSystemTemplate,
+  SYSTEM_TEMPLATES,
+  getSystemTemplateById as getSystemTemplateDefinition,
+  type SystemTemplateDefinition,
+} from "@/lib/templates/system-templates";
+
+// ============================================================================
+// System Template Helpers
+// ============================================================================
+
+/**
+ * Convert a SystemTemplateDefinition to TemplateWithItems format.
+ * This allows system templates to be served directly from code without database seeding.
+ */
+function systemTemplateToTemplateWithItems(
+  def: SystemTemplateDefinition
+): TemplateWithItems {
+  const now = new Date().toISOString();
+  return {
+    id: def.id,
+    name: def.name,
+    description: def.description,
+    category: def.category,
+    scope: "system",
+    teamId: null,
+    createdBy: null,
+    defaultDuration: def.defaultDuration,
+    suggestedCadence: def.suggestedCadence,
+    defaultGoal: def.defaultGoal,
+    defaultSettings: def.defaultSettings,
+    isArchived: false,
+    usageCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    agendaItems: def.agendaItems.map((item, index) => ({
+      id: `tai-${def.id.replace("tpl-system-", "")}-${index}`,
+      templateId: def.id,
+      orderIndex: index,
+      title: item.title,
+      description: item.description || null,
+      estimatedDuration: item.estimatedDuration,
+      isRequired: item.isRequired ?? false,
+      presenterRole: item.presenterRole || null,
+      createdAt: now,
+    })),
+    planningQuestions: def.planningQuestions.map((q, index) => ({
+      id: `tpq-${def.id.replace("tpl-system-", "")}-${index}`,
+      question: q.question,
+      category: q.category,
+      isRequired: q.isRequired ?? false,
+      placeholder: q.placeholder,
+      orderIndex: index,
+    })),
+    team: null,
+    creator: null,
+  };
+}
+
+/**
+ * Get all system templates as TemplateWithItems.
+ */
+function getAllSystemTemplatesAsTemplateWithItems(): TemplateWithItems[] {
+  return SYSTEM_TEMPLATES.map(systemTemplateToTemplateWithItems);
+}
 
 // ============================================================================
 // ID Generation
@@ -71,7 +135,7 @@ export function generatePlanningQuestionId(
 /**
  * Get a template by ID with all related data.
  * Enforces read authorization:
- * - System templates: accessible to all authenticated users
+ * - System templates: accessible to all authenticated users (served from code)
  * - Personal templates: only accessible to the creator
  * - Team templates: only accessible to team members
  *
@@ -82,6 +146,15 @@ export async function getTemplateById(
   templateId: string,
   userId: string
 ): Promise<TemplateWithItems | null> {
+  // For system templates, serve directly from code (no database needed)
+  if (isSystemTemplate(templateId)) {
+    const systemTemplateDef = getSystemTemplateDefinition(templateId);
+    if (systemTemplateDef) {
+      return systemTemplateToTemplateWithItems(systemTemplateDef);
+    }
+    return null;
+  }
+
   const [templateRow] = await db
     .select()
     .from(meetingTemplate)
@@ -145,6 +218,7 @@ export async function getTemplateById(
 
 /**
  * List templates accessible to a user with filtering and pagination.
+ * System templates are served directly from code, no database needed.
  */
 export async function listTemplates(
   params: ListTemplatesParams & { userId: string }
@@ -162,19 +236,65 @@ export async function listTemplates(
     offset = 0,
   } = params;
 
-  // Get user's team IDs for team template visibility
+  // Get system templates from code (no database needed)
+  let systemTemplates: TemplateWithItems[] = [];
+  const includeSystemTemplates = scope === "all" || scope === "system";
+
+  if (includeSystemTemplates) {
+    systemTemplates = getAllSystemTemplatesAsTemplateWithItems();
+
+    // Apply category filter to system templates
+    if (category) {
+      systemTemplates = systemTemplates.filter((t) => t.category === category);
+    }
+
+    // Apply search filter to system templates
+    if (search) {
+      const searchLower = search.toLowerCase();
+      systemTemplates = systemTemplates.filter(
+        (t) =>
+          t.name.toLowerCase().includes(searchLower) ||
+          (t.description && t.description.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // System templates don't have teamId, so filter them out if teamId is specified
+    if (teamId) {
+      systemTemplates = [];
+    }
+  }
+
+  // If only requesting system templates, return them directly (no database query needed)
+  if (scope === "system") {
+    // Apply sorting
+    systemTemplates.sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === "name") {
+        comparison = a.name.localeCompare(b.name);
+      } else if (sortBy === "usageCount") {
+        comparison = a.usageCount - b.usageCount;
+      } else {
+        comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+      return sortOrder === "desc" ? -comparison : comparison;
+    });
+
+    const total = systemTemplates.length;
+    const paginatedTemplates = systemTemplates.slice(offset, offset + limit);
+    return { templates: paginatedTemplates, total };
+  }
+
+  // For non-system scopes or "all", query the database
   const userTeamIds = await getUserTeamIds(userId);
 
-  // Build conditions
+  // Build conditions for database query (excluding system templates since they come from code)
   const conditions: ReturnType<typeof and>[] = [];
 
-  // Scope filter with proper authorization
-  // Always enforce visibility rules regardless of scope filter
   if (scope === "all") {
-    // User can see: system templates, their personal templates, and their team templates
+    // User can see: their personal templates and their team templates
+    // System templates are handled separately from code
     conditions.push(
       or(
-        eq(meetingTemplate.scope, "system"),
         and(
           eq(meetingTemplate.scope, "personal"),
           eq(meetingTemplate.createdBy, userId)
@@ -187,9 +307,6 @@ export async function listTemplates(
         )
       )!
     );
-  } else if (scope === "system") {
-    // System templates are visible to all authenticated users
-    conditions.push(eq(meetingTemplate.scope, "system"));
   } else if (scope === "personal") {
     // Personal templates: only show user's own templates
     conditions.push(
@@ -249,20 +366,18 @@ export async function listTemplates(
 
   const orderByDirection = sortOrder === "asc" ? asc : desc;
 
-  // Get total count
-  const [{ count }] = await db
+  // Get total count from database
+  const [{ count: dbCount }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(meetingTemplate)
     .where(whereClause);
 
-  // Get templates
+  // Get templates from database
   const templateRows = await db
     .select()
     .from(meetingTemplate)
     .where(whereClause)
-    .orderBy(orderByDirection(orderByColumn))
-    .limit(limit)
-    .offset(offset);
+    .orderBy(orderByDirection(orderByColumn));
 
   // Get all related data for the templates
   const templateIds = templateRows.map((t) => t.id);
@@ -315,8 +430,8 @@ export async function listTemplates(
       : [];
   const creatorsById = Object.fromEntries(creators.map((c) => [c.id, c]));
 
-  // Build full templates
-  const templates: TemplateWithItems[] = templateRows.map((row) => ({
+  // Build full templates from database
+  const dbTemplates: TemplateWithItems[] = templateRows.map((row) => ({
     ...mapTemplateRow(row),
     agendaItems: (agendaItemsByTemplate[row.id] || []).map(mapAgendaItemRow),
     planningQuestions: (questionsByTemplate[row.id] || []).map(
@@ -326,7 +441,27 @@ export async function listTemplates(
     creator: row.createdBy ? creatorsById[row.createdBy] || null : null,
   }));
 
-  return { templates, total: count };
+  // Merge system templates with database templates
+  const allTemplates = [...systemTemplates, ...dbTemplates];
+  const totalCount = systemTemplates.length + dbCount;
+
+  // Sort combined results
+  allTemplates.sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === "name") {
+      comparison = a.name.localeCompare(b.name);
+    } else if (sortBy === "usageCount") {
+      comparison = a.usageCount - b.usageCount;
+    } else {
+      comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    }
+    return sortOrder === "desc" ? -comparison : comparison;
+  });
+
+  // Apply pagination to combined results
+  const paginatedTemplates = allTemplates.slice(offset, offset + limit);
+
+  return { templates: paginatedTemplates, total: totalCount };
 }
 
 // ============================================================================

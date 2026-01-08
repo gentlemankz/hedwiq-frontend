@@ -293,6 +293,7 @@ export const CADENCE_OPTIONS = [
   { value: "biweekly", label: "Biweekly" },
   { value: "monthly", label: "Monthly" },
   { value: "quarterly", label: "Quarterly" },
+  { value: "annual", label: "Annual" },
   { value: "sprint-end", label: "Sprint End" },
   { value: "as-needed", label: "As Needed" },
 ] as const;

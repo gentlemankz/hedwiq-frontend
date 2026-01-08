@@ -3,22 +3,14 @@
 import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import {
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  EmptyDescription,
-} from "@/components/ui/empty";
 import { TemplateCard } from "./template-card";
 import { useTemplates } from "@/hooks/use-templates";
-import { Search, FileText, Users } from "lucide-react";
+import { Search, FileText, Users, LayoutGrid, PenLine, Check, SearchX } from "lucide-react";
 import type { TemplateWithItems, TemplateCategory } from "@/types/template";
 import { TEMPLATE_CATEGORIES } from "@/types/template";
-import { categoryIcons } from "@/lib/templates/category-icons";
+import { categoryIcons, categoryColors, categoryIconComponents } from "@/lib/templates/category-icons";
 
 type FilterCategory = TemplateCategory | "all";
 
@@ -102,55 +94,86 @@ export function TemplatePicker({
   };
 
   return (
-    <div className={cn("flex flex-col gap-4", className)}>
-      {/* Search and Filter */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    <div className={cn("flex flex-col", compact ? "gap-2" : "gap-4", className)}>
+      {/* Search and Category Filter - Combined row in compact mode */}
+      <div className={cn("flex items-center gap-2", compact ? "flex-wrap" : "flex-col gap-4")}>
+        {/* Search */}
+        <div className={cn("relative", compact ? "w-28 shrink-0" : "w-full")}>
+          <Search className={cn("absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground", compact ? "size-3.5" : "size-4")} />
           <Input
-            placeholder="Search templates..."
+            placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className={cn(compact ? "h-8 pl-8 text-xs" : "pl-9")}
           />
         </div>
 
-        <Tabs
-          value={categoryFilter}
-          onValueChange={(v) => setCategoryFilter(v as FilterCategory)}
-        >
-          <TabsList className="h-9">
-            <TabsTrigger value="all" className="text-xs">
-              All
-            </TabsTrigger>
-            {(Object.keys(TEMPLATE_CATEGORIES) as TemplateCategory[]).map((cat) => (
-              <TabsTrigger key={cat} value={cat} className="gap-1 text-xs">
-                {categoryIcons[cat]}
-                <span className="hidden sm:inline">{TEMPLATE_CATEGORIES[cat].label}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        {/* Category Filter Pills - Horizontal scroll in compact mode */}
+        <div className={cn(
+          compact
+            ? "flex-1 flex items-center gap-1 overflow-x-auto scrollbar-none"
+            : "flex flex-wrap gap-2 w-full"
+        )}>
+          <button
+            type="button"
+            onClick={() => setCategoryFilter("all")}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full font-medium transition-all whitespace-nowrap",
+              compact ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm gap-1.5",
+              categoryFilter === "all"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <LayoutGrid className={cn(compact ? "size-3" : "size-3.5")} />
+            All
+          </button>
+          {(Object.keys(TEMPLATE_CATEGORIES) as TemplateCategory[]).map((cat) => {
+            const Icon = categoryIconComponents[cat];
+            const colors = categoryColors[cat];
+            const isActive = categoryFilter === cat;
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategoryFilter(cat)}
+                className={cn(
+                  "inline-flex items-center rounded-full font-medium transition-all border whitespace-nowrap",
+                  compact ? "px-2 py-1 text-xs gap-1" : "px-3 py-1.5 text-sm gap-1.5",
+                  isActive
+                    ? cn(colors.bg, colors.text, colors.border, "shadow-sm")
+                    : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Icon className={cn(compact ? "size-3" : "size-3.5")} />
+                {compact ? null : <span className="hidden xs:inline sm:inline">{TEMPLATE_CATEGORIES[cat].label}</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Loading State */}
       {isLoading && (
-        <div className={cn("grid gap-4", compact ? "grid-cols-2 md:grid-cols-3" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3")}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-40 rounded-xl" />
+        <div className={cn("grid", compact ? "grid-cols-1 gap-2" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4")}>
+          {Array.from({ length: compact ? 3 : 6 }).map((_, i) => (
+            <Skeleton key={i} className={cn(compact ? "h-14 rounded-lg" : "h-40 rounded-xl")} />
           ))}
         </div>
       )}
 
       {/* Templates Grid */}
       {!isLoading && (
-        <div className="space-y-6">
+        <div className={cn(compact ? "space-y-3" : "space-y-6")}>
           {/* Start from scratch option - show when no search OR when there's an error (so users aren't blocked) */}
           {showScratchOption && categoryFilter === "all" && (!debouncedSearch || error) && (
             <div
               className={cn(
-                "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed p-4 transition-all hover:border-primary/50 hover:bg-muted/50",
-                selectedTemplateId === null && "border-primary ring-2 ring-primary/20"
+                "group relative cursor-pointer overflow-hidden rounded-lg border-2 border-dashed transition-all duration-150",
+                compact ? "p-2.5" : "p-4",
+                selectedTemplateId === null
+                  ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                  : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"
               )}
               onClick={handleSelectScratch}
               onKeyDown={(e) => {
@@ -163,66 +186,103 @@ export function TemplatePicker({
               role="button"
               aria-pressed={selectedTemplateId === null}
             >
-              <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
-                <FileText className="size-5 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="font-medium">Start from scratch</p>
-                <p className="text-sm text-muted-foreground">
-                  Create a custom meeting without a template
-                </p>
+              <div className={cn("flex items-center", compact ? "gap-3" : "gap-4")}>
+                <div className={cn(
+                  "flex items-center justify-center rounded-lg transition-colors",
+                  compact ? "size-8" : "size-12 rounded-xl",
+                  selectedTemplateId === null
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted group-hover:bg-primary/10"
+                )}>
+                  <PenLine className={cn(
+                    "transition-colors",
+                    compact ? "size-4" : "size-6",
+                    selectedTemplateId === null ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+                  )} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={cn(
+                    "font-medium transition-colors",
+                    compact ? "text-sm" : "font-semibold",
+                    selectedTemplateId === null ? "text-primary" : "group-hover:text-foreground"
+                  )}>
+                    Start from scratch
+                  </p>
+                  {!compact && (
+                    <p className="text-sm text-muted-foreground">
+                      Create a custom meeting with your own agenda
+                    </p>
+                  )}
+                </div>
+                {selectedTemplateId === null && (
+                  <div className={cn(
+                    "flex items-center justify-center rounded-full bg-primary text-primary-foreground",
+                    compact ? "size-5" : "size-6"
+                  )}>
+                    <Check className={cn(compact ? "size-3" : "size-4")} />
+                  </div>
+                )}
               </div>
             </div>
           )}
 
           {/* Error State - show error but allow continuing with scratch option */}
           {error && (
-            <Empty>
-              <EmptyMedia variant="icon">
-                <FileText />
-              </EmptyMedia>
-              <EmptyHeader>
-                <EmptyTitle>Failed to load templates</EmptyTitle>
-                <EmptyDescription>{error}</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <div className={cn(
+              "flex flex-col items-center justify-center rounded-lg border border-dashed border-destructive/30 bg-destructive/5 text-center",
+              compact ? "py-6" : "py-10"
+            )}>
+              <div className={cn(
+                "flex items-center justify-center rounded-full bg-destructive/10 mb-3",
+                compact ? "size-10" : "size-14 mb-4"
+              )}>
+                <FileText className={cn(compact ? "size-5" : "size-7", "text-destructive")} />
+              </div>
+              <h3 className={cn("font-semibold text-destructive", compact && "text-sm")}>Failed to load templates</h3>
+              <p className={cn("mt-1 text-muted-foreground max-w-xs", compact ? "text-xs" : "text-sm")}>{error}</p>
+            </div>
           )}
 
           {/* Empty State - only show when no error */}
           {!error && templates.length === 0 && !showScratchOption && (
-            <Empty>
-              <EmptyMedia variant="icon">
-                <FileText />
-              </EmptyMedia>
-              <EmptyHeader>
-                <EmptyTitle>No templates found</EmptyTitle>
-                <EmptyDescription>
-                  {searchQuery
-                    ? "Try adjusting your search query"
-                    : "No templates available for this category"}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <div className={cn(
+              "flex flex-col items-center justify-center rounded-lg border border-dashed border-muted-foreground/25 bg-muted/20 text-center",
+              compact ? "py-6" : "py-12"
+            )}>
+              <div className={cn(
+                "flex items-center justify-center rounded-full bg-muted mb-3",
+                compact ? "size-10" : "size-14 mb-4"
+              )}>
+                <SearchX className={cn(compact ? "size-5" : "size-7", "text-muted-foreground")} />
+              </div>
+              <h3 className={cn("font-semibold", compact && "text-sm")}>No templates found</h3>
+              <p className={cn("mt-1 text-muted-foreground max-w-xs", compact ? "text-xs" : "text-sm")}>
+                {searchQuery
+                  ? "Try adjusting your search or category"
+                  : "No templates available yet"}
+              </p>
+            </div>
           )}
 
           {/* Team Templates Section - show at top when available */}
           {!error && teamTemplates.length > 0 && (
             <div>
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
-                <Users className="size-4" />
+              <div className={cn(
+                "flex items-center gap-2 font-medium text-primary",
+                compact ? "mb-2 text-xs" : "mb-3 text-sm"
+              )}>
+                <Users className={cn(compact ? "size-3.5" : "size-4")} />
                 Team Templates
-                <Badge variant="secondary" className="text-xs">
+                <Badge variant="secondary" className={cn(compact ? "text-[10px] h-4 px-1.5" : "text-xs")}>
                   {teamTemplates.length}
                 </Badge>
               </div>
-              <div
-                className={cn(
-                  "grid gap-4",
-                  compact
-                    ? "grid-cols-2 md:grid-cols-3"
-                    : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-                )}
-              >
+              <div className={cn(
+                "grid",
+                compact
+                  ? "grid-cols-1 gap-2"
+                  : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+              )}>
                 {teamTemplates.map((template) => (
                   <TemplateCard
                     key={template.id}
@@ -242,19 +302,20 @@ export function TemplatePicker({
               (Object.entries(groupedTemplates) as [TemplateCategory, TemplateWithItems[]][]).map(
                 ([category, categoryTemplates]) => (
                   <div key={category}>
-                    <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <div className={cn(
+                      "flex items-center gap-1.5 font-medium text-muted-foreground",
+                      compact ? "mb-2 text-xs" : "mb-3 text-sm gap-2"
+                    )}>
                       {categoryIcons[category]}
                       {TEMPLATE_CATEGORIES[category].label}
-                      <span className="text-xs">({categoryTemplates.length})</span>
+                      <span className={cn(compact ? "text-[10px]" : "text-xs")}>({categoryTemplates.length})</span>
                     </div>
-                    <div
-                      className={cn(
-                        "grid gap-4",
-                        compact
-                          ? "grid-cols-2 md:grid-cols-3"
-                          : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-                      )}
-                    >
+                    <div className={cn(
+                      "grid",
+                      compact
+                        ? "grid-cols-1 gap-2"
+                        : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                    )}>
                       {categoryTemplates.map((template) => (
                         <TemplateCard
                           key={template.id}
@@ -269,14 +330,12 @@ export function TemplatePicker({
                 )
               )
             ) : (
-              <div
-                className={cn(
-                  "grid gap-4",
-                  compact
-                    ? "grid-cols-2 md:grid-cols-3"
-                    : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-                )}
-              >
+              <div className={cn(
+                "grid",
+                compact
+                  ? "grid-cols-1 gap-2"
+                  : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+              )}>
                 {otherTemplates.map((template) => (
                   <TemplateCard
                     key={template.id}

@@ -14,7 +14,8 @@ import {
   Users,
   FolderClosed,
   UsersRound,
-  ArrowLeft,
+  FileText,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,9 +96,10 @@ export function ScheduleMeetingDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // Template selection state
-  type DialogStep = "template" | "customize" | "form";
-  const [dialogStep, setDialogStep] = useState<DialogStep>("template");
+  // Template selection state - starts directly with form, customize step only when template selected
+  type DialogStep = "customize" | "form";
+  const [dialogStep, setDialogStep] = useState<DialogStep>("form");
+  const [templateExpanded, setTemplateExpanded] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateWithItems | null>(null);
   const [meetingGoal, setMeetingGoal] = useState("");
   const [planningAnswers, setPlanningAnswers] = useState<Record<string, string>>({});
@@ -414,7 +416,8 @@ export function ScheduleMeetingDialog({
     setCalendarSyncResult(null);
     setIsSuccess(false);
     // Reset template state
-    setDialogStep("template");
+    setDialogStep("form");
+    setTemplateExpanded(false);
     setSelectedTemplate(null);
     setMeetingGoal("");
     setPlanningAnswers({});
@@ -431,17 +434,17 @@ export function ScheduleMeetingDialog({
     if (template) {
       // Go to customize step when a template is selected
       setDialogStep("customize");
-    } else {
-      // "Start from scratch" - go directly to form
-      setDialogStep("form");
-      setTitle("");
-      setDescription("");
-      setDuration(30);
-      setMeetingGoal("");
-      setPlanningAnswers({});
-      setMeetingSettings(null);
-      setAgendaItems([]);
+      setTemplateExpanded(false);
     }
+    // If null (deselect), just stay on form
+  };
+
+  // Clear selected template
+  const handleClearTemplate = () => {
+    setSelectedTemplate(null);
+    setMeetingGoal("");
+    setPlanningAnswers({});
+    setMeetingSettings(null);
   };
 
   // Handle customization completion
@@ -474,10 +477,11 @@ export function ScheduleMeetingDialog({
     setDialogStep("form");
   };
 
-  // Go back to template selection
-  const handleBackToTemplates = () => {
-    setDialogStep("template");
+  // Go back to form from customize step
+  const handleBackToForm = () => {
+    setDialogStep("form");
     setSelectedTemplate(null);
+    setTemplateExpanded(true);
   };
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -493,19 +497,15 @@ export function ScheduleMeetingDialog({
   // Determine dialog title based on step
   const getDialogTitle = () => {
     switch (dialogStep) {
-      case "template":
-        return "Choose a Template";
       case "customize":
         return "Customize Template";
       case "form":
-        return selectedTemplate ? "Schedule Meeting" : "Schedule a Meeting";
+        return "Schedule a Meeting";
     }
   };
 
   const getDialogDescription = () => {
     switch (dialogStep) {
-      case "template":
-        return "Start with a template or create a meeting from scratch.";
       case "customize":
         return "Customize the template before scheduling your meeting.";
       case "form":
@@ -517,10 +517,7 @@ export function ScheduleMeetingDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className={cn(
-        "max-h-[85vh] flex flex-col",
-        dialogStep === "template" ? "sm:max-w-[700px]" : "sm:max-w-[500px]"
-      )}>
+      <DialogContent className="max-h-[85vh] flex flex-col sm:max-w-[500px]">
         {/* Success State */}
         {isSuccess ? (
           <>
@@ -581,22 +578,6 @@ export function ScheduleMeetingDialog({
               )}
             </div>
           </>
-        ) : dialogStep === "template" ? (
-          /* Template Selection Step */
-          <>
-            <DialogHeader className="flex-shrink-0">
-              <DialogTitle>{getDialogTitle()}</DialogTitle>
-              <DialogDescription>{getDialogDescription()}</DialogDescription>
-            </DialogHeader>
-            <div className="py-4 overflow-y-auto flex-1 pr-2">
-              <TemplatePicker
-                selectedTemplateId={selectedTemplate?.id || null}
-                onSelectTemplate={handleSelectTemplate}
-                showScratchOption
-                compact
-              />
-            </div>
-          </>
         ) : dialogStep === "customize" && selectedTemplate ? (
           /* Template Customization Step */
           <>
@@ -607,7 +588,7 @@ export function ScheduleMeetingDialog({
             <div className="py-4 overflow-y-auto flex-1 pr-2">
               <TemplateCustomizer
                 template={selectedTemplate}
-                onBack={handleBackToTemplates}
+                onBack={handleBackToForm}
                 onApply={handleApplyTemplate}
                 teams={teams.map((t) => ({ id: t.id, name: t.name }))}
               />
@@ -617,22 +598,8 @@ export function ScheduleMeetingDialog({
           /* Form Step */
           <>
             <DialogHeader className="flex-shrink-0">
-              <div className="flex items-center gap-2">
-                {selectedTemplate && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    onClick={handleBackToTemplates}
-                  >
-                    <ArrowLeft className="size-4" />
-                  </Button>
-                )}
-                <div>
-                  <DialogTitle>{getDialogTitle()}</DialogTitle>
-                  <DialogDescription>{getDialogDescription()}</DialogDescription>
-                </div>
-              </div>
+              <DialogTitle>{getDialogTitle()}</DialogTitle>
+              <DialogDescription>{getDialogDescription()}</DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-2">
@@ -643,7 +610,65 @@ export function ScheduleMeetingDialog({
                 </div>
               )}
 
-          {/* Title */}
+              {/* Template Selection - Collapsible */}
+              {selectedTemplate ? (
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="size-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        Using template: {selectedTemplate.name}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-6"
+                      onClick={handleClearTemplate}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Collapsible open={templateExpanded} onOpenChange={setTemplateExpanded}>
+                  <div className="rounded-lg border">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <FileText className="size-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">
+                            Use a Template
+                          </span>
+                        </div>
+                        {templateExpanded ? (
+                          <ChevronUp className="size-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="size-4 text-muted-foreground" />
+                        )}
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="border-t px-4 pb-4 pt-2">
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Start with a pre-built template to save time and follow best practices.
+                        </p>
+                        <TemplatePicker
+                          selectedTemplateId={null}
+                          onSelectTemplate={handleSelectTemplate}
+                          showScratchOption={false}
+                          compact
+                        />
+                      </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              )}
+
+              {/* Title */}
           <div className="grid gap-2">
             <Label htmlFor="meeting-title">
               Meeting Title <span className="text-destructive">*</span>
