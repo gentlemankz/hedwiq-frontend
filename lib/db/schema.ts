@@ -1511,6 +1511,13 @@ export const agent = pgTable(
     model: text("model").notNull().default("gpt-4o"),
     /** Whether the agent is active and can be triggered */
     isActive: boolean("is_active").notNull().default(false),
+    /**
+     * Email domain allowlist for the sendEmail tool.
+     * If null/empty, emails can be sent to any domain.
+     * If set, only recipients with email addresses from these domains are allowed.
+     * Example: ["company.com", "partner.org"]
+     */
+    emailDomainAllowlist: text("email_domain_allowlist").array(),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

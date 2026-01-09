@@ -83,6 +83,13 @@ export interface Agent {
   model: AgentModel;
   /** Whether the agent is active and can be triggered */
   isActive: boolean;
+  /**
+   * Email domain allowlist for the sendEmail tool.
+   * If null/empty, emails can be sent to any domain.
+   * If set, only recipients with email addresses from these domains are allowed.
+   * Example: ["company.com", "partner.org"]
+   */
+  emailDomainAllowlist: string[] | null;
   /** Creation timestamp (ISO string) */
   createdAt: string;
   /** Last update timestamp (ISO string) */
@@ -349,6 +356,8 @@ export interface CreateAgentRequest {
   instructions: string;
   /** LLM model to use */
   model?: AgentModel;
+  /** Email domain allowlist for the sendEmail tool (null = allow all domains) */
+  emailDomainAllowlist?: string[] | null;
 }
 
 /**
@@ -372,6 +381,8 @@ export interface UpdateAgentRequest {
   model?: AgentModel;
   /** Whether the agent is active */
   isActive?: boolean;
+  /** Email domain allowlist for the sendEmail tool (null = allow all domains) */
+  emailDomainAllowlist?: string[] | null;
 }
 
 /**

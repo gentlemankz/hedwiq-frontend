@@ -1,367 +1,317 @@
 ### Reviwer1:
 
-Phase 2 Code Review: @ Mention System
+Phase 3 Code Review: Agent Execution Engine
 
   Executive Summary
 
-  Overall, the Phase 2 implementation is well-structured with good separation of concerns. However, I've identified several issues ranging from critical security concerns to minor optimizations.
+  The Phase 3 implementation is well-structured overall with good separation of concerns. However, I've identified several issues that need attention, ranging from security concerns to potential bugs and architectural improvements.
 
   ---
-  1. SECURITY ISSUES
+  1. Security Review
 
-  1.1 Critical: Regex ReDoS Vulnerability
+  🔴 Critical Issues
 
-  File: lib/agents/instruction-parser.ts:50
+  1.1 Missing Authorization Check in Tool Execution (executor.ts:228-244)
+  getMeeting: tool({
+    execute: async (input) => {
+      const { meetingId } = input;
+      const meeting = await getMeetingById(meetingId);  // No ownership check!
+  Issue: The getMeeting tool doesn't verify that the meeting belongs to the user. An agent could potentially access any meeting by ID.
 
-  const MENTION_REGEX = /@(?:"([^"]+)"|([A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_-]+)*))/g;
+  Fix: Add ownership verification:
+  const meeting = await getMeetingById(meetingId, context.userId);
 
-  Issue: The regex pattern (?:\s+[A-Za-z0-9_-]+)* can cause catastrophic backtracking with crafted input like @AAAAAAAAAAAAAAAAAAAAAAAAAAAA!. This is a potential Denial of Service (ReDoS) attack vector.
+  1.2 Email Recipient Validation (executor.ts:384-409)
+  sendEmail: tool({
+    inputSchema: z.object({
+      to: z.array(z.string().email()),
+  Issue: No validation to prevent sending emails to arbitrary recipients. An AI agent could potentially be manipulated to send spam or phishing emails.
 
-  Risk Level: High - Users can craft malicious input that freezes the browser.
+  Recommendation: Add allowlist validation or rate limiting for email recipients.
 
-  Recommendation: Add input length validation before regex execution or rewrite the regex to be non-backtracking:
-  // Limit check before regex
-  if (text.length > 10000) return [];
+  🟡 Medium Issues
 
-  // Or use possessive quantifier pattern
-  const SAFE_MENTION_REGEX = /@(?:"([^"]{1,100})"|([A-Za-z0-9_-]{1,50}(?:\s[A-Za-z0-9_-]{1,50}){0,5}))/g;
+  1.3 Potential Header Injection Residual (executor.ts:88-91)
+  const sanitizeEmail = (email: string) => email.replace(/[\r\n]/g, "").trim();
+  Issue: While sanitization exists, it only removes \r\n. Consider also handling other injection vectors like null bytes.
 
-  1.2 Medium: No Input Sanitization for Service Names
-
-  File: lib/agents/instruction-parser.ts:91-106
-
-  Service names from user input are directly compared but never sanitized. If AVAILABLE_SERVICES is ever modified to include special characters, this could cause issues.
-
-  ---
-  2. POTENTIAL BUGS
-
-  2.1 Race Condition in Blur Handler
-
-  File: components/agents/mention-input.tsx:253-257
-
-  const handleBlur = useCallback(() => {
-    setTimeout(() => {
-      setIsOpen(false);
-    }, 200);
-  }, []);
-
-  Issue: If the user quickly focuses back on the input within 200ms, the popup will still close. This timeout is also not cleaned up on unmount, which could cause a memory leak or state update on unmounted component.
-
-  Fix:
-  const blurTimeoutRef = useRef<NodeJS.Timeout>();
-
-  const handleBlur = useCallback(() => {
-    blurTimeoutRef.current = setTimeout(() => {
-      setIsOpen(false);
-    }, 200);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
-    };
-  }, []);
-
-  2.2 Stale Closure in insertMention
-
-  File: components/agents/mention-input.tsx:214-242
-
-  const insertMention = useCallback(
-    (entity: MentionableEntity) => {
-      if (mentionStart === null || !textareaRef.current) return;
-      const cursorPos = textareaRef.current.selectionStart;
-      // ...
-    },
-    [mentionStart, value, onChange, onMentionInsert]
-  );
-
-  Issue: The handleKeyDown function depends on insertMention but insertMention is not in its dependency array. This creates a stale closure where old insertMention is called.
-
-  Current (buggy):
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      // ...
-      if (suggestions[selectedIndex]) {
-        insertMention(suggestions[selectedIndex]); // Stale!
-      }
-    },
-    [isOpen, suggestions, selectedIndex] // Missing insertMention!
-  );
-
-  2.3 Index Calculation Bug in Command List
-
-  File: components/agents/mention-input.tsx:302-306
-
-  const actualIndex = suggestions.findIndex(
-    (s) => s.id === entity.id && s.type === entity.type
-  );
-
-  Issue: This recalculates the index inside the map iteration, which is O(n²) and produces wrong results because it searches the full suggestions array, not the filtered one. The keyboard navigation highlight won't match the visual grouping.
-
-  2.4 Missing Error State Handling in useMentionContext
-
-  File: hooks/use-mention-context.ts
-
-  The error state is set but never used in the consuming components. If API fails, users see no indication of the error.
+  1.4 API Key Exposure Risk (executor.ts:58-60)
+  const openai = createOpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  Issue: If OPENAI_API_KEY is undefined, this may cause unclear errors. Add validation.
 
   ---
-  3. PERFORMANCE ISSUES
+  2. Functionality Review
 
-  3.1 Unnecessary Re-renders
+  🔴 Bugs Found
 
-  File: components/agents/agent-instructions-panel.tsx:89-98
+  2.1 Race Condition in Execution Status (route.ts:62-76)
+  const execution = await createAgentExecution({ agentId, triggeredBy: "manual" });
+  await markExecutionStarted(execution.id);
+  // If server crashes here, execution stays in "running" forever
+  const result = await executeAgent(agent, execution, executorContext);
+  Issue: No cleanup mechanism for orphaned "running" executions.
 
-  const parsedInstructions = useMemo<ParsedInstructions | null>(() => {
-    if (!agent?.instructions) return null;
-    return parseInstructions(agent.instructions, mentionContext);
-  }, [agent?.instructions, mentionContext]);
+  Fix: Add a cron job or startup cleanup for stale executions.
 
-  Issue: mentionContext changes on every re-render because it's a new object from the hook. This causes parsedInstructions to recalculate even when the data hasn't changed.
+  2.2 Missing Transcript Access Control (executor.ts:297-318)
+  getMeetingTranscript: tool({
+    execute: async (input) => {
+      const { meetingId } = input;
+      const segments = await getMeetingTranscription(meetingId);  // No auth check
+  Issue: Same as getMeeting - no ownership verification.
 
-  Fix in hook:
-  // In useMentionContext, memoize properly
-  const context = useMemo<ParserContext>(
-    () => ({
-      folders,
-      teams,
-      services,
-    }),
-    [folders, teams, services] // Only change when data changes
-  );
+  🟡 Logic Issues
 
-  3.2 Redundant Filtering in Suggestion Groups
+  2.3 Team Tool Missing Ownership Check (executor.ts:328-341)
+  getTeam: tool({
+    execute: async (input) => {
+      const { teamId } = input;
+      const team = await getTeamWithMemberCount(teamId);  // Any team accessible
 
-  File: components/agents/mention-input.tsx:298-378
-
-  The suggestions array is filtered 6 times (2x per type: once for .some() check and once for .filter()). This could be optimized:
-
-  const grouped = useMemo(() => {
-    const folders = suggestions.filter(s => s.type === "folder");
-    const teams = suggestions.filter(s => s.type === "team");
-    const services = suggestions.filter(s => s.type === "service");
-    return { folders, teams, services };
-  }, [suggestions]);
-
-  3.3 New Array Creation on Every Render
-
-  File: lib/agents/instruction-parser.ts:458-466
-
-  const allEntities: MentionableEntity[] = [
-    ...context.folders,
-    ...context.teams,
-    ...AVAILABLE_SERVICES.map(...)
-  ];
-
-  This creates new arrays on every call to getMentionSuggestions. Consider caching if called frequently.
+  2.4 Step Count Limit (executor.ts:444)
+  stopWhen: stepCountIs(10),
+  Issue: Hardcoded limit of 10 steps. Consider making this configurable per agent or based on model.
 
   ---
-  4. CODE DUPLICATION
+  3. Performance & Efficiency
 
-  4.1 Duplicate Icon Logic
+  🟡 Issues
 
-  Files: mention-input.tsx:64-85 and mention-tag.tsx:61-86
+  3.1 Redundant Execution Record Creation (route.ts:57-63)
+  const execution = await createAgentExecution({ ... });
+  await markExecutionStarted(execution.id);
+  Issue: Two database calls where one could suffice. Consider creating with status: 'running' directly.
 
-  Both files have nearly identical getEntityIcon / getIcon functions:
+  3.2 Inefficient Token Counting (executor.ts:479-486)
+  const inputTokens = result.totalUsage?.inputTokens ?? 0;
+  const outputTokens = result.totalUsage?.outputTokens ?? 0;
+  const usage: AgentTokenUsage = {
+    promptTokens: inputTokens,
+    completionTokens: outputTokens,
+    totalTokens: inputTokens + outputTokens,
+  };
+  Issue: totalTokens is calculated but AI SDK likely already provides it. Minor redundancy.
 
-  // mention-input.tsx
-  function getEntityIcon(entity: MentionableEntity) { ... }
-
-  // mention-tag.tsx  
-  function getIcon(reference: ParsedReference) { ... }
-
-  Recommendation: Extract to a shared utility:
-  // lib/agents/ui-helpers.ts
-  export function getEntityIcon(type: string, name?: string): React.ReactNode { ... }
-
-  4.2 Duplicate Color Logic
-
-  Same pattern with getEntityColor and TYPE_COLORS constant. Both define blue for folders, violet for teams, emerald for services.
-
-  ---
-  5. ARCHITECTURE CONCERNS
-
-  5.1 Single Responsibility Violation
-
-  File: lib/agents/instruction-parser.ts
-
-  This 550+ line file handles:
-  1. Parsing logic
-  2. Validation logic
-  3. Autocomplete logic
-  4. Reference extraction
-
-  Recommendation: Split into separate modules:
-  lib/agents/
-  ├── parser.ts          # Core parsing
-  ├── validator.ts       # Validation
-  ├── autocomplete.ts    # Suggestion logic
-  ├── references.ts      # Reference extraction helpers
-  └── index.ts           # Re-exports
-
-  5.2 Missing Abstraction for API Fetching
-
-  File: hooks/use-mention-context.ts:46-59
-
-  Direct fetch() calls without abstraction. Should use a shared API client:
-
-  // Current
-  const [foldersResponse, teamsResponse] = await Promise.all([
-    fetch("/api/folders"),
-    fetch("/api/teams"),
-  ]);
-
-  // Better - use existing api utilities if available
-  const [folders, teams] = await Promise.all([
-    api.folders.list(),
-    api.teams.list(),
-  ]);
+  3.3 No Caching for Context Data (executor.ts:249-267)
+  The listUpcomingMeetings and listPastMeetings tools fetch data on each call. For agents making multiple similar queries, this creates redundant database calls.
 
   ---
-  6. TYPE SAFETY ISSUES
+  4. Architecture & SOLID Principles
 
-  6.1 Unsafe Type Assertions
+  🟡 Single Responsibility Violations
 
-  File: hooks/use-mention-context.ts:173-175
+  4.1 executor.ts is Too Large (553 lines)
+  This file handles:
+  - OpenAI model configuration
+  - MIME message creation
+  - Gmail API integration
+  - Tool definitions
+  - Execution orchestration
 
-  traverse(
-    team.subteams as Array<{...}>
-  );
+  Recommendation: Split into:
+  - lib/agents/models.ts - Model configuration
+  - lib/agents/gmail.ts - Gmail/email utilities
+  - lib/agents/tools/ - Individual tool files
+  - lib/agents/executor.ts - Orchestration only
 
-  Using as cast on unknown data from API. If the shape changes, this silently fails.
+  4.2 Mixed Concerns in Tool Results
+  // executor.ts:467-475
+  if (tc.toolName === "sendEmail" && toolCall.result) {
+    const emailResult = toolCall.result as { success?: boolean; recipients?: string[] };
+  Issue: Email tracking logic is embedded in the main execution loop. Should be abstracted.
 
-  6.2 Missing Null Checks
+  🟢 Good Practices Observed
 
-  File: components/agents/mention-tag.tsx:72-73
-
-  const serviceName = reference.name.toLowerCase();
-
-  No null check on reference.name. If name is undefined, this throws.
+  - Clear interface definitions (ExecutorContext, ExecutorResult)
+  - Good use of TypeScript for type safety
+  - Appropriate use of Zod for input validation in tools
 
   ---
-  7. MEMORY LEAK POTENTIAL
+  5. Resource Management
 
-  7.1 Timeout Not Cleaned Up
+  🟡 Issues
 
-  File: components/agents/mention-input.tsx:253-257
+  5.1 No Timeout on AI SDK Call (executor.ts:439-445)
+  const result = await generateText({
+    model: getModel(agent.model),
+    // No timeout configuration
+  Issue: If OpenAI API hangs, the request will hang indefinitely.
 
-  Already mentioned in bugs section - setTimeout without cleanup.
+  Fix: Add AbortController with timeout:
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  try {
+    const result = await generateText({ ..., abortSignal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 
-  7.2 Fetch Without Abort Controller
+  5.2 Gmail Token Refresh Not Handled (executor.ts:155-162)
+  const tokenResult = await getValidGmailToken(userId);
+  if (!tokenResult) {
+    return { success: false, error: "Gmail not connected..." };
+  }
+  Issue: If token expires mid-execution after multiple tool calls, later email attempts may fail. Consider pre-validating and refreshing.
 
-  File: hooks/use-mention-context.ts:44-97
+  ---
+  6. Code Duplication
 
-  const fetchData = useCallback(async () => {
-    const [foldersResponse, teamsResponse] = await Promise.all([
-      fetch("/api/folders"),
-      fetch("/api/teams"),
-    ]);
-    // ...
-  }, []);
+  🟡 Duplications Found
 
-  If component unmounts during fetch, the state setters will be called on unmounted component.
+  6.1 Repetitive Tool Response Structure
+  Each tool has similar error handling pattern:
+  if (!meeting) {
+    return { error: "Meeting not found" };
+  }
+  Recommendation: Create a helper function:
+  const toolResult = <T>(data: T | null, notFoundMsg: string) =>
+    data ? data : { error: notFoundMsg };
 
-  Fix:
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function fetchData() {
-      const [foldersRes, teamsRes] = await Promise.all([
-        fetch("/api/folders", { signal: controller.signal }),
-        fetch("/api/teams", { signal: controller.signal }),
-      ]);
-      // ...
+  6.2 Duplicate Status Update Patterns (route.ts:79-104)
+  if (result.success) {
+    const updatedExecution = await markExecutionCompleted(...);
+    if (!updatedExecution) {
+      return NextResponse.json({ error: "Failed to update execution record" }, { status: 500 });
     }
-
-    fetchData();
-
-    return () => controller.abort();
-  }, []);
-
-  ---
-  8. EDGE CASES NOT HANDLED
-
-  8.1 Empty Context Edge Case
-
-  File: lib/agents/instruction-parser.ts:70-152
-
-  If context.folders or context.teams is undefined (not empty array), buildNameMap will throw.
-
-  8.2 Unicode/Emoji in Mentions
-
-  The regex doesn't handle unicode characters in names. @Équipe or @チーム won't match.
-
-  8.3 Very Long Mentions
-
-  No length limit on quoted mentions: @"A very very very... (10000 chars)... long name" would pass.
+    return NextResponse.json({ execution: updatedExecution });
+  } else {
+    const updatedExecution = await markExecutionFailed(...);
+    // Same pattern repeated
+  }
+  Recommendation: Consolidate into single function.
 
   ---
-  9. USABILITY ISSUES
+  7. Over-Engineering Assessment
 
-  9.1 No Loading State for Context
+  🟢 Generally Appropriate
 
-  File: components/agents/mention-input.tsx
+  The implementation is appropriately sized for the feature scope. However:
 
-  When isMentionContextLoading is true, the component still shows the dropdown with empty results. Should show a loading indicator.
+  7.1 MIME Message Builder Could Use Library
+  The custom createMimeMessage function (lines 79-132) handles MIME encoding manually. Consider using nodemailer or similar for robustness.
 
-  9.2 Keyboard Selection Wrap-Around
-
-  File: components/agents/mention-input.tsx:186-194
-
-  Arrow navigation wraps from last to first, but the visual grouping (Folders/Teams/Services) doesn't align with the flat index, causing confusing UX.
+  7.2 Execution History UI Component
+  The agent-execution-history.tsx component is well-scoped and not over-engineered.
 
   ---
-  10. RECOMMENDATIONS SUMMARY
-  ┌─────────────┬────────────────────────────────┬────────────────────────┬──────┐
-  │  Priority   │             Issue              │          File          │ Line │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🔴 Critical │ ReDoS vulnerability            │ instruction-parser.ts  │ 50   │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🔴 High     │ Memory leak (setTimeout)       │ mention-input.tsx      │ 253  │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🔴 High     │ Stale closure in handleKeyDown │ mention-input.tsx      │ 210  │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🟡 Medium   │ Race condition in blur         │ mention-input.tsx      │ 253  │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🟡 Medium   │ Index calculation bug          │ mention-input.tsx      │ 302  │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🟡 Medium   │ Missing AbortController        │ use-mention-context.ts │ 44   │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🟢 Low      │ Code duplication (icons)       │ multiple               │ -    │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🟢 Low      │ Performance (filtering)        │ mention-input.tsx      │ 298  │
-  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
-  │ 🟢 Low      │ SRP violation                  │ instruction-parser.ts  │ -    │
-  └─────────────┴────────────────────────────────┴────────────────────────┴──────┘
-  ---
-  11. POSITIVE OBSERVATIONS
+  8. Memory Leak Analysis
 
-  ✅ Clean separation between parsing logic and UI
-  ✅ Proper use of TypeScript types
-  ✅ Good JSDoc documentation
-  ✅ Consistent code style and formatting
-  ✅ Proper use of React hooks patterns (useCallback, useMemo)
-  ✅ Accessibility-friendly Command component usage
-  ✅ Dark mode support in MentionTag colors
-  ✅ Good error display for unresolved references
+  🟢 No Obvious Leaks
+
+  The code doesn't hold long-lived references that would cause memory leaks. The execution is request-scoped and properly terminates.
+
+  🟡 Potential Issue
+
+  8.1 Large Transcript Loading (executor.ts:304-316)
+  const transcript = segments
+    .map((s) => `[${s.speakerName}]: ${s.text}`)
+    .join("\n");
+  Issue: For very long meetings, this could load extremely large strings into memory. Consider pagination or summarization.
+
+  ---
+  9. Edge Cases & Potential Bugs
+
+  🔴 Critical Edge Cases
+
+  9.1 Empty Instructions Execution (route.ts:76)
+  const result = await executeAgent(agent, execution, executorContext);
+  Issue: If agent.instructions is empty string, the AI will be prompted with empty instructions. Add validation:
+  if (!agent.instructions?.trim()) {
+    return NextResponse.json({ error: "Agent has no instructions" }, { status: 400 });
+  }
+
+  9.2 Null User Name (route.ts:69)
+  userName: session.user.name ?? "User",
+  Issue: Falls back to "User" but this appears in system prompt. Consider requiring name or using email.
+
+  🟡 Other Edge Cases
+
+  9.3 Tool Result Type Safety (executor.ts:461-462)
+  result: toolResult?.output,
+  Issue: output type is unknown. Should have better type guards.
+
+  9.4 Empty Email Recipients (executor.ts:398)
+  message: `Email sent via Gmail to ${to.length} recipient(s)`,
+  Issue: Zod requires array but doesn't enforce minimum length. Add .min(1).
+
+  9.5 GMT/Timezone Issues in formatTimestamp
+  // agent-execution-history.tsx:115-129
+  const d = new Date(date);
+  const now = new Date();
+  Issue: Using local time comparisons. Server and client may have different timezones causing inconsistent displays.
+
+  ---
+  10. Hidden Factors & Side Effects
+
+  🟡 Concerns
+
+  10.1 Gmail Rate Limits
+  The sendEmail tool doesn't track Gmail API usage. Heavy agent usage could hit Gmail rate limits, affecting other features.
+
+  10.2 OpenAI Cost Control
+  No cost tracking or budget limits per agent execution. A misbehaving agent could consume significant API credits.
+
+  10.3 Execution History Growth
+  // agent-execution-history.tsx - fetches recentExecutions
+  executions={agent?.recentExecutions ?? []}
+  Issue: If executions aren't pruned, the database and UI performance will degrade over time.
+
+  10.4 Cross-Feature Impact
+  The listMeetingsForUser function is shared with other features. Ensure any changes for agents don't break meeting list views.
+
+  ---
+  Summary Table
+  ┌───────────────┬──────────┬────────┬───────┐
+  │   Category    │ Critical │ Medium │ Minor │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Security      │ 2        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Functionality │ 2        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Performance   │ 0        │ 3      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Architecture  │ 0        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Resource Mgmt │ 0        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Duplication   │ 0        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Edge Cases    │ 2        │ 3      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Total         │ 6        │ 16     │ 0     │
+  └───────────────┴──────────┴────────┴───────┘
+  ---
+  Priority Fixes Recommended
+
+  1. [Critical] Add ownership verification to all tool executions (getMeeting, getMeetingTranscript, getTeam, listTeamMembers)
+  2. [Critical] Add email recipient validation/allowlist
+  3. [Critical] Add validation for empty instructions before execution
+  4. [High] Add execution timeout using AbortController
+  5. [High] Split executor.ts into smaller modules
+  6. [Medium] Add cleanup mechanism for orphaned executions
+  7. [Medium] Add minimum recipient validation for emails
 
 
 ### Code Reviewer2: 
 
- Findings from reviewing the Phase 2 uncommitted changes (agent instructions/mentions):
+• Findings
 
-  - [High] lib/agents/instruction-parser.ts:55 – Services are matched only by id (gmail, calendar, slack), but MentionInput
-    inserts the service display name (e.g., @"Google Calendar"). Calendar mentions will never resolve as services and end up
-    flagged as unresolved folders, so referencedServices and downstream tool availability will be wrong.
-  - [High] lib/agents/instruction-parser.ts:50 and lib/agents/instruction-parser.ts:498 – The mention regex and
-    formatMentionForInsert don’t escape double quotes. Folder/team names are allowed to contain quotes, so inserting them
-    produces invalid mention strings (e.g., @"Team "A"), and parsing will fail or misclassify those references.
-  - [Medium] lib/agents/instruction-parser.ts:515 – When a user types a quoted multi-word mention (@"Sales …),
-    getMentionQueryAtCursor returns a query that still includes the leading quote, so getMentionSuggestions yields no matches.
-    Autocomplete effectively breaks for the quoted workflow, which is the format we encourage for multi-word names.
-  - [Medium] hooks/use-mention-context.ts:40 and components/agents/agent-instructions-panel.tsx:88 – If fetching folders/teams
-    fails (401/500), the hook returns empty context silently. The panel still parses and surfaces “Unresolved references,”
-    implying user error when the data simply didn’t load. There’s no UI hint or retry gating, so users may save instructions
-    with missing references.
-  - [Low] components/agents/mention-tag.tsx:136 – Every mention tag instantiates its own TooltipProvider, creating many nested
-    providers for long instruction bodies. This adds unnecessary providers/DOM nodes and can interfere with global tooltip
-    behavior; prefer a single shared provider higher in the tree.
+  - High – lib/agents/executor.ts:223-361: Agent tools (getMeeting, getMeetingTranscript, getTeam, listTeamMembers) fetch data
+    by raw IDs with no ownership or membership checks. An agent (or a prompt injection) that guesses an ID can read meetings,
+    transcripts, or team rosters across accounts. Scope every tool to context.userId/membership before returning data.
+  - High – app/api/agents/[agentId]/execute/route.ts:62-110: If executeAgent throws before returning (network/OpenAI/runtime),
+    the catch block returns 500 without calling markExecutionFailed. The execution remains “running” indefinitely, skewing
+    history and preventing retry/cleanup. Fail the execution record in the catch (and include the error message) before
+    responding.
+  - Medium – lib/agents/executor.ts:297-317: getMeetingTranscript returns the full transcript. Large meetings will dump multi‑MB
+    text into tool results and the model prompt, driving token cost/timeouts and risking API limits. Consider paging, size caps,
+    or summarization before passing to the model.
+  - Medium – app/api/agents/[agentId]/execute/route.ts:79-104: Failed executions are returned with HTTP 200, so API clients
+    can’t distinguish success vs. failure from status codes and must inspect the body. If this isn’t intentional, respond with a
+    non‑2xx on failure or include a clear status flag.
+  - Low – lib/agents/executor.ts:57-69: getModel doesn’t guard against missing OPENAI_API_KEY or unknown model IDs. This will
+    throw later inside generateText, producing a generic failure. Validate configuration up front and surface a clearer error to
+    the caller.
+

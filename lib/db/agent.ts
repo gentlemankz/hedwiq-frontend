@@ -94,6 +94,7 @@ function rowToAgent(row: typeof agent.$inferSelect): Agent {
     referencedServices: row.referencedServices,
     model: row.model as AgentModel,
     isActive: row.isActive,
+    emailDomainAllowlist: row.emailDomainAllowlist,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -157,6 +158,61 @@ function rowToAgentExecution(row: typeof agentExecution.$inferSelect): AgentExec
 }
 
 // ============================================================================
+// Validation Helpers
+// ============================================================================
+
+/**
+ * Simple domain validation regex.
+ * Allows alphanumeric, hyphens, and dots. Must have at least one dot.
+ * Examples: "example.com", "sub.example.co.uk", "my-company.org"
+ */
+const DOMAIN_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/**
+ * Normalizes and validates an email domain allowlist.
+ * - Trims whitespace from each entry
+ * - Converts to lowercase
+ * - Filters out empty entries
+ * - Validates domain format
+ *
+ * @param domains - Array of domain strings to normalize
+ * @returns Normalized array, or null if input is null/empty
+ * @throws Error if any domain has invalid format
+ */
+function normalizeEmailDomainAllowlist(
+  domains: string[] | null | undefined
+): string[] | null {
+  if (!domains || domains.length === 0) {
+    return null;
+  }
+
+  const normalized: string[] = [];
+  const invalidDomains: string[] = [];
+
+  for (const domain of domains) {
+    const trimmed = domain.trim().toLowerCase();
+    if (trimmed === "") {
+      continue; // Skip empty entries
+    }
+
+    if (!DOMAIN_REGEX.test(trimmed)) {
+      invalidDomains.push(domain);
+    } else {
+      normalized.push(trimmed);
+    }
+  }
+
+  if (invalidDomains.length > 0) {
+    throw new Error(
+      `Invalid email domain format: ${invalidDomains.join(", ")}. ` +
+        `Domains should be like "example.com" or "sub.example.org".`
+    );
+  }
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+// ============================================================================
 // Agent CRUD Operations
 // ============================================================================
 
@@ -173,6 +229,7 @@ export async function createAgent(params: {
   referencedTeams?: string[];
   referencedServices?: string[];
   model?: AgentModel;
+  emailDomainAllowlist?: string[] | null;
 }): Promise<Agent> {
   const agentId = generateAgentId(params.userId);
   const normalizedName = params.name.trim();
@@ -203,6 +260,7 @@ export async function createAgent(params: {
         referencedServices: params.referencedServices ? normalizeServices(params.referencedServices) : null,
         model: params.model ?? "gpt-4o",
         isActive: false,
+        emailDomainAllowlist: normalizeEmailDomainAllowlist(params.emailDomainAllowlist),
       })
       .returning();
 
@@ -311,6 +369,7 @@ export async function updateAgent(
     referencedServices?: string[] | null;
     model?: AgentModel;
     isActive?: boolean;
+    emailDomainAllowlist?: string[] | null;
   }
 ): Promise<Agent | null> {
   const updateData: Partial<typeof agent.$inferInsert> = {
@@ -342,6 +401,9 @@ export async function updateAgent(
   }
   if (updates.isActive !== undefined) {
     updateData.isActive = updates.isActive;
+  }
+  if (updates.emailDomainAllowlist !== undefined) {
+    updateData.emailDomainAllowlist = normalizeEmailDomainAllowlist(updates.emailDomainAllowlist);
   }
 
   const [row] = await db
@@ -1080,7 +1142,8 @@ export async function markExecutionCompleted(
  */
 export async function markExecutionFailed(
   executionId: string,
-  errorMessage: string
+  errorMessage: string,
+  outputResult?: AgentExecutionOutputResult
 ): Promise<AgentExecution | null> {
   const startTime = await db
     .select({ startedAt: agentExecution.startedAt })
@@ -1100,6 +1163,7 @@ export async function markExecutionFailed(
       completedAt: now,
       durationMs,
       errorMessage,
+      outputResult: outputResult ?? null,
     })
     .where(eq(agentExecution.id, executionId))
     .returning();
@@ -1162,6 +1226,75 @@ export async function deleteOldExecutions(
     .returning({ id: agentExecution.id });
 
   return result.length;
+}
+
+/**
+ * Cleans up stale "running" executions that have been stuck for too long.
+ * This handles cases where the server crashed or timed out before the catch block ran.
+ *
+ * @param staleThresholdMs - Time in ms after which a running execution is considered stale (default: 5 minutes)
+ * @returns The number of executions that were marked as failed
+ */
+export async function cleanupStaleExecutions(
+  staleThresholdMs: number = 5 * 60 * 1000 // 5 minutes default
+): Promise<{ cleanedCount: number; executionIds: string[] }> {
+  const staleThreshold = new Date(Date.now() - staleThresholdMs);
+  const completedAt = new Date();
+
+  // First, find all stale executions to calculate their durations
+  const staleExecutions = await db
+    .select({
+      id: agentExecution.id,
+      startedAt: agentExecution.startedAt,
+    })
+    .from(agentExecution)
+    .where(
+      and(
+        eq(agentExecution.status, "running"),
+        lt(agentExecution.startedAt, staleThreshold)
+      )
+    );
+
+  if (staleExecutions.length === 0) {
+    return { cleanedCount: 0, executionIds: [] };
+  }
+
+  // Update each stale execution with its calculated duration
+  const executionIds: string[] = [];
+  for (const execution of staleExecutions) {
+    const durationMs = execution.startedAt
+      ? completedAt.getTime() - execution.startedAt.getTime()
+      : null;
+
+    await db
+      .update(agentExecution)
+      .set({
+        status: "failed",
+        completedAt,
+        durationMs,
+        errorMessage: "Execution timed out or was interrupted unexpectedly",
+      })
+      .where(eq(agentExecution.id, execution.id));
+
+    executionIds.push(execution.id);
+  }
+
+  return {
+    cleanedCount: executionIds.length,
+    executionIds,
+  };
+}
+
+/**
+ * Gets count of currently running executions (for monitoring).
+ */
+export async function countRunningExecutions(): Promise<number> {
+  const [result] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(agentExecution)
+    .where(eq(agentExecution.status, "running"));
+
+  return result?.count ?? 0;
 }
 
 // ============================================================================

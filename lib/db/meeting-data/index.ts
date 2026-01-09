@@ -44,6 +44,7 @@ export {
 export {
   saveTranscriptionSegments,
   getMeetingTranscription,
+  getMeetingTranscriptionLimited,
 } from "./transcription";
 
 // ============================================================================

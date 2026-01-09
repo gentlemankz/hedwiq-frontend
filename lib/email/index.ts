@@ -121,6 +121,68 @@ async function sendEmailsInBatches<T extends MeetingInvitee>(
 }
 
 // ============================================================================
+// Generic Email Sending
+// ============================================================================
+
+/**
+ * Options for sending a generic email.
+ */
+export interface GenericEmailOptions {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  replyTo?: string;
+}
+
+/**
+ * Send a generic email via Resend.
+ * Used by agents for sending custom emails.
+ */
+export async function sendGenericEmail(
+  options: GenericEmailOptions
+): Promise<SendInvitationResult> {
+  const resend = getResend();
+  if (!resend) {
+    console.warn("RESEND_API_KEY not configured, skipping email");
+    return {
+      success: false,
+      error: "Email service not configured",
+    };
+  }
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: Array.isArray(options.to) ? options.to : [options.to],
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+      replyTo: options.replyTo,
+    });
+
+    if (error) {
+      console.error("Failed to send generic email:", error);
+      return {
+        success: false,
+        error: error.message || "Failed to send email",
+      };
+    }
+
+    return {
+      success: true,
+      messageId: data?.id,
+    };
+  } catch (error) {
+    console.error("Error sending generic email:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+// ============================================================================
 // Email Sending Functions
 // ============================================================================
 

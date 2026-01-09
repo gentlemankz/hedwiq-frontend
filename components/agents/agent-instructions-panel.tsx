@@ -19,6 +19,7 @@ import { AGENT_LIMITS } from "@/types/agent";
 import type { AgentWithDetails, ParsedInstructions } from "@/types/agent";
 import { MentionInput } from "./mention-input";
 import { TextWithMentions } from "./mention-tag";
+import { AgentExecutionHistory } from "./agent-execution-history";
 import { useMentionContext } from "@/hooks/use-mention-context";
 import {
   parseInstructions,
@@ -407,9 +408,18 @@ export function AgentInstructionsPanel({
             )}
           </section>
 
-          {/* Activity Section */}
+          {/* Execution History Section */}
           <section className="mt-10 pt-8 border-t">
-            <h2 className="text-base font-medium mb-4">Activity</h2>
+            <h2 className="text-base font-medium mb-4">Execution History</h2>
+            <AgentExecutionHistory
+              executions={agent?.recentExecutions ?? []}
+              maxVisible={5}
+            />
+          </section>
+
+          {/* Activity Section */}
+          <section className="mt-8 pt-6 border-t">
+            <h2 className="text-sm font-medium text-muted-foreground mb-3">Activity</h2>
             <div className="space-y-3">
               {/* Creation activity */}
               {agent && (
@@ -426,34 +436,6 @@ export function AgentInstructionsPanel({
                     </span>
                   </div>
                 </div>
-              )}
-
-              {/* Recent executions would go here */}
-              {agent?.recentExecutions && agent.recentExecutions.length > 0 && (
-                agent.recentExecutions.slice(0, 3).map((execution) => (
-                  <div key={execution.id} className="flex items-center gap-3 text-sm">
-                    <div className={cn(
-                      "flex size-8 items-center justify-center rounded-full",
-                      execution.status === "completed" ? "bg-green-100 dark:bg-green-950" :
-                      execution.status === "failed" ? "bg-red-100 dark:bg-red-950" :
-                      "bg-muted"
-                    )}>
-                      <Play className={cn(
-                        "size-4",
-                        execution.status === "completed" ? "text-green-600 dark:text-green-400" :
-                        execution.status === "failed" ? "text-red-600 dark:text-red-400" :
-                        "text-muted-foreground"
-                      )} />
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Agent {execution.status}</span>
-                      <span className="text-muted-foreground">
-                        {" · "}
-                        {execution.completedAt ? formatRelativeTime(execution.completedAt) : "Running..."}
-                      </span>
-                    </div>
-                  </div>
-                ))
               )}
             </div>
           </section>
