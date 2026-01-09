@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/cleanup-executions",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/agents/cron",
+      "schedule": "* * * * *"
     }
   ]
 }
