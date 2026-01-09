@@ -1446,3 +1446,282 @@ export const webhookLog = pgTable(
     index("idx_webhook_log_success").on(table.success),
   ]
 );
+
+// ============================================================================
+// Agent Builder Tables (Phase 1 - Agent Builder Feature)
+// ============================================================================
+
+/**
+ * Agent schedule type - defines when an agent runs.
+ */
+export type AgentScheduleType = "once" | "hourly" | "daily" | "weekly" | "monthly";
+
+/**
+ * Agent trigger type - defines what event triggers an agent.
+ */
+export type AgentTriggerType = "meeting_end" | "meeting_start" | "new_meeting_in_folder" | "manual";
+
+/**
+ * Agent execution triggered by type.
+ */
+export type AgentExecutionTriggeredBy = "schedule" | "trigger" | "manual";
+
+/**
+ * Agent execution status.
+ */
+export type AgentExecutionStatus = "pending" | "running" | "completed" | "failed";
+
+/**
+ * Agent - Core entity for user-created AI agents.
+ * Agents automate meeting-related workflows using natural language instructions
+ * with @ mentions to reference folders, teams, and services.
+ *
+ * Example instruction:
+ * "Check latest meeting from @General folder, summarize key points,
+ *  send to @Engineering team via @Gmail"
+ */
+export const agent = pgTable(
+  "agent",
+  {
+    /** Unique agent identifier (e.g., agent-{userId}-{timestamp}) */
+    id: text("id").primaryKey(),
+    /** User who owns this agent */
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+
+    // Basic info
+    /** Agent name (3-100 chars) */
+    name: text("name").notNull(),
+    /** Optional description of what this agent does */
+    description: text("description"),
+    /** Natural language instructions with @ mentions */
+    instructions: text("instructions").notNull(),
+
+    // Parsed references (extracted from instructions for quick lookups)
+    /** Referenced folder IDs (extracted from @ mentions like @General) */
+    referencedFolders: text("referenced_folders").array(),
+    /** Referenced team IDs (extracted from @ mentions like @Marketing) */
+    referencedTeams: text("referenced_teams").array(),
+    /** Referenced services (extracted from @ mentions like @Gmail, @Calendar) */
+    referencedServices: text("referenced_services").array(),
+
+    // Configuration
+    /** LLM model to use: gpt-4o (default) */
+    model: text("model").notNull().default("gpt-4o"),
+    /** Whether the agent is active and can be triggered */
+    isActive: boolean("is_active").notNull().default(false),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_user").on(table.userId),
+    index("idx_agent_active").on(table.userId, table.isActive),
+  ]
+);
+
+/**
+ * Agent Schedule - Time-based scheduling for agent execution.
+ * Supports one-time and recurring schedules (hourly, daily, weekly, monthly).
+ */
+export const agentSchedule = pgTable(
+  "agent_schedule",
+  {
+    /** Unique schedule identifier (e.g., sched-{agentId}-{timestamp}) */
+    id: text("id").primaryKey(),
+    /** Parent agent */
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agent.id, { onDelete: "cascade" }),
+
+    // Schedule type
+    /** Type: once, hourly, daily, weekly, monthly */
+    scheduleType: text("schedule_type").notNull(),
+
+    // For 'once': specific datetime
+    /** Specific datetime for one-time schedules */
+    scheduledAt: timestamp("scheduled_at"),
+
+    // For recurring: cron-like config
+    /** Hour of day (0-23) for daily/weekly/monthly */
+    hour: integer("hour"),
+    /** Minute of hour (0-59) */
+    minute: integer("minute"),
+    /** Day of week (0=Sunday, 6=Saturday) for weekly schedules */
+    dayOfWeek: integer("day_of_week"),
+    /** Day of month (1-31) for monthly schedules */
+    dayOfMonth: integer("day_of_month"),
+    /** Timezone for schedule calculations (IANA format) */
+    timezone: text("timezone").default("UTC"),
+
+    // Tracking
+    /** When the schedule last ran successfully */
+    lastRunAt: timestamp("last_run_at"),
+    /** Calculated next run time (updated after each run) */
+    nextRunAt: timestamp("next_run_at"),
+    /** Whether this schedule is enabled */
+    isEnabled: boolean("is_enabled").notNull().default(true),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_schedule_agent").on(table.agentId),
+    index("idx_agent_schedule_next_run").on(table.nextRunAt),
+    index("idx_agent_schedule_enabled").on(table.isEnabled, table.nextRunAt),
+  ]
+);
+
+/**
+ * Agent Trigger - Event-based triggers for agent execution.
+ * Agents can be triggered by meeting events or run manually.
+ *
+ * Trigger types:
+ * - meeting_end: When a meeting session ends
+ * - meeting_start: When a meeting session starts
+ * - new_meeting_in_folder: When a new meeting is added to a folder
+ * - manual: Only triggered by user clicking "Run Now"
+ */
+export const agentTrigger = pgTable(
+  "agent_trigger",
+  {
+    /** Unique trigger identifier (e.g., trig-{agentId}-{timestamp}) */
+    id: text("id").primaryKey(),
+    /** Parent agent */
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agent.id, { onDelete: "cascade" }),
+
+    // Trigger type
+    /** Event type that triggers the agent */
+    triggerType: text("trigger_type").notNull(),
+
+    // Optional: scope trigger to specific folder/team
+    /** Limit trigger to meetings in this folder (null = all folders) */
+    scopeFolderId: text("scope_folder_id").references(() => meetingFolder.id, {
+      onDelete: "set null",
+    }),
+    /** Limit trigger to meetings involving this team (null = all teams) */
+    scopeTeamId: text("scope_team_id").references(() => team.id, {
+      onDelete: "set null",
+    }),
+
+    /** Whether this trigger is enabled */
+    isEnabled: boolean("is_enabled").notNull().default(true),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_trigger_agent").on(table.agentId),
+    index("idx_agent_trigger_type").on(table.triggerType),
+    index("idx_agent_trigger_folder").on(table.scopeFolderId),
+    index("idx_agent_trigger_team").on(table.scopeTeamId),
+    index("idx_agent_trigger_enabled_type").on(table.isEnabled, table.triggerType),
+  ]
+);
+
+/**
+ * Agent Execution input context structure.
+ * What data was passed to the agent for execution.
+ */
+export interface AgentExecutionInputContext {
+  /** Meeting IDs that were processed */
+  meetingIds?: string[];
+  /** Folder IDs that were queried */
+  folderIds?: string[];
+  /** Team IDs that were involved */
+  teamIds?: string[];
+  /** Services that were used */
+  services?: string[];
+  /** Triggering event details */
+  triggerEvent?: {
+    type: string;
+    meetingId?: string;
+    folderId?: string;
+  };
+}
+
+/**
+ * Agent Execution output result structure.
+ * What the agent produced during execution.
+ */
+export interface AgentExecutionOutputResult {
+  /** Text output from the agent */
+  text?: string;
+  /** Tool calls made during execution */
+  toolCalls?: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    result?: unknown;
+  }>;
+  /** Token usage statistics */
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  /** Emails sent during execution */
+  emailsSent?: Array<{
+    to: string[];
+    subject: string;
+    gmailMessageId?: string;
+  }>;
+}
+
+/**
+ * Agent Execution - Tracks individual agent runs.
+ * Records context, results, and timing for audit and debugging.
+ */
+export const agentExecution = pgTable(
+  "agent_execution",
+  {
+    /** Unique execution identifier (e.g., exec-{agentId}-{timestamp}) */
+    id: text("id").primaryKey(),
+    /** Parent agent */
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agent.id, { onDelete: "cascade" }),
+
+    // Execution context
+    /** What triggered this execution: schedule, trigger, or manual */
+    triggeredBy: text("triggered_by").notNull(),
+    /** Reference to schedule if triggered by schedule */
+    scheduleId: text("schedule_id").references(() => agentSchedule.id, {
+      onDelete: "set null",
+    }),
+    /** Reference to trigger if triggered by trigger */
+    triggerId: text("trigger_id").references(() => agentTrigger.id, {
+      onDelete: "set null",
+    }),
+
+    // Status
+    /** Current execution status */
+    status: text("status").notNull().default("pending"),
+
+    // Results
+    /** What data was passed to the agent */
+    inputContext: jsonb("input_context").$type<AgentExecutionInputContext>(),
+    /** What the agent produced */
+    outputResult: jsonb("output_result").$type<AgentExecutionOutputResult>(),
+    /** Error message if execution failed */
+    errorMessage: text("error_message"),
+
+    // Timing
+    /** When execution started */
+    startedAt: timestamp("started_at"),
+    /** When execution completed */
+    completedAt: timestamp("completed_at"),
+    /** Execution duration in milliseconds */
+    durationMs: integer("duration_ms"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_execution_agent").on(table.agentId),
+    index("idx_agent_execution_status").on(table.status),
+    index("idx_agent_execution_triggered_by").on(table.triggeredBy),
+    index("idx_agent_execution_created").on(table.createdAt),
+    // Composite index for listing recent executions by agent
+    index("idx_agent_execution_agent_created").on(table.agentId, table.createdAt),
+  ]
+);

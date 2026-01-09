@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import type { AgentSchedule, AgentExecutionStatus } from "@/types/agent"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -235,4 +236,68 @@ export function formatMeetingTime(dateString: string | null): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+// ============================================================================
+// Agent Execution Utilities
+// ============================================================================
+
+/**
+ * Formats an execution duration in milliseconds for display.
+ * @param ms - Duration in milliseconds (or null)
+ * @returns Formatted duration string (e.g., "500ms", "1.5s", "2m 30s")
+ */
+export function formatExecutionDuration(ms: number | null): string {
+  if (ms === null) return "-";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+}
+
+/**
+ * Gets a human-readable description of an agent schedule.
+ * @param schedule - The agent schedule object
+ * @returns Human-readable description string
+ */
+export function describeSchedule(schedule: AgentSchedule): string {
+  switch (schedule.scheduleType) {
+    case "once":
+      if (schedule.scheduledAt) {
+        return `Once at ${new Date(schedule.scheduledAt).toLocaleString()}`;
+      }
+      return "Once (time not set)";
+    case "hourly": {
+      const minute = schedule.minute ?? 0;
+      return `Every hour at :${minute.toString().padStart(2, "0")}`;
+    }
+    case "daily": {
+      const hour = schedule.hour ?? 9;
+      const min = schedule.minute ?? 0;
+      return `Daily at ${hour.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
+    }
+    case "weekly": {
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const day = days[schedule.dayOfWeek ?? 1];
+      const h = schedule.hour ?? 9;
+      const m = schedule.minute ?? 0;
+      return `Every ${day} at ${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+    }
+    case "monthly": {
+      const dom = schedule.dayOfMonth ?? 1;
+      const hr = schedule.hour ?? 9;
+      const mn = schedule.minute ?? 0;
+      return `Monthly on day ${dom} at ${hr.toString().padStart(2, "0")}:${mn.toString().padStart(2, "0")}`;
+    }
+    default:
+      return "Unknown schedule";
+  }
+}
+
+/**
+ * Checks if an agent execution is still in progress (for polling).
+ * @param status - The execution status
+ * @returns True if execution is pending or running
+ */
+export function isExecutionInProgress(status: AgentExecutionStatus): boolean {
+  return status === "pending" || status === "running";
 }
