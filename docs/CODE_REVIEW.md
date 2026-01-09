@@ -1,265 +1,355 @@
 ### Reviwer1:
 
-Code Review: Phase 4 - Team Templates Implementation
+ Comprehensive Code Review: Agent Builder Phase 1 Parts 3 & 4 (UI)
 
   1. Functionality
 
-  ✅ Correct Implementation:
-  - Permission system properly restricts template management to owners and admins
-  - Team templates are correctly separated and displayed prominently in the picker
-  - CRUD operations (create, edit, delete) are implemented with proper API calls
-  - Template scope is correctly set to "team" with the teamId when creating team templates
+  Positive Aspects
 
-  ⚠️ Issues Found:
+  - Core CRUD operations for agents are properly implemented
+  - URL-based agent selection with ?agentId= query parameter works correctly
+  - Inline editing for name and instructions with save/cancel functionality
+  - Proper loading and empty states throughout components
 
-  1. Missing optimistic update handling in TeamTemplatesSection (team-templates-section.tsx:150-165):
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    setIsDeleting(true);
-    try {
-      await deleteTemplate(deleteId);
-      setDeleteId(null);
-    } catch (error) {
-      console.error("Failed to delete template:", error);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-  The error is caught but not displayed to the user. Users won't know if deletion failed.
+  Issues Found
 
-  2. Race condition in template creation (team-templates-section.tsx:115-127):
-  const handleCreate = async () => {
-    const data = getFormData();
-    if (!data) return;
+  Issue 1.1: Unused AgentListPanel Component
+  - agent-list-panel.tsx (346 lines) is exported but never used
+  - The sidebar section (agent-sidebar-section.tsx) is used instead
+  - This creates dead code in the bundle
 
-    try {
-      await createTemplate({
-        ...data,
-        scope: "team",
-        teamId: team.id,
-      });
-      setIsCreateOpen(false);
-      resetForm();
-    } catch (error) {
-      console.error("Failed to create template:", error);
-    }
-  };
-  If user clicks create multiple times rapidly, multiple templates could be created. No loading state prevents double-submission.
+  Issue 1.2: Missing Error Feedback to Users
+  - agent-context.tsx:127-129 - Errors are only logged to console, no toast/notification
+  } catch (err) {
+    console.error("[AgentContext] Failed to fetch agent details:", err);
+  }
+  - Same pattern at lines 158, 192, 221, 250
+
+  Issue 1.3: Run Agent Endpoint Missing Check
+  - agents/page.tsx:38-51 - The run agent handler assumes the endpoint exists but Phase 3 mentions it's not implemented yet
 
   ---
   2. Readability and Maintainability
 
-  ✅ Good Practices:
-  - Clear component naming (TeamTemplatesSection, TeamTemplateCard)
-  - Props interfaces are well-defined
-  - Consistent use of TypeScript types
-  - Logical file organization
+  Positive Aspects
 
-  ⚠️ Issues Found:
+  - Clear component structure with section comments
+  - Consistent naming conventions following project patterns
+  - TypeScript interfaces well-defined at file top
+  - Logical grouping with // ============================================================================
 
-  1. Magic numbers (team-templates-section.tsx:259):
-  <span>{template.agendaItems?.length ?? 0} items</span>
-  Consider extracting agenda item count logic similar to template-card.tsx:25.
+  Issues Found
 
-  2. Inconsistent error message handling:
-  - template-picker.tsx:185-186 shows error: <EmptyDescription>{error}</EmptyDescription>
-  - team-templates-section.tsx logs to console but doesn't show errors to users
+  Issue 2.1: Magic Strings for Model Options
+  - agent-settings-panel.tsx:52-56 - Model options hardcoded inline
+  const modelOptions = [
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+    // ...
+  ];
+  - Should use MODEL_LABELS constant from types/agent.ts:680-686
 
-  3. Component size - TeamTemplatesSection at 365 lines handles both list display and card rendering. Consider extracting TeamTemplateCard to a separate file for better maintainability.
+  Issue 2.2: Duplicated Time Formatting Functions
+  - agent-instructions-panel.tsx:146-156 - formatRelativeTime()
+  - agent-instructions-panel.tsx:429-440 - formatCreationTime()
+  - These serve similar purposes and could be consolidated
+
+  Issue 2.3: Inconsistent Section Keys
+  - agent-sidebar-section.tsx:55 uses "agents"
+  - sidebar-context.tsx uses string literals like "past-meetings", "teams"
+  - Consider using an enum or constants for section keys
 
   ---
   3. Security
 
-  ✅ Good Practices:
-  - Permission checks use canManageTemplates before showing edit/delete actions
-  - Role-based access control properly configured in ROLE_PERMISSIONS
+  Positive Aspects
 
-  ⚠️ Issues Found:
+  - No direct SQL queries or dangerous operations
+  - Uses fetch API with proper endpoint structure
+  - No client-side credential handling
 
-  1. Client-side only permission check (team-templates-section.tsx:191-211):
-  {canManageTemplates && (
-    <DropdownMenu>
-      ...
-      <DropdownMenuItem onClick={() => handleStartEdit(template)}>
-  This only hides UI elements. The API should also validate permissions server-side (verify this exists in backend).
+  Issues Found
 
-  2. No validation of teamId ownership - When creating a template with teamId: team.id, ensure the backend validates the user is actually a member of that team with appropriate permissions.
+  Issue 3.1: No Input Sanitization on Instructions
+  - agent-instructions-panel.tsx:320 - User-provided instructions are stored directly
+  - While limits exist (AGENT_LIMITS.MAX_INSTRUCTIONS_LENGTH), no XSS prevention on display
+
+  Issue 3.2: Agent ID from URL Not Validated
+  - agents/page.tsx:62-66 - Agent ID from query params used directly
+  const agentId = searchParams.get("agentId");
+  if (agentId && agentId !== selectedAgentId) {
+    selectAgent(agentId);
+  }
+  - Should validate UUID format before API call
 
   ---
   4. Performance and Efficiency
 
-  ✅ Good Practices:
-  - useMemo used for filtering team/other templates in template-picker.tsx:61-74
-  - Debounced search in template-picker.tsx:45-51
+  Positive Aspects
 
-  ⚠️ Issues Found:
+  - Proper use of useCallback for handlers in context
+  - useMemo for context value in agent-context.tsx:267-283
+  - Conditional fetching with refs to prevent duplicate calls
 
-  1. Unnecessary re-renders in TeamTemplatesSection:
-  const handleStartEdit = (template: TemplateWithItems) => {
-    setEditingTemplate(template);
-    setIsEditOpen(true);
-  };
-  Each state setter triggers a re-render. Consider combining into single state object:
-  const [editState, setEditState] = useState<{template: TemplateWithItems | null, isOpen: boolean}>({template: null, isOpen: false});
+  Issues Found
 
-  2. Missing memoization in TeamTemplatesSection - The templates array from useTemplates is used directly without memoization, causing potential unnecessary re-renders of child components.
-  3. Redundant iteration in template-picker.tsx:61-74:
-  for (const template of templates) {
-    if (template.scope === "team") {
-      team.push(template);
-    } else {
-      other.push(template);
-    }
-  }
-  Then again in groupedTemplates at lines 77-90. Consider doing single-pass categorization.
+  Issue 4.1: Unnecessary Re-renders in AgentSidebarItem
+  - agent-sidebar-section.tsx:130-200 - Not memoized, unlike TeamSidebarItem
+  - Compare to team-sidebar-item.tsx which uses React.memo()
+
+  Issue 4.2: parseSteps Called on Every Render
+  - agent-instructions-panel.tsx:222
+  const steps = agent ? parseSteps(agent.instructions) : [];
+  - Should be memoized with useMemo
+
+  Issue 4.3: Multiple Context Re-renders
+  - agent-context.tsx triggers re-renders on every state change
+  - The context value object could be split into stable/unstable parts
 
   ---
   5. Resource Management
 
-  ✅ Good Practices:
-  - AbortController pattern used in team-detail-view.tsx for fetch cleanup
-  - mountedRef prevents state updates after unmount
+  Positive Aspects
 
-  ⚠️ Issues Found:
+  - useRef used to track fetch state and prevent race conditions
+  - Proper cleanup in useEffect dependencies
 
-  1. Missing cleanup in useTemplates hook usage (team-templates-section.tsx:39-43):
-  const { templates, isLoading, error, createTemplate, updateTemplate, deleteTemplate, refetch } = useTemplates({
-    scope: "team",
-    teamId: team.id,
-  });
-  If the hook doesn't handle cleanup internally and the component unmounts during a fetch, it could cause memory issues. Verify useTemplates hook implementation.
+  Issues Found
 
-  2. No AbortController for template operations:
-  const handleCreate = async () => {
-    // ... no abort handling
-    await createTemplate({...});
-  };
-  If user navigates away during create/update/delete, the promise continues executing.
+  Issue 5.1: No Abort Controller for Fetch Requests
+  - agent-context.tsx:100-133 - Long-running fetches can't be cancelled
+  const fetchAgentDetails = useCallback(async (agentId: string) => {
+    const response = await fetch(`/api/agents/${agentId}`);
+    // No abort signal
+  }, []);
+  - If component unmounts during fetch, response handling continues
+
+  Issue 5.2: Missing Cleanup for Agent Selection Effect
+  - agents/page.tsx:61-66 - Effect doesn't clean up on unmount
+  useEffect(() => {
+    const agentId = searchParams.get("agentId");
+    if (agentId && agentId !== selectedAgentId) {
+      selectAgent(agentId);
+    }
+  }, [searchParams, selectedAgentId, selectAgent]);
 
   ---
   6. Code Duplications
 
-  ⚠️ Issues Found:
+  Issues Found
 
-  1. Duplicate card rendering logic - TeamTemplateCard in team-templates-section.tsx:173-271 duplicates much of TemplateCard in template-card.tsx:
+  Issue 6.1: Duplicate Delete Confirmation Dialog
+  - agent-list-panel.tsx:279-323 - AlertDialog for delete confirmation
+  - agent-sidebar-section.tsx:200-244 - Nearly identical AlertDialog
+  - Should extract to DeleteAgentDialog component
 
-  Both have:
-  - Same badge rendering pattern
-  - Same duration/items display
-  - Same hover states and selection styling
+  Issue 6.2: Duplicate Agent Item Rendering Logic
+  - agent-list-panel.tsx:149-235 - AgentNavItem component
+  - agent-sidebar-section.tsx:130-198 - AgentSidebarItem component
+  - Both render agent with dropdown menu, similar structure
 
-  Recommendation: Extend TemplateCard to accept action slots or use composition:
-  <TemplateCard template={template} actions={canManageTemplates && <DropdownMenu>...</DropdownMenu>} />
-
-  2. Duplicate grid class strings:
-  - template-picker.tsx:138,219-224,251-256,272-278
-  - team-templates-section.tsx:81
-
-  Consider extracting to a shared constant or utility.
+  Issue 6.3: Duplicate Loading State Handling
+  - Similar loading spinner patterns across:
+    - agent-instructions-panel.tsx:182-189
+    - agent-instructions-panel.tsx:211-219
+    - agent-settings-panel.tsx:120-127
+    - agent-list-panel.tsx:256-261
 
   ---
-  7. Over-Engineering/Useless Code
+  7. Over-Engineering / Unused Code
 
-  ✅ Generally well-balanced implementation
+  Issues Found
 
-  ⚠️ Minor Issues:
+  Issue 7.1: Entire AgentListPanel is Unused
+  - agent-list-panel.tsx - 346 lines of unused code
+  - The sidebar section handles agent listing instead
+  - Should be removed or marked for future use
 
-  1. Unused import - Check if TemplateScope is actually used in template-picker.tsx:19 (imported but may only be used for type inference).
-  2. Unnecessary conditional in template-picker.tsx:192:
-  {!error && templates.length === 0 && !showScratchOption && (
-  The !showScratchOption condition seems overly specific. If there are no templates and no scratch option, users have no way forward regardless of error state.
+  Issue 7.2: Builder Tab Placeholder
+  - agent-settings-panel.tsx:182-195 - Empty Builder tab
+  {activeTab === "builder" && (
+    <div className="space-y-4 text-center py-8">
+      <p className="text-muted-foreground">
+        Visual builder coming in Phase 2
+      </p>
+    </div>
+  )}
+  - Tab infrastructure for single-use case adds complexity
+
+  Issue 7.3: Unused Imports
+  - agent-instructions-panel.tsx:5 - Sparkles imported twice (line 10 and usage)
+  - agent-settings-panel.tsx - Various lucide icons may be unused
 
   ---
   8. Memory Leaks
 
-  ✅ Generally safe patterns used
+  Issues Found
 
-  ⚠️ Potential Issues:
+  Issue 8.1: Fetch Without Cleanup on Unmount
+  - agent-context.tsx:104-132 - No cancellation mechanism
+  const fetchAgentDetails = useCallback(async (agentId: string) => {
+    // If component unmounts while fetching, setState calls on unmounted component
+    setSelectedAgent(data);
+  }, []);
 
-  1. State updates after unmount (team-templates-section.tsx:126-165):
-  } finally {
-    setIsDeleting(false);
-  }
-  If component unmounts during the async operation, this will attempt to update state on an unmounted component. Add a mounted ref:
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  Issue 8.2: Event Handlers Not Cleaned Up
+  - agent-instructions-panel.tsx:241-244 - onKeyDown handlers recreated
+  - Should use refs or useCallback for stable references
 
-  // In finally:
-  if (mountedRef.current) setIsDeleting(false);
-
-  2. Effect cleanup missing - The useEffect for debounce in template-picker.tsx:45-51 correctly cleans up, but verify useTemplates hook handles its own cleanup.
+  Issue 8.3: Potential Stale Closure in selectAgent
+  - agent-context.tsx:138-152 - selectedAgentIdRef.current update timing
+  selectedAgentIdRef.current = agentId;
+  setSelectedAgentId(agentId);
+  - If rapid selection changes occur, race conditions possible
 
   ---
-  9. Architecture (SOLID Principles)
+  9. Architecture Drawbacks (SOLID)
 
-  Single Responsibility Principle (SRP):
-  - ⚠️ TeamTemplatesSection handles: list rendering, card rendering, create modal, edit modal, delete dialog, and all CRUD operations. Consider splitting.
+  Single Responsibility Violations
 
-  Open/Closed Principle (OCP):
-  - ✅ Template categories are extensible via TEMPLATE_CATEGORIES
-  - ✅ Role permissions are extensible
+  Issue 9.1: AgentInstructionsPanel Does Too Much
+  - Handles name editing, instructions editing, step parsing, activity display
+  - Should split into: AgentHeader, AgentStepsEditor, AgentActivityLog
 
-  Liskov Substitution Principle (LSP):
-  - ✅ Components follow consistent interfaces
+  Issue 9.2: AgentContext Manages Multiple Concerns
+  - List management, selection state, detail fetching, CRUD operations
+  - Consider splitting: AgentListContext, AgentSelectionContext, AgentActionsContext
 
-  Interface Segregation Principle (ISP):
-  - ⚠️ TemplateWithItems type may include more data than needed for card display
+  Open/Closed Principle
 
-  Dependency Inversion Principle (DIP):
-  - ✅ Components depend on hooks (useTemplates, useTemplateEditor) rather than direct API calls
+  Issue 9.3: Hardcoded Model Options
+  - agent-settings-panel.tsx:52-56 - Adding new models requires code change
+  - Should use configuration or constants from types
+
+  Dependency Inversion
+
+  Issue 9.4: Direct fetch API Coupling
+  - All components use fetch() directly
+  - Should use abstracted API client service
+
+  Interface Segregation
+
+  Issue 9.5: Large Context Interface
+  - AgentContextValue in agent-context.tsx:40-53 - 12 properties
+  - Components often need only subset of these
 
   ---
   10. Potential Bugs in Edge Cases
 
-  1. Empty team.id (team-templates-section.tsx:40):
-  teamId: team.id,
-  If team.id is undefined/null, the API call may return unexpected results or fail silently.
+  Issues Found
 
-  2. Template deletion with stale reference (team-templates-section.tsx:150-165):
-  If the templates list updates while delete dialog is open, deleteId may reference a template that no longer exists.
-  3. Race condition between edit and delete:
-  User could open edit dialog, then in another tab delete the same template. The edit submission would fail.
-  4. Missing loading state for create/update (team-templates-section.tsx:115-144):
-  Unlike delete which has isDeleting, create and update don't have loading states, allowing multiple submissions.
-  5. template-picker.tsx:242 - Type casting without validation:
-  (Object.entries(groupedTemplates) as [TemplateCategory, TemplateWithItems[]][])
-  If groupedTemplates contains unexpected keys, this could cause runtime issues.
+  Issue 10.1: Race Condition in Agent Selection
+  - agent-context.tsx:144-152 - Fast clicking between agents
+  if (selectedAgentIdRef.current !== agentId) return;
+  - The check helps but timing issues remain if fetch completes before ref update
+
+  Issue 10.2: Name Trim Creates Empty String
+  - agent-instructions-panel.tsx:93 - Only trims, doesn't validate emptiness
+  await onUpdate({ name: editedName.trim() });
+  - Empty name after trim should be prevented
+
+  Issue 10.3: URL Sync Loop Potential
+  - agents/page.tsx:61-66 - Effect depends on selectedAgentId
+  - If URL changes cause state change which causes URL check, potential loop
+
+  Issue 10.4: Step Parsing Edge Cases
+  - agent-instructions-panel.tsx:138-143
+  return instructions
+    .split(/[\n•\-\*]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  - Numbered lists (1. 2. 3.) not handled
+  - Escaped characters not considered
+
+  Issue 10.5: Delete While Selected
+  - agent-sidebar-section.tsx:104-111 - No handling if deleted agent is currently selected
+  const handleDeleteAgent = async () => {
+    if (!agentToDelete) return;
+    const success = await deleteAgent(agentToDelete.id);
+    // Doesn't clear selection if this was the selected agent
 
   ---
-  11. General Hidden Factors
+  11. Hidden Factors Affecting Other Code
 
-  1. Accessibility:
-    - ✅ tabIndex, role="button", aria-pressed properly used
-    - ⚠️ Missing aria-label on icon-only buttons in TeamTemplateCard
-  2. Error boundaries: No error boundaries wrap template sections. A rendering error in one template card could crash the entire picker.
-  3. Internationalization: Hardcoded strings like "Team Templates", "Create Template", etc. should use i18n if the app supports multiple languages.
-  4. Testing considerations:
-    - The tightly coupled TeamTemplatesSection would be difficult to unit test
-    - Consider extracting business logic into testable custom hooks
-  5. Cache invalidation: After create/update/delete, does useTemplates refetch automatically or use stale cache? Verify the hook handles cache invalidation.
+  Issues Found
+
+  Issue 11.1: AgentProvider Position in Layout
+  - dashboard/layout.tsx:61 - AgentProvider wraps SidebarUIProvider
+  - This means sidebar state updates don't trigger agent context updates and vice versa
+  - Position seems intentional but creates coupling assumptions
+
+  Issue 11.2: URL Query Param Pollution
+  - agent-sidebar-section.tsx:89 uses router.push
+  - Other pages might need to handle ?agentId= parameter unexpectedly
+
+  Issue 11.3: Sidebar Context Dependency
+  - agent-sidebar-section.tsx:51 imports useSidebarContext
+  - Changes to sidebar context affect agent section behavior
+
+  Issue 11.4: Global Error Handling Impact
+  - Silent console errors in agent-context don't integrate with any global error boundary
+  - User sees loading forever instead of error message
+
+  Issue 11.5: Types Export Side Effects
+  - types/agent.ts exports many constants
+  - If tree-shaking fails, unused constants bundle into all pages
 
   ---
-  Summary of Priority Fixes
+  Summary of Critical Issues
+  ┌──────────┬───────────────────────────────┬──────────────────────────────┬─────────────────────┐
+  │ Priority │             Issue             │           Location           │       Impact        │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ High     │ Unused AgentListPanel         │ agent-list-panel.tsx         │ 346 lines dead code │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ High     │ No error feedback to users    │ agent-context.tsx            │ Poor UX             │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ High     │ Missing AbortController       │ agent-context.tsx            │ Memory leaks        │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Medium   │ Duplicate delete dialogs      │ Multiple files               │ Maintenance burden  │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Medium   │ AgentSidebarItem not memoized │ agent-sidebar-section.tsx    │ Performance         │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Medium   │ parseSteps not memoized       │ agent-instructions-panel.tsx │ Performance         │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Medium   │ Race condition on selection   │ agent-context.tsx            │ Potential bugs      │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Low      │ Hardcoded model options       │ agent-settings-panel.tsx     │ Maintainability     │
+  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Low      │ Time formatting duplicated    │ agent-instructions-panel.tsx │ Code duplication    │
+  └──────────┴───────────────────────────────┴──────────────────────────────┴─────────────────────┘
+  ---
+  Recommendations
 
-  | Priority | Issue                                                             | Location                   |
-  |----------|-------------------------------------------------------------------|----------------------------|
-  | High     | Add loading states for create/update to prevent double submission | team-templates-section.tsx |
-  | High     | Add mounted ref to prevent state updates after unmount            | team-templates-section.tsx |
-  | High     | Display errors to users instead of just console.error             | team-templates-section.tsx |
-  | Medium   | Extract TeamTemplateCard to reduce duplication with TemplateCard  | Both files                 |
-  | Medium   | Add aria-labels to icon buttons for accessibility                 | team-templates-section.tsx |
-  | Low      | Combine related state updates to reduce re-renders                | team-templates-section.tsx |
-  | Low      | Extract grid class constants                                      | Multiple files             |
-
-  The implementation is solid overall and follows the project patterns well. The main concerns are around error handling visibility, preventing double-submissions, and some code duplication that could be refactored.
+  1. Remove or defer AgentListPanel - It's completely unused
+  2. Add toast notifications for all error states in AgentContext
+  3. Implement AbortController for fetch requests in context
+  4. Extract DeleteAgentDialog as shared component
+  5. Memoize AgentSidebarItem with React.memo like TeamSidebarItem
+  6. Validate agentId format before API calls
+  7. Split AgentInstructionsPanel into smaller focused components
+  8. Use MODEL_LABELS constant from types instead of inline options
 
 
 ### Code Reviewer2: 
 
-• Findings
+ Findings:
 
-  - Critical – components/templates/template-editor.tsx:165-185: the reset effect always overwrites the form with
-    getDefaultFormData(template) and ignores defaultScope/defaultTeamId. With the scope selector hidden in team dialogs, new
-    templates default to personal with no teamId, so “Create Team Template” produces a personal template that won’t show up in
-    the team section (and may skip team-level validation). Default scope/team need to be reapplied on reset.
-  - Minor – components/templates/template-picker.tsx:19: unused TemplateScope import; lint/TypeScript will fail CI.
+  - Agent data fetches target non-existent API routes. contexts/agent-context.tsx:86-198,203-279 and app/dashboard/agents/
+    page.tsx:38-49 call /api/agents endpoints (list/detail/create/update/delete/run), but rg shows no such routes in the repo.
+    With AgentProvider wrapped around every dashboard page (app/dashboard/layout.tsx:58-77), every dashboard view will issue
+    404s, leaving the sidebar stuck in “No agents yet” and the main panel spinner/empty without surfacing the failure. This
+    blocks the UI and adds noise across the whole dashboard.
+  - Manual run endpoint doesn’t match the plan. The UI posts to /api/agents/${id}/run (app/dashboard/agents/page.tsx:38), while
+    the Phase 1 plan specifies /api/agents/[agentId]/execute. Even after backend implementation, this mismatch will keep Run
+    Agent failing.
+  - Service/reference casing mismatch means integrations never show. AgentSettingsPanel expects referencedServices to contain
+    lowercase ids like "gmail"/"calendar" (components/agents/agent-settings-panel.tsx:53-98), but AgentService is defined with
+    capitalized variants (types/agent.ts:53-56). Any upstream data using the typed values will be filtered out, so badges and
+    tool affordances stay empty.
+  - Error handling is silent for failed agent fetches. agentsError is set but never rendered in the sidebar (components/agents/
+    agent-sidebar-section.tsx:122-167) or main panel. Users just see “No agents yet” after a failed call, masking outages and
+    making troubleshooting hard.
+  - Agent fetching is global rather than scoped. Wrapping the entire dashboard in AgentProvider (app/dashboard/layout.tsx:58-77)
+    forces client-side fetches on every dashboard visit—even when the Agents feature isn’t used—incurring extra requests and
+    repeated 404s until the backend exists. This is avoidable by scoping the provider to the agents route or delaying fetches
+    until the Agents page is opened.

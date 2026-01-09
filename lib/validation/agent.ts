@@ -4,7 +4,7 @@
  * Validates and sanitizes agent creation and update requests.
  */
 
-import type { AgentModel } from "@/types/agent";
+import type { AgentModel, AgentService } from "@/types/agent";
 import { AGENT_LIMITS } from "@/types/agent";
 
 interface ValidationResult {
@@ -16,6 +16,41 @@ interface ValidationResult {
  * Valid agent models.
  */
 const VALID_MODELS: AgentModel[] = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+
+/**
+ * Valid agent services with canonical casing.
+ * Maps lowercase to the canonical capitalized form.
+ */
+const SERVICE_CANONICAL_MAP: Record<string, AgentService> = {
+  gmail: "Gmail",
+  calendar: "Calendar",
+  slack: "Slack",
+};
+
+/**
+ * Normalizes a service name to its canonical form.
+ * Accepts any casing (gmail, Gmail, GMAIL) and returns the canonical form.
+ * Returns null if the service is not recognized.
+ */
+export function normalizeServiceName(service: string): AgentService | null {
+  const lowered = service.toLowerCase().trim();
+  return SERVICE_CANONICAL_MAP[lowered] ?? null;
+}
+
+/**
+ * Normalizes an array of service names to their canonical forms.
+ * Filters out unrecognized services and removes duplicates.
+ */
+export function normalizeServices(services: string[]): AgentService[] {
+  const normalized = new Set<AgentService>();
+  for (const service of services) {
+    const canonical = normalizeServiceName(service);
+    if (canonical) {
+      normalized.add(canonical);
+    }
+  }
+  return Array.from(normalized);
+}
 
 // ============================================================================
 // Sanitization Utilities

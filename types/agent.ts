@@ -402,6 +402,13 @@ export interface DeleteAgentResponse {
   success: boolean;
 }
 
+/**
+ * Response from executing an agent.
+ */
+export interface ExecuteAgentResponse {
+  execution: AgentExecution;
+}
+
 // ============================================================================
 // Schedule API Types
 // ============================================================================

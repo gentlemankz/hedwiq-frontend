@@ -100,12 +100,12 @@ export const TeamSidebarItem = memo(function TeamSidebarItem({
   if (hasSubteams) {
     // Render as collapsible with sub-teams
     return (
-      <Collapsible
-        open={isExpanded}
-        onOpenChange={() => onToggleExpand(team.id)}
-        className="group/team-collapsible"
-      >
-        <SidebarMenuSubItem className="group/team relative">
+      <SidebarMenuSubItem className="group/team relative">
+        <Collapsible
+          open={isExpanded}
+          onOpenChange={() => onToggleExpand(team.id)}
+          className="group/team-collapsible"
+        >
           <div className="flex items-center w-full">
             <CollapsibleTrigger asChild>
               <SidebarMenuSubButton
@@ -161,8 +161,8 @@ export const TeamSidebarItem = memo(function TeamSidebarItem({
               ))}
             </SidebarMenuSub>
           </CollapsibleContent>
-        </SidebarMenuSubItem>
-      </Collapsible>
+        </Collapsible>
+      </SidebarMenuSubItem>
     );
   }
 

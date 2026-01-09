@@ -50,6 +50,7 @@ import {
 import { useSidebarContext } from "@/contexts/sidebar-context";
 import { FolderColorDot, EditFolderDialog, DeleteFolderDialog } from "@/components/folders";
 import { TeamSidebarSection } from "@/components/teams";
+import { AgentSidebarSection } from "@/components/agents";
 import { SubscriptionWidget } from "@/components/subscription";
 import { getInitials } from "@/lib/utils";
 import type { User } from "@/types/user";
@@ -204,13 +205,16 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
               {/* Teams Section */}
               <TeamSidebarSection userId={user.id} />
 
+              {/* Agents Section */}
+              <AgentSidebarSection />
+
               {/* Past Meetings with Folders */}
-              <Collapsible
-                open={isPastMeetingsExpanded}
-                onOpenChange={() => toggleSection("past-meetings")}
-                className="group/collapsible"
-              >
-                <SidebarMenuItem>
+              <SidebarMenuItem>
+                <Collapsible
+                  open={isPastMeetingsExpanded}
+                  onOpenChange={() => toggleSection("past-meetings")}
+                  className="group/collapsible"
+                >
                   <CollapsibleTrigger asChild>
                     <SidebarMenuButton
                       isActive={pathname.startsWith("/dashboard/past-meetings")}
@@ -313,8 +317,8 @@ export function DashboardSidebar({ user }: DashboardSidebarProps) {
                       )}
                     </SidebarMenuSub>
                   </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
+                </Collapsible>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

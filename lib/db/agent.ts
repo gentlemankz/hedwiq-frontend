@@ -33,6 +33,7 @@ import type {
   AgentExecutionOutputResult,
 } from "@/types/agent";
 import { AGENT_LIMITS } from "@/types/agent";
+import { normalizeServices } from "@/lib/validation/agent";
 
 // ============================================================================
 // ID Generation
@@ -199,7 +200,7 @@ export async function createAgent(params: {
         instructions: params.instructions,
         referencedFolders: params.referencedFolders ?? null,
         referencedTeams: params.referencedTeams ?? null,
-        referencedServices: params.referencedServices ?? null,
+        referencedServices: params.referencedServices ? normalizeServices(params.referencedServices) : null,
         model: params.model ?? "gpt-4o",
         isActive: false,
       })
@@ -332,7 +333,9 @@ export async function updateAgent(
     updateData.referencedTeams = updates.referencedTeams;
   }
   if (updates.referencedServices !== undefined) {
-    updateData.referencedServices = updates.referencedServices;
+    updateData.referencedServices = updates.referencedServices
+      ? normalizeServices(updates.referencedServices)
+      : null;
   }
   if (updates.model !== undefined) {
     updateData.model = updates.model;
