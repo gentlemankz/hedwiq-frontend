@@ -9,14 +9,21 @@ import {
   X,
   Sparkles,
   Bot,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { AGENT_LIMITS } from "@/types/agent";
-import type { AgentWithDetails } from "@/types/agent";
+import type { AgentWithDetails, ParsedInstructions } from "@/types/agent";
+import { MentionInput } from "./mention-input";
+import { TextWithMentions } from "./mention-tag";
+import { useMentionContext } from "@/hooks/use-mention-context";
+import {
+  parseInstructions,
+  getUnresolvedReferences,
+} from "@/lib/agents";
 
 // ============================================================================
 // Types
@@ -58,7 +65,14 @@ export function AgentInstructionsPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const instructionsRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fetch folders, teams, and services for @ mention autocomplete
+  const {
+    context: mentionContext,
+    isLoading: isMentionContextLoading,
+    hasFetchError: hasMentionContextError,
+    refresh: refreshMentionContext,
+  } = useMentionContext();
 
   // Sync state when agent changes
   useEffect(() => {
@@ -76,11 +90,17 @@ export function AgentInstructionsPanel({
     }
   }, [isEditingName]);
 
-  useEffect(() => {
-    if (isEditingInstructions && instructionsRef.current) {
-      instructionsRef.current.focus();
-    }
-  }, [isEditingInstructions]);
+  // Parse instructions to extract @ mentions
+  const parsedInstructions = useMemo<ParsedInstructions | null>(() => {
+    if (!agent?.instructions) return null;
+    return parseInstructions(agent.instructions, mentionContext);
+  }, [agent?.instructions, mentionContext]);
+
+  // Check for unresolved references
+  const unresolvedRefs = useMemo(() => {
+    if (!parsedInstructions) return [];
+    return getUnresolvedReferences(parsedInstructions);
+  }, [parsedInstructions]);
 
   // Save name handler
   const handleSaveName = useCallback(async () => {
@@ -134,11 +154,6 @@ export function AgentInstructionsPanel({
     }
   };
 
-  // Memoize parsed steps to avoid recalculating on every render
-  const steps = useMemo(() => {
-    if (!agent?.instructions) return [];
-    return parseSteps(agent.instructions);
-  }, [agent?.instructions]);
 
   // Header component
   const renderHeader = () => (
@@ -281,7 +296,7 @@ export function AgentInstructionsPanel({
           {/* Steps/Instructions Section */}
           <section className="mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-medium">Steps</h2>
+              <h2 className="text-base font-medium">Instructions</h2>
               {!isEditingInstructions && (
                 <Button
                   variant="ghost"
@@ -297,19 +312,37 @@ export function AgentInstructionsPanel({
 
             {isEditingInstructions ? (
               <div className="space-y-3">
-                <Textarea
-                  ref={instructionsRef}
+                {/* Warning when mention context failed to load */}
+                {hasMentionContextError && (
+                  <div className="flex items-center gap-2 p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 text-sm">
+                    <AlertCircle className="size-4 shrink-0" />
+                    <div className="flex-1">
+                      <span>Failed to load folders and teams. @ mentions may not resolve correctly.</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200"
+                      onClick={refreshMentionContext}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                )}
+                <MentionInput
                   value={editedInstructions}
-                  onChange={(e) => setEditedInstructions(e.target.value)}
+                  onChange={setEditedInstructions}
+                  context={mentionContext}
                   maxLength={AGENT_LIMITS.MAX_INSTRUCTIONS_LENGTH}
                   rows={10}
-                  className="font-mono text-sm resize-none"
-                  placeholder="Describe what this agent should do..."
-                  disabled={isSaving}
+                  placeholder="Describe what this agent should do. Use @ to mention folders, teams, or services..."
+                  disabled={isSaving || isMentionContextLoading}
                 />
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
                     {editedInstructions.length}/{AGENT_LIMITS.MAX_INSTRUCTIONS_LENGTH}
+                    {isMentionContextLoading && " • Loading suggestions..."}
+                    {hasMentionContextError && !isMentionContextLoading && " • Suggestions unavailable"}
                   </p>
                   <div className="flex gap-2">
                     <Button
@@ -333,18 +366,43 @@ export function AgentInstructionsPanel({
                   </div>
                 </div>
               </div>
-            ) : steps.length > 0 ? (
-              <ul className="space-y-2">
-                {steps.map((step, idx) => (
-                  <li key={idx} className="flex items-start gap-3 text-sm">
-                    <span className="text-muted-foreground">•</span>
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ul>
+            ) : agent?.instructions ? (
+              <div className="space-y-4">
+                {/* Render instructions with mention tags */}
+                <div className="text-sm leading-relaxed">
+                  {parsedInstructions ? (
+                    <TextWithMentions
+                      text={agent.instructions}
+                      references={parsedInstructions.references}
+                    />
+                  ) : (
+                    <span className="whitespace-pre-wrap">{agent.instructions}</span>
+                  )}
+                </div>
+
+                {/* Show warning for unresolved references (only after context is loaded successfully) */}
+                {unresolvedRefs.length > 0 && !isMentionContextLoading && !hasMentionContextError && (
+                  <div className="flex items-start gap-2 p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 text-sm">
+                    <AlertCircle className="size-4 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium">Unresolved references</p>
+                      <p className="text-amber-700 dark:text-amber-300">
+                        The following mentions could not be found: {unresolvedRefs.join(", ")}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Referenced entities summary */}
+                {parsedInstructions && parsedInstructions.references.length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    References: {parsedInstructions.folders.length} folder(s), {parsedInstructions.teams.length} team(s), {parsedInstructions.services.length} service(s)
+                  </div>
+                )}
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground italic">
-                No instructions defined yet. Click Edit to add steps.
+                No instructions defined yet. Click Edit to add instructions.
               </p>
             )}
           </section>
@@ -408,17 +466,6 @@ export function AgentInstructionsPanel({
 // ============================================================================
 // Helpers
 // ============================================================================
-
-/**
- * Parse instructions into steps by splitting on newlines and bullet points.
- * Also handles numbered lists (1., 2., 3.) and various bullet styles.
- */
-function parseSteps(instructions: string): string[] {
-  return instructions
-    .split(/[\n•\-\*]|\d+\./)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
 
 /**
  * Format a date as a relative time string.

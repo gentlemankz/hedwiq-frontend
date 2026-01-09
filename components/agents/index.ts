@@ -10,3 +10,5 @@ export { AgentInstructionsPanel } from "./agent-instructions-panel";
 export { AgentSettingsPanel } from "./agent-settings-panel";
 export { AgentSidebarSection } from "./agent-sidebar-section";
 export { DeleteAgentDialog } from "./delete-agent-dialog";
+export { MentionInput, type MentionInputProps } from "./mention-input";
+export { MentionTag, TextWithMentions, type MentionTagProps, type TextWithMentionsProps } from "./mention-tag";

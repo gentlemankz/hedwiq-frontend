@@ -1,355 +1,367 @@
 ### Reviwer1:
 
- Comprehensive Code Review: Agent Builder Phase 1 Parts 3 & 4 (UI)
+Phase 2 Code Review: @ Mention System
 
-  1. Functionality
+  Executive Summary
 
-  Positive Aspects
-
-  - Core CRUD operations for agents are properly implemented
-  - URL-based agent selection with ?agentId= query parameter works correctly
-  - Inline editing for name and instructions with save/cancel functionality
-  - Proper loading and empty states throughout components
-
-  Issues Found
-
-  Issue 1.1: Unused AgentListPanel Component
-  - agent-list-panel.tsx (346 lines) is exported but never used
-  - The sidebar section (agent-sidebar-section.tsx) is used instead
-  - This creates dead code in the bundle
-
-  Issue 1.2: Missing Error Feedback to Users
-  - agent-context.tsx:127-129 - Errors are only logged to console, no toast/notification
-  } catch (err) {
-    console.error("[AgentContext] Failed to fetch agent details:", err);
-  }
-  - Same pattern at lines 158, 192, 221, 250
-
-  Issue 1.3: Run Agent Endpoint Missing Check
-  - agents/page.tsx:38-51 - The run agent handler assumes the endpoint exists but Phase 3 mentions it's not implemented yet
+  Overall, the Phase 2 implementation is well-structured with good separation of concerns. However, I've identified several issues ranging from critical security concerns to minor optimizations.
 
   ---
-  2. Readability and Maintainability
+  1. SECURITY ISSUES
 
-  Positive Aspects
+  1.1 Critical: Regex ReDoS Vulnerability
 
-  - Clear component structure with section comments
-  - Consistent naming conventions following project patterns
-  - TypeScript interfaces well-defined at file top
-  - Logical grouping with // ============================================================================
+  File: lib/agents/instruction-parser.ts:50
 
-  Issues Found
+  const MENTION_REGEX = /@(?:"([^"]+)"|([A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_-]+)*))/g;
 
-  Issue 2.1: Magic Strings for Model Options
-  - agent-settings-panel.tsx:52-56 - Model options hardcoded inline
-  const modelOptions = [
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-    // ...
-  ];
-  - Should use MODEL_LABELS constant from types/agent.ts:680-686
+  Issue: The regex pattern (?:\s+[A-Za-z0-9_-]+)* can cause catastrophic backtracking with crafted input like @AAAAAAAAAAAAAAAAAAAAAAAAAAAA!. This is a potential Denial of Service (ReDoS) attack vector.
 
-  Issue 2.2: Duplicated Time Formatting Functions
-  - agent-instructions-panel.tsx:146-156 - formatRelativeTime()
-  - agent-instructions-panel.tsx:429-440 - formatCreationTime()
-  - These serve similar purposes and could be consolidated
+  Risk Level: High - Users can craft malicious input that freezes the browser.
 
-  Issue 2.3: Inconsistent Section Keys
-  - agent-sidebar-section.tsx:55 uses "agents"
-  - sidebar-context.tsx uses string literals like "past-meetings", "teams"
-  - Consider using an enum or constants for section keys
+  Recommendation: Add input length validation before regex execution or rewrite the regex to be non-backtracking:
+  // Limit check before regex
+  if (text.length > 10000) return [];
+
+  // Or use possessive quantifier pattern
+  const SAFE_MENTION_REGEX = /@(?:"([^"]{1,100})"|([A-Za-z0-9_-]{1,50}(?:\s[A-Za-z0-9_-]{1,50}){0,5}))/g;
+
+  1.2 Medium: No Input Sanitization for Service Names
+
+  File: lib/agents/instruction-parser.ts:91-106
+
+  Service names from user input are directly compared but never sanitized. If AVAILABLE_SERVICES is ever modified to include special characters, this could cause issues.
 
   ---
-  3. Security
+  2. POTENTIAL BUGS
 
-  Positive Aspects
+  2.1 Race Condition in Blur Handler
 
-  - No direct SQL queries or dangerous operations
-  - Uses fetch API with proper endpoint structure
-  - No client-side credential handling
+  File: components/agents/mention-input.tsx:253-257
 
-  Issues Found
-
-  Issue 3.1: No Input Sanitization on Instructions
-  - agent-instructions-panel.tsx:320 - User-provided instructions are stored directly
-  - While limits exist (AGENT_LIMITS.MAX_INSTRUCTIONS_LENGTH), no XSS prevention on display
-
-  Issue 3.2: Agent ID from URL Not Validated
-  - agents/page.tsx:62-66 - Agent ID from query params used directly
-  const agentId = searchParams.get("agentId");
-  if (agentId && agentId !== selectedAgentId) {
-    selectAgent(agentId);
-  }
-  - Should validate UUID format before API call
-
-  ---
-  4. Performance and Efficiency
-
-  Positive Aspects
-
-  - Proper use of useCallback for handlers in context
-  - useMemo for context value in agent-context.tsx:267-283
-  - Conditional fetching with refs to prevent duplicate calls
-
-  Issues Found
-
-  Issue 4.1: Unnecessary Re-renders in AgentSidebarItem
-  - agent-sidebar-section.tsx:130-200 - Not memoized, unlike TeamSidebarItem
-  - Compare to team-sidebar-item.tsx which uses React.memo()
-
-  Issue 4.2: parseSteps Called on Every Render
-  - agent-instructions-panel.tsx:222
-  const steps = agent ? parseSteps(agent.instructions) : [];
-  - Should be memoized with useMemo
-
-  Issue 4.3: Multiple Context Re-renders
-  - agent-context.tsx triggers re-renders on every state change
-  - The context value object could be split into stable/unstable parts
-
-  ---
-  5. Resource Management
-
-  Positive Aspects
-
-  - useRef used to track fetch state and prevent race conditions
-  - Proper cleanup in useEffect dependencies
-
-  Issues Found
-
-  Issue 5.1: No Abort Controller for Fetch Requests
-  - agent-context.tsx:100-133 - Long-running fetches can't be cancelled
-  const fetchAgentDetails = useCallback(async (agentId: string) => {
-    const response = await fetch(`/api/agents/${agentId}`);
-    // No abort signal
+  const handleBlur = useCallback(() => {
+    setTimeout(() => {
+      setIsOpen(false);
+    }, 200);
   }, []);
-  - If component unmounts during fetch, response handling continues
 
-  Issue 5.2: Missing Cleanup for Agent Selection Effect
-  - agents/page.tsx:61-66 - Effect doesn't clean up on unmount
+  Issue: If the user quickly focuses back on the input within 200ms, the popup will still close. This timeout is also not cleaned up on unmount, which could cause a memory leak or state update on unmounted component.
+
+  Fix:
+  const blurTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const handleBlur = useCallback(() => {
+    blurTimeoutRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 200);
+  }, []);
+
   useEffect(() => {
-    const agentId = searchParams.get("agentId");
-    if (agentId && agentId !== selectedAgentId) {
-      selectAgent(agentId);
-    }
-  }, [searchParams, selectedAgentId, selectAgent]);
-
-  ---
-  6. Code Duplications
-
-  Issues Found
-
-  Issue 6.1: Duplicate Delete Confirmation Dialog
-  - agent-list-panel.tsx:279-323 - AlertDialog for delete confirmation
-  - agent-sidebar-section.tsx:200-244 - Nearly identical AlertDialog
-  - Should extract to DeleteAgentDialog component
-
-  Issue 6.2: Duplicate Agent Item Rendering Logic
-  - agent-list-panel.tsx:149-235 - AgentNavItem component
-  - agent-sidebar-section.tsx:130-198 - AgentSidebarItem component
-  - Both render agent with dropdown menu, similar structure
-
-  Issue 6.3: Duplicate Loading State Handling
-  - Similar loading spinner patterns across:
-    - agent-instructions-panel.tsx:182-189
-    - agent-instructions-panel.tsx:211-219
-    - agent-settings-panel.tsx:120-127
-    - agent-list-panel.tsx:256-261
-
-  ---
-  7. Over-Engineering / Unused Code
-
-  Issues Found
-
-  Issue 7.1: Entire AgentListPanel is Unused
-  - agent-list-panel.tsx - 346 lines of unused code
-  - The sidebar section handles agent listing instead
-  - Should be removed or marked for future use
-
-  Issue 7.2: Builder Tab Placeholder
-  - agent-settings-panel.tsx:182-195 - Empty Builder tab
-  {activeTab === "builder" && (
-    <div className="space-y-4 text-center py-8">
-      <p className="text-muted-foreground">
-        Visual builder coming in Phase 2
-      </p>
-    </div>
-  )}
-  - Tab infrastructure for single-use case adds complexity
-
-  Issue 7.3: Unused Imports
-  - agent-instructions-panel.tsx:5 - Sparkles imported twice (line 10 and usage)
-  - agent-settings-panel.tsx - Various lucide icons may be unused
-
-  ---
-  8. Memory Leaks
-
-  Issues Found
-
-  Issue 8.1: Fetch Without Cleanup on Unmount
-  - agent-context.tsx:104-132 - No cancellation mechanism
-  const fetchAgentDetails = useCallback(async (agentId: string) => {
-    // If component unmounts while fetching, setState calls on unmounted component
-    setSelectedAgent(data);
+    return () => {
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    };
   }, []);
 
-  Issue 8.2: Event Handlers Not Cleaned Up
-  - agent-instructions-panel.tsx:241-244 - onKeyDown handlers recreated
-  - Should use refs or useCallback for stable references
+  2.2 Stale Closure in insertMention
 
-  Issue 8.3: Potential Stale Closure in selectAgent
-  - agent-context.tsx:138-152 - selectedAgentIdRef.current update timing
-  selectedAgentIdRef.current = agentId;
-  setSelectedAgentId(agentId);
-  - If rapid selection changes occur, race conditions possible
+  File: components/agents/mention-input.tsx:214-242
 
-  ---
-  9. Architecture Drawbacks (SOLID)
+  const insertMention = useCallback(
+    (entity: MentionableEntity) => {
+      if (mentionStart === null || !textareaRef.current) return;
+      const cursorPos = textareaRef.current.selectionStart;
+      // ...
+    },
+    [mentionStart, value, onChange, onMentionInsert]
+  );
 
-  Single Responsibility Violations
+  Issue: The handleKeyDown function depends on insertMention but insertMention is not in its dependency array. This creates a stale closure where old insertMention is called.
 
-  Issue 9.1: AgentInstructionsPanel Does Too Much
-  - Handles name editing, instructions editing, step parsing, activity display
-  - Should split into: AgentHeader, AgentStepsEditor, AgentActivityLog
+  Current (buggy):
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // ...
+      if (suggestions[selectedIndex]) {
+        insertMention(suggestions[selectedIndex]); // Stale!
+      }
+    },
+    [isOpen, suggestions, selectedIndex] // Missing insertMention!
+  );
 
-  Issue 9.2: AgentContext Manages Multiple Concerns
-  - List management, selection state, detail fetching, CRUD operations
-  - Consider splitting: AgentListContext, AgentSelectionContext, AgentActionsContext
+  2.3 Index Calculation Bug in Command List
 
-  Open/Closed Principle
+  File: components/agents/mention-input.tsx:302-306
 
-  Issue 9.3: Hardcoded Model Options
-  - agent-settings-panel.tsx:52-56 - Adding new models requires code change
-  - Should use configuration or constants from types
+  const actualIndex = suggestions.findIndex(
+    (s) => s.id === entity.id && s.type === entity.type
+  );
 
-  Dependency Inversion
+  Issue: This recalculates the index inside the map iteration, which is O(n²) and produces wrong results because it searches the full suggestions array, not the filtered one. The keyboard navigation highlight won't match the visual grouping.
 
-  Issue 9.4: Direct fetch API Coupling
-  - All components use fetch() directly
-  - Should use abstracted API client service
+  2.4 Missing Error State Handling in useMentionContext
 
-  Interface Segregation
+  File: hooks/use-mention-context.ts
 
-  Issue 9.5: Large Context Interface
-  - AgentContextValue in agent-context.tsx:40-53 - 12 properties
-  - Components often need only subset of these
-
-  ---
-  10. Potential Bugs in Edge Cases
-
-  Issues Found
-
-  Issue 10.1: Race Condition in Agent Selection
-  - agent-context.tsx:144-152 - Fast clicking between agents
-  if (selectedAgentIdRef.current !== agentId) return;
-  - The check helps but timing issues remain if fetch completes before ref update
-
-  Issue 10.2: Name Trim Creates Empty String
-  - agent-instructions-panel.tsx:93 - Only trims, doesn't validate emptiness
-  await onUpdate({ name: editedName.trim() });
-  - Empty name after trim should be prevented
-
-  Issue 10.3: URL Sync Loop Potential
-  - agents/page.tsx:61-66 - Effect depends on selectedAgentId
-  - If URL changes cause state change which causes URL check, potential loop
-
-  Issue 10.4: Step Parsing Edge Cases
-  - agent-instructions-panel.tsx:138-143
-  return instructions
-    .split(/[\n•\-\*]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  - Numbered lists (1. 2. 3.) not handled
-  - Escaped characters not considered
-
-  Issue 10.5: Delete While Selected
-  - agent-sidebar-section.tsx:104-111 - No handling if deleted agent is currently selected
-  const handleDeleteAgent = async () => {
-    if (!agentToDelete) return;
-    const success = await deleteAgent(agentToDelete.id);
-    // Doesn't clear selection if this was the selected agent
+  The error state is set but never used in the consuming components. If API fails, users see no indication of the error.
 
   ---
-  11. Hidden Factors Affecting Other Code
+  3. PERFORMANCE ISSUES
 
-  Issues Found
+  3.1 Unnecessary Re-renders
 
-  Issue 11.1: AgentProvider Position in Layout
-  - dashboard/layout.tsx:61 - AgentProvider wraps SidebarUIProvider
-  - This means sidebar state updates don't trigger agent context updates and vice versa
-  - Position seems intentional but creates coupling assumptions
+  File: components/agents/agent-instructions-panel.tsx:89-98
 
-  Issue 11.2: URL Query Param Pollution
-  - agent-sidebar-section.tsx:89 uses router.push
-  - Other pages might need to handle ?agentId= parameter unexpectedly
+  const parsedInstructions = useMemo<ParsedInstructions | null>(() => {
+    if (!agent?.instructions) return null;
+    return parseInstructions(agent.instructions, mentionContext);
+  }, [agent?.instructions, mentionContext]);
 
-  Issue 11.3: Sidebar Context Dependency
-  - agent-sidebar-section.tsx:51 imports useSidebarContext
-  - Changes to sidebar context affect agent section behavior
+  Issue: mentionContext changes on every re-render because it's a new object from the hook. This causes parsedInstructions to recalculate even when the data hasn't changed.
 
-  Issue 11.4: Global Error Handling Impact
-  - Silent console errors in agent-context don't integrate with any global error boundary
-  - User sees loading forever instead of error message
+  Fix in hook:
+  // In useMentionContext, memoize properly
+  const context = useMemo<ParserContext>(
+    () => ({
+      folders,
+      teams,
+      services,
+    }),
+    [folders, teams, services] // Only change when data changes
+  );
 
-  Issue 11.5: Types Export Side Effects
-  - types/agent.ts exports many constants
-  - If tree-shaking fails, unused constants bundle into all pages
+  3.2 Redundant Filtering in Suggestion Groups
+
+  File: components/agents/mention-input.tsx:298-378
+
+  The suggestions array is filtered 6 times (2x per type: once for .some() check and once for .filter()). This could be optimized:
+
+  const grouped = useMemo(() => {
+    const folders = suggestions.filter(s => s.type === "folder");
+    const teams = suggestions.filter(s => s.type === "team");
+    const services = suggestions.filter(s => s.type === "service");
+    return { folders, teams, services };
+  }, [suggestions]);
+
+  3.3 New Array Creation on Every Render
+
+  File: lib/agents/instruction-parser.ts:458-466
+
+  const allEntities: MentionableEntity[] = [
+    ...context.folders,
+    ...context.teams,
+    ...AVAILABLE_SERVICES.map(...)
+  ];
+
+  This creates new arrays on every call to getMentionSuggestions. Consider caching if called frequently.
 
   ---
-  Summary of Critical Issues
-  ┌──────────┬───────────────────────────────┬──────────────────────────────┬─────────────────────┐
-  │ Priority │             Issue             │           Location           │       Impact        │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ High     │ Unused AgentListPanel         │ agent-list-panel.tsx         │ 346 lines dead code │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ High     │ No error feedback to users    │ agent-context.tsx            │ Poor UX             │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ High     │ Missing AbortController       │ agent-context.tsx            │ Memory leaks        │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ Medium   │ Duplicate delete dialogs      │ Multiple files               │ Maintenance burden  │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ Medium   │ AgentSidebarItem not memoized │ agent-sidebar-section.tsx    │ Performance         │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ Medium   │ parseSteps not memoized       │ agent-instructions-panel.tsx │ Performance         │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ Medium   │ Race condition on selection   │ agent-context.tsx            │ Potential bugs      │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ Low      │ Hardcoded model options       │ agent-settings-panel.tsx     │ Maintainability     │
-  ├──────────┼───────────────────────────────┼──────────────────────────────┼─────────────────────┤
-  │ Low      │ Time formatting duplicated    │ agent-instructions-panel.tsx │ Code duplication    │
-  └──────────┴───────────────────────────────┴──────────────────────────────┴─────────────────────┘
-  ---
-  Recommendations
+  4. CODE DUPLICATION
 
-  1. Remove or defer AgentListPanel - It's completely unused
-  2. Add toast notifications for all error states in AgentContext
-  3. Implement AbortController for fetch requests in context
-  4. Extract DeleteAgentDialog as shared component
-  5. Memoize AgentSidebarItem with React.memo like TeamSidebarItem
-  6. Validate agentId format before API calls
-  7. Split AgentInstructionsPanel into smaller focused components
-  8. Use MODEL_LABELS constant from types instead of inline options
+  4.1 Duplicate Icon Logic
+
+  Files: mention-input.tsx:64-85 and mention-tag.tsx:61-86
+
+  Both files have nearly identical getEntityIcon / getIcon functions:
+
+  // mention-input.tsx
+  function getEntityIcon(entity: MentionableEntity) { ... }
+
+  // mention-tag.tsx  
+  function getIcon(reference: ParsedReference) { ... }
+
+  Recommendation: Extract to a shared utility:
+  // lib/agents/ui-helpers.ts
+  export function getEntityIcon(type: string, name?: string): React.ReactNode { ... }
+
+  4.2 Duplicate Color Logic
+
+  Same pattern with getEntityColor and TYPE_COLORS constant. Both define blue for folders, violet for teams, emerald for services.
+
+  ---
+  5. ARCHITECTURE CONCERNS
+
+  5.1 Single Responsibility Violation
+
+  File: lib/agents/instruction-parser.ts
+
+  This 550+ line file handles:
+  1. Parsing logic
+  2. Validation logic
+  3. Autocomplete logic
+  4. Reference extraction
+
+  Recommendation: Split into separate modules:
+  lib/agents/
+  ├── parser.ts          # Core parsing
+  ├── validator.ts       # Validation
+  ├── autocomplete.ts    # Suggestion logic
+  ├── references.ts      # Reference extraction helpers
+  └── index.ts           # Re-exports
+
+  5.2 Missing Abstraction for API Fetching
+
+  File: hooks/use-mention-context.ts:46-59
+
+  Direct fetch() calls without abstraction. Should use a shared API client:
+
+  // Current
+  const [foldersResponse, teamsResponse] = await Promise.all([
+    fetch("/api/folders"),
+    fetch("/api/teams"),
+  ]);
+
+  // Better - use existing api utilities if available
+  const [folders, teams] = await Promise.all([
+    api.folders.list(),
+    api.teams.list(),
+  ]);
+
+  ---
+  6. TYPE SAFETY ISSUES
+
+  6.1 Unsafe Type Assertions
+
+  File: hooks/use-mention-context.ts:173-175
+
+  traverse(
+    team.subteams as Array<{...}>
+  );
+
+  Using as cast on unknown data from API. If the shape changes, this silently fails.
+
+  6.2 Missing Null Checks
+
+  File: components/agents/mention-tag.tsx:72-73
+
+  const serviceName = reference.name.toLowerCase();
+
+  No null check on reference.name. If name is undefined, this throws.
+
+  ---
+  7. MEMORY LEAK POTENTIAL
+
+  7.1 Timeout Not Cleaned Up
+
+  File: components/agents/mention-input.tsx:253-257
+
+  Already mentioned in bugs section - setTimeout without cleanup.
+
+  7.2 Fetch Without Abort Controller
+
+  File: hooks/use-mention-context.ts:44-97
+
+  const fetchData = useCallback(async () => {
+    const [foldersResponse, teamsResponse] = await Promise.all([
+      fetch("/api/folders"),
+      fetch("/api/teams"),
+    ]);
+    // ...
+  }, []);
+
+  If component unmounts during fetch, the state setters will be called on unmounted component.
+
+  Fix:
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchData() {
+      const [foldersRes, teamsRes] = await Promise.all([
+        fetch("/api/folders", { signal: controller.signal }),
+        fetch("/api/teams", { signal: controller.signal }),
+      ]);
+      // ...
+    }
+
+    fetchData();
+
+    return () => controller.abort();
+  }, []);
+
+  ---
+  8. EDGE CASES NOT HANDLED
+
+  8.1 Empty Context Edge Case
+
+  File: lib/agents/instruction-parser.ts:70-152
+
+  If context.folders or context.teams is undefined (not empty array), buildNameMap will throw.
+
+  8.2 Unicode/Emoji in Mentions
+
+  The regex doesn't handle unicode characters in names. @Équipe or @チーム won't match.
+
+  8.3 Very Long Mentions
+
+  No length limit on quoted mentions: @"A very very very... (10000 chars)... long name" would pass.
+
+  ---
+  9. USABILITY ISSUES
+
+  9.1 No Loading State for Context
+
+  File: components/agents/mention-input.tsx
+
+  When isMentionContextLoading is true, the component still shows the dropdown with empty results. Should show a loading indicator.
+
+  9.2 Keyboard Selection Wrap-Around
+
+  File: components/agents/mention-input.tsx:186-194
+
+  Arrow navigation wraps from last to first, but the visual grouping (Folders/Teams/Services) doesn't align with the flat index, causing confusing UX.
+
+  ---
+  10. RECOMMENDATIONS SUMMARY
+  ┌─────────────┬────────────────────────────────┬────────────────────────┬──────┐
+  │  Priority   │             Issue              │          File          │ Line │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🔴 Critical │ ReDoS vulnerability            │ instruction-parser.ts  │ 50   │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🔴 High     │ Memory leak (setTimeout)       │ mention-input.tsx      │ 253  │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🔴 High     │ Stale closure in handleKeyDown │ mention-input.tsx      │ 210  │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🟡 Medium   │ Race condition in blur         │ mention-input.tsx      │ 253  │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🟡 Medium   │ Index calculation bug          │ mention-input.tsx      │ 302  │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🟡 Medium   │ Missing AbortController        │ use-mention-context.ts │ 44   │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🟢 Low      │ Code duplication (icons)       │ multiple               │ -    │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🟢 Low      │ Performance (filtering)        │ mention-input.tsx      │ 298  │
+  ├─────────────┼────────────────────────────────┼────────────────────────┼──────┤
+  │ 🟢 Low      │ SRP violation                  │ instruction-parser.ts  │ -    │
+  └─────────────┴────────────────────────────────┴────────────────────────┴──────┘
+  ---
+  11. POSITIVE OBSERVATIONS
+
+  ✅ Clean separation between parsing logic and UI
+  ✅ Proper use of TypeScript types
+  ✅ Good JSDoc documentation
+  ✅ Consistent code style and formatting
+  ✅ Proper use of React hooks patterns (useCallback, useMemo)
+  ✅ Accessibility-friendly Command component usage
+  ✅ Dark mode support in MentionTag colors
+  ✅ Good error display for unresolved references
 
 
 ### Code Reviewer2: 
 
- Findings:
+ Findings from reviewing the Phase 2 uncommitted changes (agent instructions/mentions):
 
-  - Agent data fetches target non-existent API routes. contexts/agent-context.tsx:86-198,203-279 and app/dashboard/agents/
-    page.tsx:38-49 call /api/agents endpoints (list/detail/create/update/delete/run), but rg shows no such routes in the repo.
-    With AgentProvider wrapped around every dashboard page (app/dashboard/layout.tsx:58-77), every dashboard view will issue
-    404s, leaving the sidebar stuck in “No agents yet” and the main panel spinner/empty without surfacing the failure. This
-    blocks the UI and adds noise across the whole dashboard.
-  - Manual run endpoint doesn’t match the plan. The UI posts to /api/agents/${id}/run (app/dashboard/agents/page.tsx:38), while
-    the Phase 1 plan specifies /api/agents/[agentId]/execute. Even after backend implementation, this mismatch will keep Run
-    Agent failing.
-  - Service/reference casing mismatch means integrations never show. AgentSettingsPanel expects referencedServices to contain
-    lowercase ids like "gmail"/"calendar" (components/agents/agent-settings-panel.tsx:53-98), but AgentService is defined with
-    capitalized variants (types/agent.ts:53-56). Any upstream data using the typed values will be filtered out, so badges and
-    tool affordances stay empty.
-  - Error handling is silent for failed agent fetches. agentsError is set but never rendered in the sidebar (components/agents/
-    agent-sidebar-section.tsx:122-167) or main panel. Users just see “No agents yet” after a failed call, masking outages and
-    making troubleshooting hard.
-  - Agent fetching is global rather than scoped. Wrapping the entire dashboard in AgentProvider (app/dashboard/layout.tsx:58-77)
-    forces client-side fetches on every dashboard visit—even when the Agents feature isn’t used—incurring extra requests and
-    repeated 404s until the backend exists. This is avoidable by scoping the provider to the agents route or delaying fetches
-    until the Agents page is opened.
+  - [High] lib/agents/instruction-parser.ts:55 – Services are matched only by id (gmail, calendar, slack), but MentionInput
+    inserts the service display name (e.g., @"Google Calendar"). Calendar mentions will never resolve as services and end up
+    flagged as unresolved folders, so referencedServices and downstream tool availability will be wrong.
+  - [High] lib/agents/instruction-parser.ts:50 and lib/agents/instruction-parser.ts:498 – The mention regex and
+    formatMentionForInsert don’t escape double quotes. Folder/team names are allowed to contain quotes, so inserting them
+    produces invalid mention strings (e.g., @"Team "A"), and parsing will fail or misclassify those references.
+  - [Medium] lib/agents/instruction-parser.ts:515 – When a user types a quoted multi-word mention (@"Sales …),
+    getMentionQueryAtCursor returns a query that still includes the leading quote, so getMentionSuggestions yields no matches.
+    Autocomplete effectively breaks for the quoted workflow, which is the format we encourage for multi-word names.
+  - [Medium] hooks/use-mention-context.ts:40 and components/agents/agent-instructions-panel.tsx:88 – If fetching folders/teams
+    fails (401/500), the hook returns empty context silently. The panel still parses and surfaces “Unresolved references,”
+    implying user error when the data simply didn’t load. There’s no UI hint or retry gating, so users may save instructions
+    with missing references.
+  - [Low] components/agents/mention-tag.tsx:136 – Every mention tag instantiates its own TooltipProvider, creating many nested
+    providers for long instruction bodies. This adds unnecessary providers/DOM nodes and can interfere with global tooltip
+    behavior; prefer a single shared provider higher in the tree.
