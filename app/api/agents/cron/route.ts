@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getDueSchedules,
-  updateScheduleAfterRun,
+  claimScheduleForExecution,
+  markScheduleExecuted,
   createAgentExecution,
   markExecutionStarted,
   markExecutionCompleted,
   markExecutionFailed,
   cleanupStaleExecutions,
   getUserById,
+  finalizeOneTimeSchedule,
+  restoreOneTimeScheduleForRetry,
 } from "@/lib/db/agent";
 import { executeAgent, type ExecutorContext } from "@/lib/agents/executor";
-import { getSecretOrDefault } from "@/lib/secrets";
+import { getSecretOrDefault, secureCompare } from "@/lib/secrets";
 
 /**
  * GET /api/agents/cron
@@ -23,17 +26,26 @@ import { getSecretOrDefault } from "@/lib/secrets";
  * - Vercel's built-in cron authentication via Authorization header
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  // Verify cron authentication
-  const authHeader = request.headers.get("authorization");
+  // Verify cron authentication using constant-time comparison to prevent timing attacks
+  const authHeader = request.headers.get("authorization") ?? "";
+  const cronSecretHeader = request.headers.get("x-cron-secret") ?? "";
   // Read from Docker secrets (production) or env var (development)
   const cronSecret = getSecretOrDefault("CRON_SECRET", "");
 
   // Check Vercel's built-in cron authentication or custom CRON_SECRET
-  const isVercelCron = authHeader === `Bearer ${cronSecret}`;
-  const isValidCronSecret = cronSecret && request.headers.get("x-cron-secret") === cronSecret;
+  // Using constant-time comparison to prevent timing attacks
+  const expectedBearerToken = `Bearer ${cronSecret}`;
+  const hasValidSecret = cronSecret && secureCompare(authHeader, expectedBearerToken);
+  const hasValidCronHeader = cronSecret && secureCompare(cronSecretHeader, cronSecret);
 
-  if (!isVercelCron && !isValidCronSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasValidSecret && !hasValidCronHeader) {
+    // In development without CRON_SECRET, allow localhost for testing
+    const host = request.headers.get("host") ?? "";
+    const isLocalDev = !cronSecret && host.startsWith("localhost");
+
+    if (!isLocalDev) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const results: {
@@ -70,6 +82,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // Process each due schedule
     for (const schedule of dueSchedules) {
       const { agent } = schedule;
+
+      // FIRST: Try to claim the schedule atomically (prevents race conditions)
+      // This must happen before any other checks to ensure only one worker processes
+      // Note: schedule.nextRunAt is a string from JSON, convert to Date for comparison
+      const claimedSchedule = await claimScheduleForExecution(
+        schedule.id,
+        schedule.nextRunAt ? new Date(schedule.nextRunAt) : null
+      );
+
+      if (!claimedSchedule) {
+        // Another worker already claimed this schedule, skip it
+        results.push({
+          scheduleId: schedule.id,
+          agentId: agent.id,
+          agentName: agent.name,
+          executionId: "",
+          status: "skipped",
+          error: "Already claimed by another worker",
+        });
+        continue;
+      }
 
       // Skip if agent is not active (double-check, though getDueSchedules should filter)
       if (!agent.isActive) {
@@ -138,6 +171,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // Update execution record based on result
         if (result.success) {
           await markExecutionCompleted(execution.id, result.outputResult);
+
+          // For one-time schedules, disable after successful execution
+          if (schedule.scheduleType === "once") {
+            await finalizeOneTimeSchedule(schedule.id);
+          }
+
           results.push({
             scheduleId: schedule.id,
             agentId: agent.id,
@@ -151,6 +190,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             result.errorMessage ?? "Unknown error",
             result.outputResult
           );
+
+          // For one-time schedules, restore nextRunAt so it can retry
+          if (schedule.scheduleType === "once") {
+            await restoreOneTimeScheduleForRetry(schedule.id);
+          }
+
           results.push({
             scheduleId: schedule.id,
             agentId: agent.id,
@@ -161,8 +206,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           });
         }
 
-        // Update schedule after run (recalculates next run time)
-        await updateScheduleAfterRun(schedule.id);
+        // Mark schedule as executed (updates lastRunAt)
+        await markScheduleExecuted(schedule.id);
       } catch (error) {
         console.error(`Failed to execute schedule ${schedule.id}:`, error);
 
@@ -177,11 +222,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           }
         }
 
-        // Still update schedule after run to prevent stuck schedules
+        // For one-time schedules, restore nextRunAt so it can retry
+        if (schedule.scheduleType === "once") {
+          try {
+            await restoreOneTimeScheduleForRetry(schedule.id);
+          } catch (restoreError) {
+            console.error("Failed to restore one-time schedule for retry:", restoreError);
+          }
+        }
+
+        // Still mark schedule as executed to update lastRunAt
         try {
-          await updateScheduleAfterRun(schedule.id);
+          await markScheduleExecuted(schedule.id);
         } catch (updateError) {
-          console.error("Failed to update schedule after run:", updateError);
+          console.error("Failed to mark schedule as executed:", updateError);
         }
 
         results.push({

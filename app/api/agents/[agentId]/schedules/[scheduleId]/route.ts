@@ -111,9 +111,10 @@ export async function PATCH(
     const { sanitized } = validation;
 
     // Update schedule
+    // Note: scheduledAt is passed as raw string - updateAgentSchedule parses it with timezone
     const schedule = await updateAgentSchedule(scheduleId, {
       scheduleType: sanitized.scheduleType,
-      scheduledAt: sanitized.scheduledAt ? new Date(sanitized.scheduledAt) : undefined,
+      scheduledAt: sanitized.scheduledAt,
       hour: sanitized.hour,
       minute: sanitized.minute,
       dayOfWeek: sanitized.dayOfWeek,

@@ -120,10 +120,11 @@ export async function POST(
     const { sanitized } = validation;
 
     // Create schedule
+    // Note: scheduledAt is passed as raw string - createAgentSchedule parses it with timezone
     const schedule = await createAgentSchedule({
       agentId,
       scheduleType: sanitized.scheduleType,
-      scheduledAt: sanitized.scheduledAt ? new Date(sanitized.scheduledAt) : undefined,
+      scheduledAt: sanitized.scheduledAt,
       hour: sanitized.hour,
       minute: sanitized.minute,
       dayOfWeek: sanitized.dayOfWeek,

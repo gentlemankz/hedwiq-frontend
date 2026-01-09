@@ -79,6 +79,7 @@ export function AgentSettingsPanel({
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   // Schedule handlers
+  // Note: These handlers show toast and swallow errors to prevent unhandled rejections
   const handleCreateSchedule = async (data: CreateAgentScheduleRequest) => {
     if (!agent) return;
     try {
@@ -97,7 +98,7 @@ export function AgentSettingsPanel({
       console.error("Failed to create schedule:", err);
       const message = err instanceof Error ? err.message : "Failed to create schedule";
       toast.error(message);
-      throw err;
+      // Don't rethrow - toast already notified user
     }
   };
 
@@ -122,7 +123,7 @@ export function AgentSettingsPanel({
       console.error("Failed to update schedule:", err);
       const message = err instanceof Error ? err.message : "Failed to update schedule";
       toast.error(message);
-      throw err;
+      // Don't rethrow - toast already notified user
     }
   };
 
@@ -142,7 +143,7 @@ export function AgentSettingsPanel({
       console.error("Failed to delete schedule:", err);
       const message = err instanceof Error ? err.message : "Failed to delete schedule";
       toast.error(message);
-      throw err;
+      // Don't rethrow - toast already notified user
     }
   };
 

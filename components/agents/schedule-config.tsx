@@ -36,6 +36,7 @@ import {
   type AgentScheduleType,
   type CreateAgentScheduleRequest,
 } from "@/types/agent";
+import { describeSchedule, WEEKDAY_NAMES } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -50,16 +51,8 @@ interface ScheduleConfigProps {
   onDeleteSchedule: (scheduleId: string) => Promise<void>;
 }
 
-// Days of week for weekly schedules
-const DAYS_OF_WEEK = [
-  { value: 0, label: "Sunday" },
-  { value: 1, label: "Monday" },
-  { value: 2, label: "Tuesday" },
-  { value: 3, label: "Wednesday" },
-  { value: 4, label: "Thursday" },
-  { value: 5, label: "Friday" },
-  { value: 6, label: "Saturday" },
-];
+// Days of week for weekly schedules (derived from shared WEEKDAY_NAMES)
+const DAYS_OF_WEEK = WEEKDAY_NAMES.map((label, value) => ({ value, label }));
 
 // Common timezones
 const TIMEZONES = [
@@ -315,32 +308,8 @@ function ScheduleItem({ schedule, onToggle, onDelete }: ScheduleItemProps) {
     }
   };
 
-  // Format schedule description
-  const getScheduleDescription = (): string => {
-    const type = schedule.scheduleType;
-    const hour = schedule.hour?.toString().padStart(2, "0") ?? "00";
-    const minute = schedule.minute?.toString().padStart(2, "0") ?? "00";
-
-    switch (type) {
-      case "once":
-        if (schedule.scheduledAt) {
-          return new Date(schedule.scheduledAt).toLocaleString();
-        }
-        return "One-time (date pending)";
-      case "hourly":
-        return `Every hour at :${minute}`;
-      case "daily":
-        return `Daily at ${hour}:${minute}`;
-      case "weekly": {
-        const day = DAYS_OF_WEEK.find((d) => d.value === schedule.dayOfWeek)?.label ?? "Unknown";
-        return `Every ${day} at ${hour}:${minute}`;
-      }
-      case "monthly":
-        return `Monthly on day ${schedule.dayOfMonth} at ${hour}:${minute}`;
-      default:
-        return "Unknown schedule";
-    }
-  };
+  // Use shared schedule description utility
+  const scheduleDescription = describeSchedule(schedule);
 
   // Format next run time
   const getNextRunDisplay = (): string | null => {
@@ -362,7 +331,7 @@ function ScheduleItem({ schedule, onToggle, onDelete }: ScheduleItemProps) {
         <Clock className="size-4 text-muted-foreground shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium truncate">{getScheduleDescription()}</span>
+            <span className="text-sm font-medium truncate">{scheduleDescription}</span>
             {schedule.isEnabled && schedule.nextRunAt && (
               <Badge variant="outline" className="text-[10px] shrink-0">
                 <CalendarClock className="size-3 mr-1" />

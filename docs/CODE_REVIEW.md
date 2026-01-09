@@ -1,317 +1,472 @@
 ### Reviwer1:
 
-Phase 3 Code Review: Agent Execution Engine
+Phase 4 (Scheduling) Code Review Report
 
   Executive Summary
 
-  The Phase 3 implementation is well-structured overall with good separation of concerns. However, I've identified several issues that need attention, ranging from security concerns to potential bugs and architectural improvements.
+  The Phase 4 scheduling implementation is generally well-structured with good patterns for validation, authentication, and database operations. However, there are several critical and moderate issues that need attention, particularly around timezone handling, race conditions, and error handling.
 
   ---
-  1. Security Review
+  1. Functionality
 
-  🔴 Critical Issues
+  ✅ Working Well
 
-  1.1 Missing Authorization Check in Tool Execution (executor.ts:228-244)
-  getMeeting: tool({
-    execute: async (input) => {
-      const { meetingId } = input;
-      const meeting = await getMeetingById(meetingId);  // No ownership check!
-  Issue: The getMeeting tool doesn't verify that the meeting belongs to the user. An agent could potentially access any meeting by ID.
+  - Schedule CRUD operations are complete and functional
+  - Five schedule types properly supported: "once", "hourly", "daily", "weekly", "monthly"
+  - Schedule enable/disable toggle works correctly
+  - Cron endpoint properly fetches and processes due schedules
+  - Stale execution cleanup prevents stuck executions
 
-  Fix: Add ownership verification:
-  const meeting = await getMeetingById(meetingId, context.userId);
+  ❌ Critical Issue: Timezone Not Implemented
 
-  1.2 Email Recipient Validation (executor.ts:384-409)
-  sendEmail: tool({
-    inputSchema: z.object({
-      to: z.array(z.string().email()),
-  Issue: No validation to prevent sending emails to arbitrary recipients. An AI agent could potentially be manipulated to send spam or phishing emails.
+  Location: lib/db/agent.ts:calculateNextRunTime() (lines ~850-950)
 
-  Recommendation: Add allowlist validation or rate limiting for email recipients.
+  /**
+   * TODO: Timezone support is currently not implemented. The `timezone` parameter
+   * is accepted but not applied. All calculations use the server's local timezone.
+   */
 
-  🟡 Medium Issues
+  Impact: Users selecting a timezone (e.g., "America/New_York") will NOT get their schedules run at the expected local time. All times are calculated using server timezone.
 
-  1.3 Potential Header Injection Residual (executor.ts:88-91)
-  const sanitizeEmail = (email: string) => email.replace(/[\r\n]/g, "").trim();
-  Issue: While sanitization exists, it only removes \r\n. Consider also handling other injection vectors like null bytes.
+  Recommendation: Implement proper timezone conversion using date-fns-tz or luxon:
+  import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
 
-  1.4 API Key Exposure Risk (executor.ts:58-60)
-  const openai = createOpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-  Issue: If OPENAI_API_KEY is undefined, this may cause unclear errors. Add validation.
+  function calculateNextRunTime(params) {
+    const { timezone = 'UTC' } = params;
+    const nowInZone = utcToZonedTime(new Date(), timezone);
+    // ... calculate next run in user's timezone
+    return zonedTimeToUtc(nextRunLocal, timezone);
+  }
 
-  ---
-  2. Functionality Review
+  ⚠️ Moderate Issue: "Once" Schedule Edge Case
 
-  🔴 Bugs Found
+  Location: lib/db/agent.ts:calculateNextRunTime()
 
-  2.1 Race Condition in Execution Status (route.ts:62-76)
-  const execution = await createAgentExecution({ agentId, triggeredBy: "manual" });
-  await markExecutionStarted(execution.id);
-  // If server crashes here, execution stays in "running" forever
-  const result = await executeAgent(agent, execution, executorContext);
-  Issue: No cleanup mechanism for orphaned "running" executions.
+  When scheduleType === "once", if scheduledAt is in the past, the function returns null. However, the schedule isn't automatically disabled, leading to a "zombie" schedule that will never run again but remains enabled.
 
-  Fix: Add a cron job or startup cleanup for stale executions.
-
-  2.2 Missing Transcript Access Control (executor.ts:297-318)
-  getMeetingTranscript: tool({
-    execute: async (input) => {
-      const { meetingId } = input;
-      const segments = await getMeetingTranscription(meetingId);  // No auth check
-  Issue: Same as getMeeting - no ownership verification.
-
-  🟡 Logic Issues
-
-  2.3 Team Tool Missing Ownership Check (executor.ts:328-341)
-  getTeam: tool({
-    execute: async (input) => {
-      const { teamId } = input;
-      const team = await getTeamWithMemberCount(teamId);  // Any team accessible
-
-  2.4 Step Count Limit (executor.ts:444)
-  stopWhen: stepCountIs(10),
-  Issue: Hardcoded limit of 10 steps. Consider making this configurable per agent or based on model.
+  Recommendation: Auto-disable "once" schedules after execution or when scheduledAt is past.
 
   ---
-  3. Performance & Efficiency
+  2. Readability and Maintainability
 
-  🟡 Issues
+  ✅ Strengths
 
-  3.1 Redundant Execution Record Creation (route.ts:57-63)
-  const execution = await createAgentExecution({ ... });
-  await markExecutionStarted(execution.id);
-  Issue: Two database calls where one could suffice. Consider creating with status: 'running' directly.
+  - Consistent naming conventions across all files
+  - Good use of TypeScript types and interfaces
+  - Clear function documentation with JSDoc comments
+  - Logical file organization separating concerns
 
-  3.2 Inefficient Token Counting (executor.ts:479-486)
-  const inputTokens = result.totalUsage?.inputTokens ?? 0;
-  const outputTokens = result.totalUsage?.outputTokens ?? 0;
-  const usage: AgentTokenUsage = {
-    promptTokens: inputTokens,
-    completionTokens: outputTokens,
-    totalTokens: inputTokens + outputTokens,
-  };
-  Issue: totalTokens is calculated but AI SDK likely already provides it. Minor redundancy.
+  ⚠️ Areas for Improvement
 
-  3.3 No Caching for Context Data (executor.ts:249-267)
-  The listUpcomingMeetings and listPastMeetings tools fetch data on each call. For agents making multiple similar queries, this creates redundant database calls.
+  Long Functions: calculateNextRunTime() at ~100 lines could be split:
+  // Better approach
+  function calculateNextHourlyRun(now: Date, minute: number): Date { ... }
+  function calculateNextDailyRun(now: Date, hour: number, minute: number): Date { ... }
+  function calculateNextWeeklyRun(...): Date { ... }
+  // etc.
+
+  Magic Numbers: Several hardcoded values without constants:
+  - lib/db/agent.ts: staleThreshold = 5 * 60 * 1000 (5 minutes)
+  - lib/db/agent.ts: Date calculations use raw numbers (7, 60000, etc.)
+
+  Recommendation: Extract to named constants:
+  const STALE_EXECUTION_THRESHOLD_MS = 5 * 60 * 1000;
+  const DAYS_IN_WEEK = 7;
+  const MS_PER_MINUTE = 60000;
 
   ---
-  4. Architecture & SOLID Principles
+  3. Security
 
-  🟡 Single Responsibility Violations
+  ✅ Well Implemented
 
-  4.1 executor.ts is Too Large (553 lines)
-  This file handles:
-  - OpenAI model configuration
-  - MIME message creation
-  - Gmail API integration
-  - Tool definitions
-  - Execution orchestration
+  - Cron Authentication: Dual verification via Bearer token and x-cron-secret header
+  - Ownership Verification: All API routes verify user owns the agent/schedule
+  - Input Validation: Comprehensive validation before database operations
+  - SQL Injection Prevention: Using Drizzle ORM's parameterized queries
 
-  Recommendation: Split into:
-  - lib/agents/models.ts - Model configuration
-  - lib/agents/gmail.ts - Gmail/email utilities
-  - lib/agents/tools/ - Individual tool files
-  - lib/agents/executor.ts - Orchestration only
+  ⚠️ Potential Issues
 
-  4.2 Mixed Concerns in Tool Results
-  // executor.ts:467-475
-  if (tc.toolName === "sendEmail" && toolCall.result) {
-    const emailResult = toolCall.result as { success?: boolean; recipients?: string[] };
-  Issue: Email tracking logic is embedded in the main execution loop. Should be abstracted.
+  Timing Attack on CRON_SECRET: app/api/agents/cron/route.ts:27-29
+  const isValidCronSecret = cronSecret && request.headers.get("x-cron-secret") === cronSecret;
 
-  🟢 Good Practices Observed
+  String comparison with === is vulnerable to timing attacks. While low risk for cron secrets, consider using constant-time comparison:
+  import { timingSafeEqual } from 'crypto';
 
-  - Clear interface definitions (ExecutorContext, ExecutorResult)
-  - Good use of TypeScript for type safety
-  - Appropriate use of Zod for input validation in tools
+  function safeCompare(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  }
+
+  Missing Rate Limiting: No rate limiting on schedule creation. A user could spam create schedules up to the limit rapidly.
+
+  ---
+  4. Performance and Efficiency
+
+  ✅ Good Patterns
+
+  - Database queries use appropriate indexes (agentId, scheduleId)
+  - Batch processing in cron endpoint
+  - Minimal data fetching (only required fields)
+
+  ⚠️ Performance Concerns
+
+  N+1 Query Potential: cron/route.ts processes schedules individually:
+  for (const schedule of dueSchedules) {
+    const agent = await getAgentById(schedule.agentId); // N queries!
+    // ...
+  }
+
+  Recommendation: Batch fetch agents:
+  const agentIds = [...new Set(dueSchedules.map(s => s.agentId))];
+  const agents = await getAgentsByIds(agentIds);
+  const agentMap = new Map(agents.map(a => [a.id, a]));
+
+  Missing Database Indexes: Ensure index exists for getDueSchedules() query:
+  CREATE INDEX idx_schedules_due ON agent_schedules (is_enabled, next_run_at)
+  WHERE is_enabled = true;
 
   ---
   5. Resource Management
 
-  🟡 Issues
+  ✅ Good Practices
 
-  5.1 No Timeout on AI SDK Call (executor.ts:439-445)
-  const result = await generateText({
-    model: getModel(agent.model),
-    // No timeout configuration
-  Issue: If OpenAI API hangs, the request will hang indefinitely.
+  - Database connections managed by Drizzle ORM connection pool
+  - Stale execution cleanup prevents resource buildup
+  - Schedule limit (5 per agent) prevents unbounded growth
 
-  Fix: Add AbortController with timeout:
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
-  try {
-    const result = await generateText({ ..., abortSignal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
+  ⚠️ Issues
+
+  Missing Transaction in Schedule Update: lib/db/agent.ts:updateAgentSchedule()
+
+  The function updates the schedule and recalculates nextRunAt without a transaction:
+  export async function updateAgentSchedule(...) {
+    // Should be in a transaction
+    const [updated] = await db.update(agentSchedules)...;
+    return updated;
   }
 
-  5.2 Gmail Token Refresh Not Handled (executor.ts:155-162)
-  const tokenResult = await getValidGmailToken(userId);
-  if (!tokenResult) {
-    return { success: false, error: "Gmail not connected..." };
-  }
-  Issue: If token expires mid-execution after multiple tool calls, later email attempts may fail. Consider pre-validating and refreshing.
+  If nextRunAt calculation fails mid-way, the schedule could be left in an inconsistent state.
+
+  No Connection Timeout: Long-running cron jobs don't have explicit timeouts.
 
   ---
-  6. Code Duplication
+  6. Code Duplications
 
-  🟡 Duplications Found
+  ❌ Duplicate Ownership Verification
 
-  6.1 Repetitive Tool Response Structure
-  Each tool has similar error handling pattern:
-  if (!meeting) {
-    return { error: "Meeting not found" };
+  Three nearly identical patterns across API routes:
+
+  schedules/route.ts:21-30:
+  const agent = await getAgentById(agentId);
+  if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+  if (agent.userId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  Recommendation: Create a helper function:
-  const toolResult = <T>(data: T | null, notFoundMsg: string) =>
-    data ? data : { error: notFoundMsg };
 
-  6.2 Duplicate Status Update Patterns (route.ts:79-104)
-  if (result.success) {
-    const updatedExecution = await markExecutionCompleted(...);
-    if (!updatedExecution) {
-      return NextResponse.json({ error: "Failed to update execution record" }, { status: 500 });
+  [scheduleId]/route.ts:22-30: Same pattern
+  cron/route.ts: Similar pattern for agent verification
+
+  Recommendation: Create a middleware or utility:
+  // lib/api/auth.ts
+  export async function requireAgentOwnership(
+    agentId: string, 
+    userId: string
+  ): Promise<Agent | NextResponse> {
+    const agent = await getAgentById(agentId);
+    if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    if (agent.userId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return agent;
+  }
+
+  ❌ Duplicate Validation Logic
+
+  schedule-config.tsx duplicates some validation that exists in lib/validation/agent.ts:
+  // schedule-config.tsx - duplicated
+  const handleDateTimeChange = (value: string) => {
+    const selectedDate = new Date(value);
+    const now = new Date();
+    if (selectedDate <= now) {
+      // validation here
     }
-    return NextResponse.json({ execution: updatedExecution });
-  } else {
-    const updatedExecution = await markExecutionFailed(...);
-    // Same pattern repeated
+  };
+
+  This should use validateScheduledAt() from the validation library.
+
+  ---
+  7. Over-Engineering
+
+  ✅ Generally Well-Balanced
+
+  The implementation is appropriately scoped without excessive abstraction.
+
+  ⚠️ Minor Over-Engineering
+
+  Hardcoded Timezone List: schedule-config.tsx contains ~40 hardcoded timezones:
+  const TIMEZONES = [
+    { value: "UTC", label: "UTC" },
+    { value: "America/New_York", label: "Eastern Time (US)" },
+    // ... 40 more
+  ];
+
+  This could simply use Intl.supportedValuesOf('timeZone') for a complete list, or a library like timezone-support.
+
+  ---
+  8. Memory Leaks
+
+  ✅ No Obvious Memory Leaks
+
+  - React components use proper cleanup patterns
+  - No event listener accumulation detected
+  - Database connections properly pooled
+
+  ⚠️ Potential Issue in Long-Running Cron
+
+  Location: cron/route.ts
+
+  If cron processes many schedules, error objects accumulate in the results array:
+  const results = [];
+  for (const schedule of dueSchedules) {
+    // ... errors pushed to results
   }
-  Recommendation: Consolidate into single function.
+  return NextResponse.json({ processed: results.length, results });
+
+  For large deployments, consider:
+  - Limiting batch size
+  - Not returning full results array
+  - Processing in chunks
 
   ---
-  7. Over-Engineering Assessment
+  9. Architecture (SOLID Principles)
 
-  🟢 Generally Appropriate
+  ✅ Single Responsibility - Mostly Good
 
-  The implementation is appropriately sized for the feature scope. However:
+  - lib/validation/agent.ts - Only validation
+  - lib/db/agent.ts - Only database operations
+  - lib/utils.ts - Only utility/formatting functions
 
-  7.1 MIME Message Builder Could Use Library
-  The custom createMimeMessage function (lines 79-132) handles MIME encoding manually. Consider using nodemailer or similar for robustness.
+  ⚠️ Violations
 
-  7.2 Execution History UI Component
-  The agent-execution-history.tsx component is well-scoped and not over-engineered.
+  lib/db/agent.ts Does Too Much:
+  - Database CRUD operations
+  - Business logic (calculating next run time)
+  - Execution flow control
 
-  ---
-  8. Memory Leak Analysis
-
-  🟢 No Obvious Leaks
-
-  The code doesn't hold long-lived references that would cause memory leaks. The execution is request-scoped and properly terminates.
-
-  🟡 Potential Issue
-
-  8.1 Large Transcript Loading (executor.ts:304-316)
-  const transcript = segments
-    .map((s) => `[${s.speakerName}]: ${s.text}`)
-    .join("\n");
-  Issue: For very long meetings, this could load extremely large strings into memory. Consider pagination or summarization.
-
-  ---
-  9. Edge Cases & Potential Bugs
-
-  🔴 Critical Edge Cases
-
-  9.1 Empty Instructions Execution (route.ts:76)
-  const result = await executeAgent(agent, execution, executorContext);
-  Issue: If agent.instructions is empty string, the AI will be prompted with empty instructions. Add validation:
-  if (!agent.instructions?.trim()) {
-    return NextResponse.json({ error: "Agent has no instructions" }, { status: 400 });
+  Recommendation: Extract calculateNextRunTime() to a separate scheduling service:
+  // lib/services/schedule-calculator.ts
+  export class ScheduleCalculator {
+    calculateNextRun(schedule: AgentSchedule): Date | null { ... }
   }
 
-  9.2 Null User Name (route.ts:69)
-  userName: session.user.name ?? "User",
-  Issue: Falls back to "User" but this appears in system prompt. Consider requiring name or using email.
+  ⚠️ Open/Closed Principle Violation
 
-  🟡 Other Edge Cases
+  Adding a new schedule type (e.g., "custom_cron") requires modifying:
+  1. types/agent.ts - Type definitions
+  2. lib/validation/agent.ts - Validation functions
+  3. lib/db/agent.ts - calculateNextRunTime() switch statement
+  4. schedule-config.tsx - UI components
+  5. lib/utils.ts - describeSchedule() function
 
-  9.3 Tool Result Type Safety (executor.ts:461-462)
-  result: toolResult?.output,
-  Issue: output type is unknown. Should have better type guards.
+  Recommendation: Use a strategy pattern:
+  interface ScheduleStrategy {
+    type: AgentScheduleType;
+    validate(params: ScheduleParams): ValidationResult;
+    calculateNextRun(schedule: AgentSchedule): Date | null;
+    describe(schedule: AgentSchedule): string;
+  }
 
-  9.4 Empty Email Recipients (executor.ts:398)
-  message: `Email sent via Gmail to ${to.length} recipient(s)`,
-  Issue: Zod requires array but doesn't enforce minimum length. Add .min(1).
-
-  9.5 GMT/Timezone Issues in formatTimestamp
-  // agent-execution-history.tsx:115-129
-  const d = new Date(date);
-  const now = new Date();
-  Issue: Using local time comparisons. Server and client may have different timezones causing inconsistent displays.
-
-  ---
-  10. Hidden Factors & Side Effects
-
-  🟡 Concerns
-
-  10.1 Gmail Rate Limits
-  The sendEmail tool doesn't track Gmail API usage. Heavy agent usage could hit Gmail rate limits, affecting other features.
-
-  10.2 OpenAI Cost Control
-  No cost tracking or budget limits per agent execution. A misbehaving agent could consume significant API credits.
-
-  10.3 Execution History Growth
-  // agent-execution-history.tsx - fetches recentExecutions
-  executions={agent?.recentExecutions ?? []}
-  Issue: If executions aren't pruned, the database and UI performance will degrade over time.
-
-  10.4 Cross-Feature Impact
-  The listMeetingsForUser function is shared with other features. Ensure any changes for agents don't break meeting list views.
+  const strategies: Record<AgentScheduleType, ScheduleStrategy> = {
+    once: new OnceScheduleStrategy(),
+    hourly: new HourlyScheduleStrategy(),
+    // ...
+  };
 
   ---
-  Summary Table
-  ┌───────────────┬──────────┬────────┬───────┐
-  │   Category    │ Critical │ Medium │ Minor │
-  ├───────────────┼──────────┼────────┼───────┤
-  │ Security      │ 2        │ 2      │ 0     │
-  ├───────────────┼──────────┼────────┼───────┤
-  │ Functionality │ 2        │ 2      │ 0     │
-  ├───────────────┼──────────┼────────┼───────┤
-  │ Performance   │ 0        │ 3      │ 0     │
-  ├───────────────┼──────────┼────────┼───────┤
-  │ Architecture  │ 0        │ 2      │ 0     │
-  ├───────────────┼──────────┼────────┼───────┤
-  │ Resource Mgmt │ 0        │ 2      │ 0     │
-  ├───────────────┼──────────┼────────┼───────┤
-  │ Duplication   │ 0        │ 2      │ 0     │
-  ├───────────────┼──────────┼────────┼───────┤
-  │ Edge Cases    │ 2        │ 3      │ 0     │
-  ├───────────────┼──────────┼────────┼───────┤
-  │ Total         │ 6        │ 16     │ 0     │
-  └───────────────┴──────────┴────────┴───────┘
-  ---
-  Priority Fixes Recommended
+  10. Potential Bugs in Edge Cases
 
-  1. [Critical] Add ownership verification to all tool executions (getMeeting, getMeetingTranscript, getTeam, listTeamMembers)
-  2. [Critical] Add email recipient validation/allowlist
-  3. [Critical] Add validation for empty instructions before execution
-  4. [High] Add execution timeout using AbortController
-  5. [High] Split executor.ts into smaller modules
-  6. [Medium] Add cleanup mechanism for orphaned executions
-  7. [Medium] Add minimum recipient validation for emails
+  ❌ Critical: Race Condition in Cron Execution
+
+  Location: cron/route.ts:65-90
+
+  const dueSchedules = await getDueSchedules();
+  for (const schedule of dueSchedules) {
+    // Time passes here...
+    const execution = await createExecution(schedule.agentId, "scheduled");
+    await updateScheduleAfterRun(schedule.id);
+  }
+
+  If the cron job runs concurrently (e.g., previous run hasn't finished), the same schedule could be executed twice before nextRunAt is updated.
+
+  Recommendation: Use optimistic locking or claim-based processing:
+  // Atomic claim
+  const claimed = await db.update(agentSchedules)
+    .set({ nextRunAt: calculateNextRunTime(...), lastRunAt: now })
+    .where(and(
+      eq(agentSchedules.id, schedule.id),
+      eq(agentSchedules.nextRunAt, schedule.nextRunAt) // Optimistic lock
+    ));
+
+  if (claimed.rowCount === 0) continue; // Already claimed by another instance
+
+  ❌ Bug: Day-of-Month Edge Case
+
+  Location: lib/db/agent.ts:calculateNextRunTime() for monthly schedules
+
+  case "monthly": {
+    // If dayOfMonth is 31 and current month has 30 days?
+    nextRun.setDate(dayOfMonth ?? 1);
+  }
+
+  Setting day 31 on a 30-day month will roll over to the next month.
+
+  Recommendation: Clamp to last day of month:
+  const lastDay = new Date(nextRun.getFullYear(), nextRun.getMonth() + 1, 0).getDate();
+  nextRun.setDate(Math.min(dayOfMonth ?? 1, lastDay));
+
+  ⚠️ Bug: Weekly Schedule Day Calculation
+
+  Location: lib/db/agent.ts:calculateNextRunTime() weekly case
+
+  If current day equals dayOfWeek but time hasn't passed yet, the schedule might incorrectly jump to next week.
+
+  ⚠️ Timezone Dropdown Mismatch
+
+  Location: schedule-config.tsx
+
+  The hardcoded TIMEZONES list doesn't include all IANA timezones that validateTimezone() accepts. A user could input a valid timezone via API that doesn't appear in the UI dropdown.
+
+  ---
+  11. General Review & Hidden Factors
+
+  Impact on Other Features
+
+  ✅ Low Impact: The scheduling system is well-isolated. Changes shouldn't affect:
+  - Meeting functionality
+  - Authentication
+  - Agent creation/editing (non-schedule parts)
+
+  ⚠️ Shared Resources:
+  - lib/db/agent.ts is shared with Phase 2-3. Heavy schedule operations could slow other agent queries.
+  - Agent execution creates entries in agentExecutions table - needs monitoring for growth.
+
+  Missing Features for Production Readiness
+
+  1. No Retry Logic: Failed scheduled executions aren't retried
+  2. No Execution History Limit: Old executions should be pruned
+  3. No Monitoring/Alerting: No mechanism to alert on failed schedules
+  4. No Schedule Pause All: Cannot disable all schedules for an agent at once
+
+  Test Coverage Gaps
+
+  Based on the implementation, these scenarios need testing:
+  - Concurrent cron execution
+  - DST transitions (daylight saving time)
+  - Schedule at month boundaries
+  - Maximum schedule limit enforcement
+  - Invalid timezone rejection
+  - Stale execution cleanup
+
+  ---
+  Summary of Recommendations
+
+  Critical (Fix Before Production)
+
+  1. Implement timezone support in calculateNextRunTime()
+  2. Add optimistic locking for cron execution to prevent double-runs
+  3. Fix monthly day-of-month edge case for months with fewer days
+
+  High Priority
+
+  4. Extract ownership verification to shared utility
+  5. Add database index for getDueSchedules() query
+  6. Batch fetch agents in cron route to avoid N+1 queries
+
+  Medium Priority
+
+  7. Extract calculateNextRunTime() to separate service
+  8. Add transaction wrapper for schedule updates
+  9. Implement execution history pruning
+  10. Add rate limiting on schedule creation
+
+  Low Priority
+
+  11. Use constant-time comparison for cron secret
+  12. Replace hardcoded timezone list with dynamic list
+  13. Add retry logic for failed scheduled executions
+  14. Consolidate duplicate validation in UI components
+
+  ---
+  Files Reviewed
+  ┌──────────────────────────────────────────────────────────┬───────┬─────────────────┐
+  │                           File                           │ Lines │     Status      │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ types/agent.ts                                           │ 736   │ ✅ Good         │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ lib/utils.ts                                             │ 304   │ ✅ Good         │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ lib/validation/agent.ts                                  │ 823   │ ✅ Good         │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ lib/db/agent.ts                                          │ 1437  │ ⚠️ Needs Work   │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ components/agents/schedule-config.tsx                    │ 500   │ ⚠️ Minor Issues │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ components/agents/agent-settings-panel.tsx               │ 430   │ ✅ Good         │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ app/api/agents/cron/route.ts                             │ 222   │ ⚠️ Needs Work   │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ app/api/agents/[agentId]/schedules/route.ts              │ 143   │ ✅ Good         │
+  ├──────────────────────────────────────────────────────────┼───────┼─────────────────┤
+  │ app/api/agents/[agentId]/schedules/[scheduleId]/route.ts │ 179   │ ✅ Good         │
+  └──────────────────────────────────────────────────────────┴───────┴─────────────────┘
+  ---
+
+⏺ The comprehensive code review for Phase 4 (Scheduling) is complete. The report covers all requested areas with specific code locations, severity levels, and actionable recommendations.
+
+  Key Takeaways:
+
+  1. Most Critical Issue: Timezone support is validated but not actually implemented - users' schedules will run at server time, not their selected timezone.
+  2. Race Condition Risk: The cron endpoint lacks optimistic locking, which could cause duplicate executions if cron jobs overlap.
+  3. Good Patterns Found: Authentication, ownership verification, and validation are well-implemented.
+  4. Technical Debt: Some code duplication in API routes and a calculateNextRunTime() function that's grown too large.
 
 
 ### Code Reviewer2: 
 
-• Findings
+•Findings (high → low severity)
 
-  - High – lib/agents/executor.ts:223-361: Agent tools (getMeeting, getMeetingTranscript, getTeam, listTeamMembers) fetch data
-    by raw IDs with no ownership or membership checks. An agent (or a prompt injection) that guesses an ID can read meetings,
-    transcripts, or team rosters across accounts. Scope every tool to context.userId/membership before returning data.
-  - High – app/api/agents/[agentId]/execute/route.ts:62-110: If executeAgent throws before returning (network/OpenAI/runtime),
-    the catch block returns 500 without calling markExecutionFailed. The execution remains “running” indefinitely, skewing
-    history and preventing retry/cleanup. Fail the execution record in the catch (and include the error message) before
-    responding.
-  - Medium – lib/agents/executor.ts:297-317: getMeetingTranscript returns the full transcript. Large meetings will dump multi‑MB
-    text into tool results and the model prompt, driving token cost/timeouts and risking API limits. Consider paging, size caps,
-    or summarization before passing to the model.
-  - Medium – app/api/agents/[agentId]/execute/route.ts:79-104: Failed executions are returned with HTTP 200, so API clients
-    can’t distinguish success vs. failure from status codes and must inspect the body. If this isn’t intentional, respond with a
-    non‑2xx on failure or include a clear status flag.
-  - Low – lib/agents/executor.ts:57-69: getModel doesn’t guard against missing OPENAI_API_KEY or unknown model IDs. This will
-    throw later inside generateText, producing a generic failure. Validate configuration up front and surface a clearer error to
-    the caller.
+  - Timezone ignored end-to-end: schedule form collects timezone, validation stores it, but calculateNextRunTime explicitly
+    ignores timezone and scheduledAt comes from a datetime-local string (no offset), so all times are interpreted in server
+    local time. Non-UTC users will see schedules fire at the wrong local times. Files: components/agents/schedule-config.tsx,
+    app/api/agents/[agentId]/schedules/route.ts, lib/validation/agent.ts, lib/db/agent.ts.
+  - Race/double-run risk: cron fetches all due schedules and only updates nextRunAt after execution. Concurrent cron invocations
+    (or a slow run overlapping the next tick) can execute the same schedule multiple times because nothing atomically “claims” a
+    schedule. Consider updating nextRunAt (or a “locked/running” flag) inside a transaction before executing. Files: app/api/
+    agents/cron/route.ts, lib/db/agent.ts#getDueSchedules/updateScheduleAfterRun.
+  - Re-enabling stale schedules may misfire or never fire: toggling isEnabled does not recompute nextRunAt. If nextRunAt is in
+    the past when re-enabled, it will fire immediately; if it’s null, it will never fire. Suggest recalculating when enabling.
+    File: lib/db/agent.ts#updateAgentSchedule.
+  - Inconsistent updates across schedule types: PATCH allows changing scheduleType without providing the new type’s required
+    fields, so nextRunAt can become null and the schedule silently stops running. File: lib/validation/
+    agent.ts#validateUpdateScheduleRequest + lib/db/agent.ts#calculateNextRunTime.
+  - UI error handling gaps: schedule form/toggle calls rethrow errors; callers don’t catch them, so failed create/toggle can
+    surface as unhandled rejections even though a toast fires. Files: components/agents/schedule-config.tsx (form submit and
+    toggle handlers), components/agents/agent-settings-panel.tsx (rethrow after toast).
+  - Long-run executions marked failed after 5 minutes globally: cleanupStaleExecutions hard-codes 5m; any legitimate run over 5m
+    is auto-failed on the next cron call. Consider configurability or status heartbeats. File: lib/db/
+    agent.ts#cleanupStaleExecutions.
+  - Sequential cron execution/backlog: cron processes due schedules strictly serially; one slow agent blocks all others and can
+    miss windows. Consider batching with concurrency or queueing. File: app/api/agents/cron/route.ts.
+  - Duplicate limit checks / extra queries: schedule creation checks limits in both API and DB; GET schedules loads agent +
+    schedules twice (getAgentWithDetails then listSchedulesForAgent). Mostly noise, but can be tightened. Files: app/api/agents/
+    [agentId]/schedules/route.ts, lib/db/agent.ts.
+  - Display logic duplication: schedule description logic is duplicated (lib/utils.ts#describeSchedule vs
+    ScheduleItem.getScheduleDescription). Consider reusing the shared helper to reduce drift. Files: components/agents/schedule-
+    config.tsx, lib/utils.ts.
 
+  Hidden impact / edge cases
+
+  - One-time schedules that have already run remain enabled with nextRunAt null; re-enabling doesn’t restore a time, so they
+    silently never run again.
+  - Cron auth only allows a configured CRON_SECRET; local dev without it always 401s. If local runs are needed, add an explicit
+    localhost escape hatch.
+  - datetime-local values accept past times in the UI (no min set); server rejects them, but users only see a toast + potential
+    unhandled rejection.

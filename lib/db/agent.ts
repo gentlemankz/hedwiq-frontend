@@ -478,12 +478,40 @@ export async function countAgentsOwnedByUser(userId: string): Promise<number> {
 // ============================================================================
 
 /**
+ * Parses a datetime-local string (e.g., "2024-01-15T09:00") in the specified timezone.
+ *
+ * The datetime-local input doesn't include timezone info, so we need to interpret
+ * the string as if it were in the user's selected timezone and convert to UTC.
+ *
+ * @param datetimeStr - The datetime-local string (format: "YYYY-MM-DDTHH:mm")
+ * @param timezone - IANA timezone string (e.g., "America/New_York")
+ * @returns UTC Date representing the time in the specified timezone
+ */
+function parseScheduledAtInTimezone(datetimeStr: string, timezone: string): Date {
+  // Parse the datetime-local string components
+  const [datePart, timePart] = datetimeStr.split("T");
+  const [yearStr, monthStr, dayStr] = datePart.split("-");
+  const [hourStr, minuteStr] = timePart.split(":");
+
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10) - 1; // JavaScript months are 0-indexed
+  const day = parseInt(dayStr, 10);
+  const hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+
+  // Use the existing timezone-aware function to create the correct UTC Date
+  return createDateInTimezone(year, month, day, hour, minute, timezone);
+}
+
+/**
  * Creates an agent schedule.
+ *
+ * @param params.scheduledAt - Raw datetime-local string for one-time schedules (not a Date)
  */
 export async function createAgentSchedule(params: {
   agentId: string;
   scheduleType: AgentScheduleType;
-  scheduledAt?: Date;
+  scheduledAt?: string; // Raw datetime-local string, parsed with timezone
   hour?: number;
   minute?: number;
   dayOfWeek?: number;
@@ -499,9 +527,19 @@ export async function createAgentSchedule(params: {
   }
 
   const scheduleId = generateScheduleId(params.agentId);
+  const timezone = params.timezone ?? SCHEDULE_DEFAULTS.TIMEZONE;
 
-  // Calculate next run time
-  const nextRunAt = calculateNextRunTime(params);
+  // Parse scheduledAt with timezone awareness for one-time schedules
+  let parsedScheduledAt: Date | undefined;
+  if (params.scheduleType === "once" && params.scheduledAt) {
+    parsedScheduledAt = parseScheduledAtInTimezone(params.scheduledAt, timezone);
+  }
+
+  // Calculate next run time (pass parsed Date for one-time schedules)
+  const nextRunAt = calculateNextRunTime({
+    ...params,
+    scheduledAt: parsedScheduledAt,
+  });
 
   const [row] = await db
     .insert(agentSchedule)
@@ -509,12 +547,12 @@ export async function createAgentSchedule(params: {
       id: scheduleId,
       agentId: params.agentId,
       scheduleType: params.scheduleType,
-      scheduledAt: params.scheduledAt ?? null,
+      scheduledAt: parsedScheduledAt ?? null,
       hour: params.hour ?? null,
       minute: params.minute ?? null,
       dayOfWeek: params.dayOfWeek ?? null,
       dayOfMonth: params.dayOfMonth ?? null,
-      timezone: params.timezone ?? "UTC",
+      timezone,
       nextRunAt,
       isEnabled: true,
     })
@@ -551,12 +589,14 @@ export async function listSchedulesForAgent(agentId: string): Promise<AgentSched
 
 /**
  * Updates an agent schedule.
+ *
+ * @param updates.scheduledAt - Raw datetime-local string for one-time schedules (not a Date)
  */
 export async function updateAgentSchedule(
   scheduleId: string,
   updates: {
     scheduleType?: AgentScheduleType;
-    scheduledAt?: Date | null;
+    scheduledAt?: string; // Raw datetime-local string, parsed with timezone
     hour?: number | null;
     minute?: number | null;
     dayOfWeek?: number | null;
@@ -569,13 +609,22 @@ export async function updateAgentSchedule(
   const current = await getScheduleById(scheduleId);
   if (!current) return null;
 
+  // Determine effective timezone (use update or fall back to current)
+  const effectiveTimezone = updates.timezone ?? current.timezone;
+
+  // Parse scheduledAt with timezone awareness
+  let parsedScheduledAt: Date | undefined;
+  if (updates.scheduledAt !== undefined) {
+    parsedScheduledAt = parseScheduledAtInTimezone(updates.scheduledAt, effectiveTimezone);
+  }
+
   const updateData: Partial<typeof agentSchedule.$inferInsert> = {};
 
   if (updates.scheduleType !== undefined) {
     updateData.scheduleType = updates.scheduleType;
   }
-  if (updates.scheduledAt !== undefined) {
-    updateData.scheduledAt = updates.scheduledAt;
+  if (parsedScheduledAt !== undefined) {
+    updateData.scheduledAt = parsedScheduledAt;
   }
   if (updates.hour !== undefined) {
     updateData.hour = updates.hour;
@@ -596,24 +645,29 @@ export async function updateAgentSchedule(
     updateData.isEnabled = updates.isEnabled;
   }
 
-  // Recalculate next run time if schedule parameters changed
-  if (
+  // Recalculate next run time if:
+  // 1. Schedule parameters changed
+  // 2. Schedule is being enabled (to prevent stale nextRunAt from causing immediate misfires)
+  const scheduleParamsChanged =
     updates.scheduleType !== undefined ||
     updates.scheduledAt !== undefined ||
     updates.hour !== undefined ||
     updates.minute !== undefined ||
     updates.dayOfWeek !== undefined ||
     updates.dayOfMonth !== undefined ||
-    updates.timezone !== undefined
-  ) {
+    updates.timezone !== undefined;
+
+  const isBeingEnabled = updates.isEnabled === true && !current.isEnabled;
+
+  if (scheduleParamsChanged || isBeingEnabled) {
     const mergedParams = {
       scheduleType: updates.scheduleType ?? (current.scheduleType as AgentScheduleType),
-      scheduledAt: updates.scheduledAt ?? (current.scheduledAt ? new Date(current.scheduledAt) : undefined),
+      scheduledAt: parsedScheduledAt ?? (current.scheduledAt ? new Date(current.scheduledAt) : undefined),
       hour: updates.hour ?? current.hour ?? undefined,
       minute: updates.minute ?? current.minute ?? undefined,
       dayOfWeek: updates.dayOfWeek ?? current.dayOfWeek ?? undefined,
       dayOfMonth: updates.dayOfMonth ?? current.dayOfMonth ?? undefined,
-      timezone: updates.timezone ?? current.timezone,
+      timezone: effectiveTimezone,
     };
     updateData.nextRunAt = calculateNextRunTime(mergedParams);
   }
@@ -640,14 +694,33 @@ export async function deleteAgentSchedule(scheduleId: string): Promise<boolean> 
 }
 
 /**
- * Updates a schedule after it runs.
+ * Atomically claims a schedule for execution.
+ *
+ * This function prevents race conditions when multiple cron workers try to process
+ * the same schedule. It uses optimistic locking to ensure only one worker can claim
+ * a schedule at a time.
+ *
+ * The claim is made by updating the nextRunAt to the next scheduled time BEFORE
+ * execution begins. If another worker has already claimed the schedule, this
+ * function returns null.
+ *
+ * IMPORTANT: For one-time schedules, this does NOT disable the schedule. The caller
+ * must call `finalizeOneTimeSchedule` after successful execution, or
+ * `restoreOneTimeScheduleForRetry` if execution fails.
+ *
+ * @param scheduleId - The schedule to claim
+ * @param expectedNextRunAt - The expected current nextRunAt (for optimistic lock)
+ * @returns The claimed schedule with updated nextRunAt, or null if claim failed
  */
-export async function updateScheduleAfterRun(scheduleId: string): Promise<AgentSchedule | null> {
+export async function claimScheduleForExecution(
+  scheduleId: string,
+  expectedNextRunAt: Date | null
+): Promise<AgentSchedule | null> {
   const current = await getScheduleById(scheduleId);
   if (!current) return null;
 
-  // Calculate next run time
-  const nextRunAt = calculateNextRunTime({
+  // Calculate the next run time (this will be the new nextRunAt)
+  const newNextRunAt = calculateNextRunTime({
     scheduleType: current.scheduleType as AgentScheduleType,
     scheduledAt: current.scheduledAt ? new Date(current.scheduledAt) : undefined,
     hour: current.hour ?? undefined,
@@ -657,16 +730,69 @@ export async function updateScheduleAfterRun(scheduleId: string): Promise<AgentS
     timezone: current.timezone,
   });
 
+  // For one-time schedules, we set nextRunAt to null to claim it (prevents other workers)
+  // but do NOT disable yet - that happens after successful execution
+  const updateData: Partial<typeof agentSchedule.$inferInsert> = {
+    nextRunAt: newNextRunAt,
+  };
+
+  // Build the WHERE conditions with optimistic locking
+  const conditions = [eq(agentSchedule.id, scheduleId)];
+
+  if (expectedNextRunAt) {
+    conditions.push(eq(agentSchedule.nextRunAt, expectedNextRunAt));
+  } else {
+    conditions.push(isNull(agentSchedule.nextRunAt));
+  }
+
+  // Attempt to claim by updating nextRunAt
   const [row] = await db
     .update(agentSchedule)
-    .set({
-      lastRunAt: new Date(),
-      nextRunAt,
-    })
-    .where(eq(agentSchedule.id, scheduleId))
+    .set(updateData)
+    .where(and(...conditions))
     .returning();
 
+  // If no row returned, another worker already claimed this schedule
   return row ? rowToAgentSchedule(row) : null;
+}
+
+/**
+ * Finalizes a one-time schedule after successful execution.
+ * Disables the schedule so it won't run again.
+ */
+export async function finalizeOneTimeSchedule(scheduleId: string): Promise<void> {
+  await db
+    .update(agentSchedule)
+    .set({ isEnabled: false })
+    .where(eq(agentSchedule.id, scheduleId));
+}
+
+/**
+ * Restores a one-time schedule for retry after failed execution.
+ * Sets nextRunAt back to scheduledAt so it can be picked up on the next cron run.
+ */
+export async function restoreOneTimeScheduleForRetry(scheduleId: string): Promise<void> {
+  const schedule = await getScheduleById(scheduleId);
+  if (!schedule || schedule.scheduleType !== "once" || !schedule.scheduledAt) {
+    return;
+  }
+
+  // Restore nextRunAt to the original scheduledAt time
+  await db
+    .update(agentSchedule)
+    .set({ nextRunAt: new Date(schedule.scheduledAt) })
+    .where(eq(agentSchedule.id, scheduleId));
+}
+
+/**
+ * Marks a schedule as executed (updates lastRunAt).
+ * Should be called after execution completes, regardless of success/failure.
+ */
+export async function markScheduleExecuted(scheduleId: string): Promise<void> {
+  await db
+    .update(agentSchedule)
+    .set({ lastRunAt: new Date() })
+    .where(eq(agentSchedule.id, scheduleId));
 }
 
 /**
@@ -709,15 +835,156 @@ export async function getDueSchedules(beforeTime?: Date): Promise<Array<AgentSch
   }));
 }
 
+// ============================================================================
+// Schedule Time Calculation Constants
+// ============================================================================
+
+/** Default schedule time values */
+const SCHEDULE_DEFAULTS = {
+  HOUR: 9,
+  MINUTE: 0,
+  DAY_OF_WEEK: 1, // Monday
+  DAY_OF_MONTH: 1,
+  TIMEZONE: "UTC",
+} as const;
+
+/** Default stale threshold: 5 minutes */
+const DEFAULT_STALE_THRESHOLD_MS = 300000;
+
+/**
+ * Execution configuration defaults.
+ * STALE_THRESHOLD_MS: Time after which a running execution is considered stale and marked as failed.
+ * This can be overridden via AGENT_EXECUTION_TIMEOUT_MS environment variable.
+ * Default: 5 minutes (300000ms)
+ */
+const EXECUTION_DEFAULTS = {
+  // Use env var if set, otherwise default to 5 minutes
+  // Guard against invalid env var values (NaN) with fallback
+  STALE_THRESHOLD_MS:
+    parseInt(process.env.AGENT_EXECUTION_TIMEOUT_MS ?? "", 10) ||
+    DEFAULT_STALE_THRESHOLD_MS,
+} as const;
+
+/** Days in a week for weekly schedule calculations */
+const DAYS_IN_WEEK = 7;
+
+// ============================================================================
+// Timezone Utilities
+// ============================================================================
+
+/**
+ * Gets the current date/time components in a specific timezone.
+ * Uses native Intl API for timezone conversion.
+ */
+function getDatePartsInTimezone(date: Date, timezone: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  dayOfWeek: number;
+} {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "short",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const getPart = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? "";
+
+  const dayOfWeekMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+
+  return {
+    year: parseInt(getPart("year"), 10),
+    month: parseInt(getPart("month"), 10) - 1, // JS months are 0-indexed
+    day: parseInt(getPart("day"), 10),
+    hour: parseInt(getPart("hour"), 10),
+    minute: parseInt(getPart("minute"), 10),
+    dayOfWeek: dayOfWeekMap[getPart("weekday")] ?? 0,
+  };
+}
+
+/**
+ * Creates a Date object representing a specific time in a timezone,
+ * then returns the equivalent UTC Date.
+ *
+ * This is a binary search approach to find the UTC time that, when
+ * converted to the target timezone, matches the desired local time.
+ */
+function createDateInTimezone(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timezone: string
+): Date {
+  // Start with a rough estimate assuming the timezone is near UTC
+  const estimate = new Date(Date.UTC(year, month, day, hour, minute, 0, 0));
+
+  // Get the offset by checking what time it is in the target timezone
+  const parts = getDatePartsInTimezone(estimate, timezone);
+
+  // Calculate the difference in minutes
+  const estimatedMinutes = parts.hour * 60 + parts.minute;
+  const targetMinutes = hour * 60 + minute;
+  let diffMinutes = targetMinutes - estimatedMinutes;
+
+  // Handle day boundary crossings
+  if (parts.day !== day) {
+    if (parts.day < day) {
+      diffMinutes += 24 * 60; // Add a day
+    } else {
+      diffMinutes -= 24 * 60; // Subtract a day
+    }
+  }
+
+  // Adjust the estimate
+  const result = new Date(estimate.getTime() + diffMinutes * 60 * 1000);
+
+  return result;
+}
+
+/**
+ * Gets the number of days in a specific month.
+ */
+function getDaysInMonth(year: number, month: number): number {
+  // Month is 0-indexed, so month + 1 with day 0 gives last day of month
+  return new Date(year, month + 1, 0).getDate();
+}
+
+/**
+ * Clamps a day to a valid day for the given month.
+ * Handles edge case where dayOfMonth is 31 but month only has 28-30 days.
+ */
+function clampDayToMonth(day: number, year: number, month: number): number {
+  const maxDay = getDaysInMonth(year, month);
+  return Math.min(day, maxDay);
+}
+
+// ============================================================================
+// Schedule Time Calculation
+// ============================================================================
+
 /**
  * Calculates the next run time for a schedule.
  *
- * TODO: Timezone support is currently not implemented. The `timezone` parameter
- * is accepted but not applied. All calculations use the server's local timezone.
- * For proper timezone support, consider using `date-fns-tz` or `luxon` to:
- * 1. Convert the scheduled time from the user's timezone to UTC for storage
- * 2. Calculate next run time in the user's timezone context
- * 3. Return UTC timestamp that corresponds to the correct local time
+ * Supports timezone-aware scheduling using native Intl API:
+ * 1. Converts current time to the user's timezone
+ * 2. Calculates the next run time in that timezone context
+ * 3. Returns a UTC Date that represents the correct moment
+ *
+ * @param params - Schedule parameters
+ * @returns UTC Date for the next run, or null if schedule won't run again
  */
 function calculateNextRunTime(params: {
   scheduleType: AgentScheduleType;
@@ -728,70 +995,200 @@ function calculateNextRunTime(params: {
   dayOfMonth?: number;
   timezone?: string;
 }): Date | null {
-  // Note: timezone parameter is currently ignored - see TODO above
+  const timezone = params.timezone ?? SCHEDULE_DEFAULTS.TIMEZONE;
   const now = new Date();
+  const nowInTz = getDatePartsInTimezone(now, timezone);
 
   switch (params.scheduleType) {
     case "once":
-      // For one-time schedules, return the scheduled time if it's in the future
-      if (params.scheduledAt && params.scheduledAt > now) {
-        return params.scheduledAt;
-      }
-      return null;
+      return calculateOnceNextRun(params.scheduledAt, now);
 
-    case "hourly": {
-      const next = new Date(now);
-      next.setMinutes(params.minute ?? 0, 0, 0);
-      if (next <= now) {
-        next.setHours(next.getHours() + 1);
-      }
-      return next;
-    }
+    case "hourly":
+      return calculateHourlyNextRun(
+        params.minute ?? SCHEDULE_DEFAULTS.MINUTE,
+        nowInTz,
+        timezone
+      );
 
-    case "daily": {
-      const next = new Date(now);
-      next.setHours(params.hour ?? 9, params.minute ?? 0, 0, 0);
-      if (next <= now) {
-        next.setDate(next.getDate() + 1);
-      }
-      return next;
-    }
+    case "daily":
+      return calculateDailyNextRun(
+        params.hour ?? SCHEDULE_DEFAULTS.HOUR,
+        params.minute ?? SCHEDULE_DEFAULTS.MINUTE,
+        nowInTz,
+        timezone
+      );
 
-    case "weekly": {
-      const next = new Date(now);
-      const targetDay = params.dayOfWeek ?? 1; // Default to Monday
-      const daysUntilTarget = (targetDay - next.getDay() + 7) % 7;
+    case "weekly":
+      return calculateWeeklyNextRun(
+        params.dayOfWeek ?? SCHEDULE_DEFAULTS.DAY_OF_WEEK,
+        params.hour ?? SCHEDULE_DEFAULTS.HOUR,
+        params.minute ?? SCHEDULE_DEFAULTS.MINUTE,
+        nowInTz,
+        timezone
+      );
 
-      if (daysUntilTarget === 0) {
-        // Same day as target - check if scheduled time has passed
-        next.setHours(params.hour ?? 9, params.minute ?? 0, 0, 0);
-        if (next <= now) {
-          // Time has passed, schedule for next week
-          next.setDate(next.getDate() + 7);
-        }
-        return next;
-      } else {
-        // Different day - add days until target
-        next.setDate(next.getDate() + daysUntilTarget);
-        next.setHours(params.hour ?? 9, params.minute ?? 0, 0, 0);
-        return next;
-      }
-    }
-
-    case "monthly": {
-      const next = new Date(now);
-      const targetDay = params.dayOfMonth ?? 1;
-      next.setDate(targetDay);
-      next.setHours(params.hour ?? 9, params.minute ?? 0, 0, 0);
-      if (next <= now) {
-        next.setMonth(next.getMonth() + 1);
-      }
-      return next;
-    }
+    case "monthly":
+      return calculateMonthlyNextRun(
+        params.dayOfMonth ?? SCHEDULE_DEFAULTS.DAY_OF_MONTH,
+        params.hour ?? SCHEDULE_DEFAULTS.HOUR,
+        params.minute ?? SCHEDULE_DEFAULTS.MINUTE,
+        nowInTz,
+        timezone
+      );
 
     default:
       return null;
   }
+}
+
+/**
+ * Calculates next run for one-time schedules.
+ */
+function calculateOnceNextRun(scheduledAt: Date | undefined, now: Date): Date | null {
+  if (scheduledAt && scheduledAt > now) {
+    return scheduledAt;
+  }
+  return null;
+}
+
+/**
+ * Calculates next run for hourly schedules.
+ */
+function calculateHourlyNextRun(
+  minute: number,
+  nowInTz: ReturnType<typeof getDatePartsInTimezone>,
+  timezone: string
+): Date {
+  let { year, month, day, hour } = nowInTz;
+
+  // If we've passed the minute mark this hour, move to next hour
+  if (nowInTz.minute >= minute) {
+    hour += 1;
+    // Handle day rollover
+    if (hour >= 24) {
+      hour = 0;
+      day += 1;
+      const daysInMonth = getDaysInMonth(year, month);
+      if (day > daysInMonth) {
+        day = 1;
+        month += 1;
+        if (month > 11) {
+          month = 0;
+          year += 1;
+        }
+      }
+    }
+  }
+
+  return createDateInTimezone(year, month, day, hour, minute, timezone);
+}
+
+/**
+ * Calculates next run for daily schedules.
+ */
+function calculateDailyNextRun(
+  hour: number,
+  minute: number,
+  nowInTz: ReturnType<typeof getDatePartsInTimezone>,
+  timezone: string
+): Date {
+  let { year, month, day } = nowInTz;
+  const nowMinutes = nowInTz.hour * 60 + nowInTz.minute;
+  const targetMinutes = hour * 60 + minute;
+
+  // If we've passed the scheduled time today, move to tomorrow
+  if (nowMinutes >= targetMinutes) {
+    day += 1;
+    const daysInMonth = getDaysInMonth(year, month);
+    if (day > daysInMonth) {
+      day = 1;
+      month += 1;
+      if (month > 11) {
+        month = 0;
+        year += 1;
+      }
+    }
+  }
+
+  return createDateInTimezone(year, month, day, hour, minute, timezone);
+}
+
+/**
+ * Calculates next run for weekly schedules.
+ */
+function calculateWeeklyNextRun(
+  dayOfWeek: number,
+  hour: number,
+  minute: number,
+  nowInTz: ReturnType<typeof getDatePartsInTimezone>,
+  timezone: string
+): Date {
+  let { year, month, day } = nowInTz;
+  const currentDayOfWeek = nowInTz.dayOfWeek;
+  let daysUntilTarget = (dayOfWeek - currentDayOfWeek + DAYS_IN_WEEK) % DAYS_IN_WEEK;
+
+  // If same day, check if time has passed
+  if (daysUntilTarget === 0) {
+    const nowMinutes = nowInTz.hour * 60 + nowInTz.minute;
+    const targetMinutes = hour * 60 + minute;
+    if (nowMinutes >= targetMinutes) {
+      daysUntilTarget = DAYS_IN_WEEK; // Schedule for next week
+    }
+  }
+
+  // Add days to reach target
+  day += daysUntilTarget;
+
+  // Handle month/year rollovers
+  let daysInMonth = getDaysInMonth(year, month);
+  while (day > daysInMonth) {
+    day -= daysInMonth;
+    month += 1;
+    if (month > 11) {
+      month = 0;
+      year += 1;
+    }
+    daysInMonth = getDaysInMonth(year, month);
+  }
+
+  return createDateInTimezone(year, month, day, hour, minute, timezone);
+}
+
+/**
+ * Calculates next run for monthly schedules.
+ * Handles edge case where target day doesn't exist in some months (e.g., 31st in February).
+ */
+function calculateMonthlyNextRun(
+  dayOfMonth: number,
+  hour: number,
+  minute: number,
+  nowInTz: ReturnType<typeof getDatePartsInTimezone>,
+  timezone: string
+): Date {
+  let { year, month, day } = nowInTz;
+  const nowMinutes = nowInTz.hour * 60 + nowInTz.minute;
+  const targetMinutes = hour * 60 + minute;
+
+  // Clamp the target day to this month's max
+  const clampedDay = clampDayToMonth(dayOfMonth, year, month);
+
+  // Check if we need to move to next month
+  const shouldMoveToNextMonth =
+    day > clampedDay || // We're past the target day
+    (day === clampedDay && nowMinutes >= targetMinutes); // Same day but time passed
+
+  if (shouldMoveToNextMonth) {
+    month += 1;
+    if (month > 11) {
+      month = 0;
+      year += 1;
+    }
+  }
+
+  // Clamp the day again for the (possibly new) month
+  const finalDay = clampDayToMonth(dayOfMonth, year, month);
+
+  return createDateInTimezone(year, month, finalDay, hour, minute, timezone);
 }
 
 // ============================================================================
@@ -1263,11 +1660,13 @@ export async function deleteOldExecutions(
  * Cleans up stale "running" executions that have been stuck for too long.
  * This handles cases where the server crashed or timed out before the catch block ran.
  *
- * @param staleThresholdMs - Time in ms after which a running execution is considered stale (default: 5 minutes)
+ * @param staleThresholdMs - Time in ms after which a running execution is considered stale.
+ *                          Defaults to EXECUTION_DEFAULTS.STALE_THRESHOLD_MS which can be
+ *                          configured via AGENT_EXECUTION_TIMEOUT_MS environment variable.
  * @returns The number of executions that were marked as failed
  */
 export async function cleanupStaleExecutions(
-  staleThresholdMs: number = 5 * 60 * 1000 // 5 minutes default
+  staleThresholdMs: number = EXECUTION_DEFAULTS.STALE_THRESHOLD_MS
 ): Promise<{ cleanedCount: number; executionIds: string[] }> {
   const staleThreshold = new Date(Date.now() - staleThresholdMs);
   const completedAt = new Date();

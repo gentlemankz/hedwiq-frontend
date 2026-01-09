@@ -3,6 +3,7 @@ import {
   cleanupStaleExecutions,
   countRunningExecutions,
 } from "@/lib/db/agent";
+import { getSecretOrDefault, secureCompare } from "@/lib/secrets";
 
 /**
  * GET /api/cron/cleanup-executions
@@ -14,16 +15,19 @@ import {
  * - In production: requires CRON_SECRET or Vercel cron header
  * - Vercel cron jobs automatically include the x-vercel-cron-signature header
  * - Manual invocation requires Bearer token matching CRON_SECRET
+ * - Uses constant-time comparison to prevent timing attacks
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const cronSecret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get("authorization");
+  // Read from Docker secrets (production) or env var (development)
+  const cronSecret = getSecretOrDefault("CRON_SECRET", "");
+  const authHeader = request.headers.get("authorization") ?? "";
   const vercelCronSignature = request.headers.get("x-vercel-cron-signature");
 
-  // Check authentication:
+  // Check authentication using constant-time comparison:
   // 1. Valid CRON_SECRET bearer token, OR
   // 2. Request from Vercel's cron system (has signature header AND secret is configured)
-  const hasValidSecret = cronSecret && authHeader === `Bearer ${cronSecret}`;
+  const expectedBearerToken = `Bearer ${cronSecret}`;
+  const hasValidSecret = cronSecret && secureCompare(authHeader, expectedBearerToken);
   const isVercelCron = cronSecret && vercelCronSignature !== null;
 
   if (!hasValidSecret && !isVercelCron) {
@@ -40,10 +44,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // Get count before cleanup for logging
     const runningBefore = await countRunningExecutions();
 
-    // Clean up executions that have been running for more than 5 minutes
-    const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-    const { cleanedCount, executionIds } =
-      await cleanupStaleExecutions(STALE_THRESHOLD_MS);
+    // Clean up stale executions using configurable threshold
+    // Default: 5 minutes, configurable via AGENT_EXECUTION_TIMEOUT_MS env var
+    const { cleanedCount, executionIds } = await cleanupStaleExecutions();
 
     // Get count after cleanup
     const runningAfter = await countRunningExecutions();

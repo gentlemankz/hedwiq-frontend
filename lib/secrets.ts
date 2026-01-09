@@ -1,4 +1,39 @@
 import { readFileSync, existsSync } from 'fs'
+import { timingSafeEqual } from 'crypto'
+
+/**
+ * Performs a constant-time string comparison to prevent timing attacks.
+ * Returns true if the strings are equal, false otherwise.
+ *
+ * This is important for comparing secrets like API keys, tokens, and passwords
+ * where timing attacks could reveal information about the secret.
+ *
+ * @param a - First string to compare
+ * @param b - Second string to compare
+ * @returns true if strings are equal, false otherwise
+ */
+export function secureCompare(a: string, b: string): boolean {
+  // Handle empty strings or non-strings
+  if (typeof a !== 'string' || typeof b !== 'string') {
+    return false
+  }
+
+  // If lengths differ, we need to still do a comparison to maintain constant time
+  // We compare against a placeholder of the same length
+  const aBuffer = Buffer.from(a, 'utf8')
+  const bBuffer = Buffer.from(b, 'utf8')
+
+  // If lengths differ, compare against a buffer of equal length to maintain constant time
+  if (aBuffer.length !== bBuffer.length) {
+    // Create a dummy buffer of the same length as a to compare against
+    // This maintains constant time even when lengths differ
+    const dummy = Buffer.alloc(aBuffer.length)
+    timingSafeEqual(aBuffer, dummy)
+    return false
+  }
+
+  return timingSafeEqual(aBuffer, bBuffer)
+}
 
 /**
  * Reads a secret from a file path or falls back to environment variable.

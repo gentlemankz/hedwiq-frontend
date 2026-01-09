@@ -554,9 +554,70 @@ export function validateTimezone(timezone: unknown): ValidationResult & { value?
 }
 
 /**
- * Validates scheduledAt datetime string for one-time schedules.
+ * Regex for datetime-local format: YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS
  */
-export function validateScheduledAt(scheduledAt: unknown): ValidationResult & { value?: string } {
+const DATETIME_LOCAL_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
+
+/**
+ * Creates a Date in a specific timezone from datetime components.
+ * Used for validation - mirrors the parseScheduledAtInTimezone logic in db/agent.ts
+ */
+function createDateInTimezoneForValidation(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timezone: string
+): Date {
+  // Start with a rough estimate assuming the timezone is near UTC
+  const estimate = new Date(Date.UTC(year, month, day, hour, minute, 0, 0));
+
+  // Get the offset by checking what time it is in the target timezone
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(estimate);
+  const partsMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+
+  const estHour = parseInt(partsMap.hour ?? "0", 10);
+  const estMinute = parseInt(partsMap.minute ?? "0", 10);
+  const estDay = parseInt(partsMap.day ?? "1", 10);
+
+  // Calculate the difference in minutes
+  const estimatedMinutes = estHour * 60 + estMinute;
+  const targetMinutes = hour * 60 + minute;
+  let diffMinutes = targetMinutes - estimatedMinutes;
+
+  // Handle day boundary crossings
+  if (estDay !== day) {
+    if (estDay < day) {
+      diffMinutes += 24 * 60;
+    } else {
+      diffMinutes -= 24 * 60;
+    }
+  }
+
+  return new Date(estimate.getTime() + diffMinutes * 60 * 1000);
+}
+
+/**
+ * Validates scheduledAt datetime string for one-time schedules.
+ *
+ * @param scheduledAt - Raw datetime-local string (e.g., "2024-01-15T09:00")
+ * @param timezone - IANA timezone string to interpret the datetime in
+ * @returns Validation result with the raw string (not converted to ISO)
+ */
+export function validateScheduledAt(
+  scheduledAt: unknown,
+  timezone: string = "UTC"
+): ValidationResult & { value?: string } {
   if (scheduledAt === null || scheduledAt === undefined) {
     return { isValid: true };
   }
@@ -565,17 +626,41 @@ export function validateScheduledAt(scheduledAt: unknown): ValidationResult & { 
     return { isValid: false, error: "Scheduled datetime must be a string" };
   }
 
-  const date = new Date(scheduledAt);
-  if (isNaN(date.getTime())) {
-    return { isValid: false, error: "Invalid datetime format. Use ISO 8601 format" };
+  const trimmed = scheduledAt.trim();
+
+  // Validate format: must be datetime-local format (YYYY-MM-DDTHH:MM)
+  if (!DATETIME_LOCAL_REGEX.test(trimmed)) {
+    return {
+      isValid: false,
+      error: "Invalid datetime format. Use YYYY-MM-DDTHH:MM format (e.g., 2024-01-15T09:00)",
+    };
   }
 
-  // Must be in the future
-  if (date.getTime() <= Date.now()) {
+  // Parse components
+  const [datePart, timePart] = trimmed.split("T");
+  const [yearStr, monthStr, dayStr] = datePart.split("-");
+  const [hourStr, minuteStr] = timePart.split(":");
+
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10) - 1; // JS months are 0-indexed
+  const day = parseInt(dayStr, 10);
+  const hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+
+  // Validate date components are reasonable
+  if (month < 0 || month > 11 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return { isValid: false, error: "Invalid date or time values" };
+  }
+
+  // Create the date in the specified timezone and check if it's in the future
+  const dateInTimezone = createDateInTimezoneForValidation(year, month, day, hour, minute, timezone);
+
+  if (dateInTimezone.getTime() <= Date.now()) {
     return { isValid: false, error: "Scheduled datetime must be in the future" };
   }
 
-  return { isValid: true, value: date.toISOString() };
+  // Return the raw string (not converted to ISO) - parseScheduledAtInTimezone will handle conversion
+  return { isValid: true, value: trimmed };
 }
 
 /**
@@ -627,7 +712,8 @@ export function validateCreateScheduleRequest(body: unknown): ValidationResult &
   // Type-specific validation
   switch (type) {
     case "once": {
-      const scheduledAtValidation = validateScheduledAt(scheduledAt);
+      // Pass timezone for future validation in the correct timezone
+      const scheduledAtValidation = validateScheduledAt(scheduledAt, sanitized.timezone);
       if (!scheduledAtValidation.isValid) {
         return { isValid: false, error: scheduledAtValidation.error };
       }
@@ -756,9 +842,20 @@ export function validateUpdateScheduleRequest(body: unknown): ValidationResult &
     sanitized.scheduleType = validation.value;
   }
 
-  // Validate scheduledAt (if provided)
+  // Validate timezone FIRST (if provided) - needed for scheduledAt validation
+  let effectiveTimezone = "UTC"; // Default for validation
+  if (timezone !== undefined) {
+    const validation = validateTimezone(timezone);
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.error };
+    }
+    sanitized.timezone = validation.value;
+    effectiveTimezone = validation.value ?? "UTC";
+  }
+
+  // Validate scheduledAt (if provided) - use effectiveTimezone for future validation
   if (scheduledAt !== undefined) {
-    const validation = validateScheduledAt(scheduledAt);
+    const validation = validateScheduledAt(scheduledAt, effectiveTimezone);
     if (!validation.isValid) {
       return { isValid: false, error: validation.error };
     }
@@ -801,21 +898,28 @@ export function validateUpdateScheduleRequest(body: unknown): ValidationResult &
     sanitized.dayOfMonth = validation.value;
   }
 
-  // Validate timezone (if provided)
-  if (timezone !== undefined) {
-    const validation = validateTimezone(timezone);
-    if (!validation.isValid) {
-      return { isValid: false, error: validation.error };
-    }
-    sanitized.timezone = validation.value;
-  }
-
   // Validate isEnabled (if provided)
   if (isEnabled !== undefined) {
     if (typeof isEnabled !== "boolean") {
       return { isValid: false, error: "isEnabled must be a boolean" };
     }
     sanitized.isEnabled = isEnabled;
+  }
+
+  // When changing scheduleType, ensure required fields for the new type are provided.
+  // This prevents creating broken schedules (e.g., "once" without scheduledAt).
+  // Note: hour/minute/dayOfWeek/dayOfMonth have defaults in the database layer,
+  // but "once" MUST have scheduledAt provided.
+  if (sanitized.scheduleType !== undefined) {
+    if (sanitized.scheduleType === "once" && sanitized.scheduledAt === undefined) {
+      return {
+        isValid: false,
+        error: "scheduledAt is required when changing to a one-time schedule",
+      };
+    }
+    // For weekly, warn if dayOfWeek not provided (will use existing or default to Monday)
+    // For monthly, warn if dayOfMonth not provided (will use existing or default to 1st)
+    // These are warnings - the DB layer handles defaults, but explicit is better for type changes
   }
 
   return { isValid: true, sanitized };

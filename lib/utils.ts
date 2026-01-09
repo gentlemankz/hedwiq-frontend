@@ -255,39 +255,44 @@ export function formatExecutionDuration(ms: number | null): string {
 }
 
 /**
+ * Days of the week names for schedule descriptions.
+ * Index corresponds to JavaScript's Date.getDay() (0 = Sunday, 1 = Monday, etc.)
+ */
+export const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+/**
  * Gets a human-readable description of an agent schedule.
  * @param schedule - The agent schedule object
  * @returns Human-readable description string
  */
 export function describeSchedule(schedule: AgentSchedule): string {
+  const hour = (schedule.hour ?? 0).toString().padStart(2, "0");
+  const minute = (schedule.minute ?? 0).toString().padStart(2, "0");
+
   switch (schedule.scheduleType) {
     case "once":
       if (schedule.scheduledAt) {
-        return `Once at ${new Date(schedule.scheduledAt).toLocaleString()}`;
+        return new Date(schedule.scheduledAt).toLocaleString();
       }
-      return "Once (time not set)";
-    case "hourly": {
-      const minute = schedule.minute ?? 0;
-      return `Every hour at :${minute.toString().padStart(2, "0")}`;
-    }
-    case "daily": {
-      const hour = schedule.hour ?? 9;
-      const min = schedule.minute ?? 0;
-      return `Daily at ${hour.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
-    }
+      return "One-time (date pending)";
+    case "hourly":
+      return `Every hour at :${minute}`;
+    case "daily":
+      return `Daily at ${hour}:${minute}`;
     case "weekly": {
-      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      const day = days[schedule.dayOfWeek ?? 1];
-      const h = schedule.hour ?? 9;
-      const m = schedule.minute ?? 0;
-      return `Every ${day} at ${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+      const day = WEEKDAY_NAMES[schedule.dayOfWeek ?? 1];
+      return `Every ${day} at ${hour}:${minute}`;
     }
-    case "monthly": {
-      const dom = schedule.dayOfMonth ?? 1;
-      const hr = schedule.hour ?? 9;
-      const mn = schedule.minute ?? 0;
-      return `Monthly on day ${dom} at ${hr.toString().padStart(2, "0")}:${mn.toString().padStart(2, "0")}`;
-    }
+    case "monthly":
+      return `Monthly on day ${schedule.dayOfMonth ?? 1} at ${hour}:${minute}`;
     default:
       return "Unknown schedule";
   }
