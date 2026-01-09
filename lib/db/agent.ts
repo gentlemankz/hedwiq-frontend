@@ -13,6 +13,7 @@ import {
   agentExecution,
   meetingFolder,
   team,
+  user,
 } from "@/lib/db/schema";
 import { eq, and, desc, sql, asc, lt, lte, or, isNull } from "drizzle-orm";
 import { secureRandomString } from "@/lib/utils";
@@ -73,6 +74,36 @@ export function generateExecutionId(agentId: string): string {
   const timestamp = Date.now().toString(36);
   const random = secureRandomString(6, "abcdefghijklmnopqrstuvwxyz0123456789");
   return `exec-${agentId.slice(6, 14)}-${timestamp}-${random}`;
+}
+
+// ============================================================================
+// User Helpers
+// ============================================================================
+
+/**
+ * Simple user type for agent execution context.
+ */
+export interface AgentUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
+/**
+ * Gets a user by ID for agent execution context.
+ */
+export async function getUserById(userId: string): Promise<AgentUser | null> {
+  const [row] = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+    })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1);
+
+  return row ?? null;
 }
 
 // ============================================================================

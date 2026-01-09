@@ -99,6 +99,7 @@ export default function AgentsPage() {
           agent={selectedAgent}
           isLoading={isLoadingAgent}
           onUpdate={handleUpdateAgent}
+          onRefresh={refreshSelectedAgent}
         />
       }
     />

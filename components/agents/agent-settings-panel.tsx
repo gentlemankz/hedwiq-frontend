@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   Loader2,
-  Clock,
   Zap,
   Plus,
   X,
@@ -12,7 +11,6 @@ import {
   ChevronDown,
   Mail,
   Calendar,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -31,7 +29,11 @@ import {
   type AgentModel,
   type AgentService,
   type AgentWithDetails,
+  type AgentSchedule,
+  type CreateAgentScheduleRequest,
 } from "@/types/agent";
+import { ScheduleConfig } from "@/components/agents/schedule-config";
+import { toast } from "sonner";
 
 // ============================================================================
 // Types
@@ -41,6 +43,7 @@ interface AgentSettingsPanelProps {
   agent: AgentWithDetails | null;
   isLoading: boolean;
   onUpdate: (updates: Partial<AgentWithDetails>) => Promise<void>;
+  onRefresh?: () => Promise<void>;
 }
 
 // Model icons/labels for display
@@ -69,10 +72,79 @@ export function AgentSettingsPanel({
   agent,
   isLoading,
   onUpdate,
+  onRefresh,
 }: AgentSettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<"configuration" | "builder">("configuration");
   const [isUpdatingModel, setIsUpdatingModel] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Schedule handlers
+  const handleCreateSchedule = async (data: CreateAgentScheduleRequest) => {
+    if (!agent) return;
+    try {
+      const response = await fetch(`/api/agents/${agent.id}/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to create schedule");
+      }
+      toast.success("Schedule created");
+      await onRefresh?.();
+    } catch (err) {
+      console.error("Failed to create schedule:", err);
+      const message = err instanceof Error ? err.message : "Failed to create schedule";
+      toast.error(message);
+      throw err;
+    }
+  };
+
+  const handleUpdateSchedule = async (scheduleId: string, updates: Partial<AgentSchedule>) => {
+    if (!agent) return;
+    try {
+      const response = await fetch(`/api/agents/${agent.id}/schedules/${scheduleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to update schedule");
+      }
+      toast.success(updates.isEnabled !== undefined
+        ? (updates.isEnabled ? "Schedule enabled" : "Schedule disabled")
+        : "Schedule updated"
+      );
+      await onRefresh?.();
+    } catch (err) {
+      console.error("Failed to update schedule:", err);
+      const message = err instanceof Error ? err.message : "Failed to update schedule";
+      toast.error(message);
+      throw err;
+    }
+  };
+
+  const handleDeleteSchedule = async (scheduleId: string) => {
+    if (!agent) return;
+    try {
+      const response = await fetch(`/api/agents/${agent.id}/schedules/${scheduleId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to delete schedule");
+      }
+      toast.success("Schedule deleted");
+      await onRefresh?.();
+    } catch (err) {
+      console.error("Failed to delete schedule:", err);
+      const message = err instanceof Error ? err.message : "Failed to delete schedule";
+      toast.error(message);
+      throw err;
+    }
+  };
 
   // Handle model change
   const handleModelChange = async (model: AgentModel) => {
@@ -220,27 +292,22 @@ export function AgentSettingsPanel({
                 </div>
               </section>
 
-              {/* Schedules/Triggers Section */}
+              {/* Schedules Section */}
+              {agent && (
+                <ScheduleConfig
+                  agentId={agent.id}
+                  schedules={agent.schedules ?? []}
+                  onCreateSchedule={handleCreateSchedule}
+                  onUpdateSchedule={handleUpdateSchedule}
+                  onDeleteSchedule={handleDeleteSchedule}
+                />
+              )}
+
+              {/* Triggers Section (Future Phase) */}
               <section className="space-y-3">
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  Schedules/Triggers
-                </h3>
-                {(agent?.schedules?.length ?? 0) > 0 || (agent?.triggers?.length ?? 0) > 0 ? (
+                <h3 className="text-sm font-medium text-muted-foreground">Triggers</h3>
+                {(agent?.triggers?.length ?? 0) > 0 && (
                   <div className="space-y-2">
-                    {agent?.schedules?.map((schedule) => (
-                      <div
-                        key={schedule.id}
-                        className="flex items-center justify-between rounded-lg border px-3 py-2"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Clock className="size-4 text-muted-foreground" />
-                          <span className="text-sm capitalize">{schedule.scheduleType}</span>
-                        </div>
-                        <Badge variant="outline" className="text-xs">
-                          {schedule.isEnabled ? "Active" : "Disabled"}
-                        </Badge>
-                      </div>
-                    ))}
                     {agent?.triggers?.map((trigger) => (
                       <div
                         key={trigger.id}
@@ -258,15 +325,15 @@ export function AgentSettingsPanel({
                       </div>
                     ))}
                   </div>
-                ) : null}
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
                   className="w-full justify-start text-muted-foreground"
-                  disabled // Phase 2
+                  disabled // Future Phase
                 >
                   <Plus className="size-4 mr-2" />
-                  Add schedule/trigger
+                  Add trigger
                 </Button>
               </section>
 
