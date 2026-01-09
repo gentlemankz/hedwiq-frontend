@@ -93,12 +93,12 @@ export function TeamSidebarSection({ userId }: TeamSidebarSectionProps) {
 
   return (
     <>
-      <Collapsible
-        open={isTeamsExpanded}
-        onOpenChange={() => toggleSection("teams")}
-        className="group/collapsible"
-      >
-        <SidebarMenuItem>
+      <SidebarMenuItem>
+        <Collapsible
+          open={isTeamsExpanded}
+          onOpenChange={() => toggleSection("teams")}
+          className="group/collapsible"
+        >
           <CollapsibleTrigger asChild>
             <SidebarMenuButton
               isActive={isTeamsActive}
@@ -166,8 +166,8 @@ export function TeamSidebarSection({ userId }: TeamSidebarSectionProps) {
               )}
             </SidebarMenuSub>
           </CollapsibleContent>
-        </SidebarMenuItem>
-      </Collapsible>
+        </Collapsible>
+      </SidebarMenuItem>
 
       {/* Create Team Dialog */}
       <CreateTeamDialog

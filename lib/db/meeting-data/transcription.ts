@@ -88,3 +88,60 @@ export async function getMeetingTranscription(
     )
     .orderBy(asc(transcriptionSegment.orderIndex));
 }
+
+/**
+ * Get transcription for a meeting with DB-level limits
+ * Used by agents to prevent loading large transcripts into memory
+ */
+export async function getMeetingTranscriptionLimited(
+  meetingId: string,
+  maxSegments: number = 500
+): Promise<{
+  segments: Array<{
+    id: string;
+    speakerIdentity: string;
+    speakerName: string;
+    text: string;
+    timestamp: Date;
+  }>;
+  totalCount: number;
+  truncated: boolean;
+}> {
+  // First get total count to know if we're truncating
+  const [countResult] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(transcriptionSegment)
+    .where(
+      and(
+        eq(transcriptionSegment.meetingId, meetingId),
+        eq(transcriptionSegment.isFinal, true)
+      )
+    );
+
+  const totalCount = countResult?.count ?? 0;
+
+  // Fetch only up to maxSegments
+  const segments = await db
+    .select({
+      id: transcriptionSegment.id,
+      speakerIdentity: transcriptionSegment.speakerIdentity,
+      speakerName: transcriptionSegment.speakerName,
+      text: transcriptionSegment.text,
+      timestamp: transcriptionSegment.timestamp,
+    })
+    .from(transcriptionSegment)
+    .where(
+      and(
+        eq(transcriptionSegment.meetingId, meetingId),
+        eq(transcriptionSegment.isFinal, true)
+      )
+    )
+    .orderBy(asc(transcriptionSegment.orderIndex))
+    .limit(maxSegments);
+
+  return {
+    segments,
+    totalCount,
+    truncated: totalCount > maxSegments,
+  };
+}

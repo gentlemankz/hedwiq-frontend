@@ -1,265 +1,317 @@
 ### Reviwer1:
 
-Code Review: Phase 4 - Team Templates Implementation
+Phase 3 Code Review: Agent Execution Engine
 
-  1. Functionality
+  Executive Summary
 
-  ✅ Correct Implementation:
-  - Permission system properly restricts template management to owners and admins
-  - Team templates are correctly separated and displayed prominently in the picker
-  - CRUD operations (create, edit, delete) are implemented with proper API calls
-  - Template scope is correctly set to "team" with the teamId when creating team templates
-
-  ⚠️ Issues Found:
-
-  1. Missing optimistic update handling in TeamTemplatesSection (team-templates-section.tsx:150-165):
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    setIsDeleting(true);
-    try {
-      await deleteTemplate(deleteId);
-      setDeleteId(null);
-    } catch (error) {
-      console.error("Failed to delete template:", error);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-  The error is caught but not displayed to the user. Users won't know if deletion failed.
-
-  2. Race condition in template creation (team-templates-section.tsx:115-127):
-  const handleCreate = async () => {
-    const data = getFormData();
-    if (!data) return;
-
-    try {
-      await createTemplate({
-        ...data,
-        scope: "team",
-        teamId: team.id,
-      });
-      setIsCreateOpen(false);
-      resetForm();
-    } catch (error) {
-      console.error("Failed to create template:", error);
-    }
-  };
-  If user clicks create multiple times rapidly, multiple templates could be created. No loading state prevents double-submission.
+  The Phase 3 implementation is well-structured overall with good separation of concerns. However, I've identified several issues that need attention, ranging from security concerns to potential bugs and architectural improvements.
 
   ---
-  2. Readability and Maintainability
+  1. Security Review
 
-  ✅ Good Practices:
-  - Clear component naming (TeamTemplatesSection, TeamTemplateCard)
-  - Props interfaces are well-defined
-  - Consistent use of TypeScript types
-  - Logical file organization
+  🔴 Critical Issues
 
-  ⚠️ Issues Found:
+  1.1 Missing Authorization Check in Tool Execution (executor.ts:228-244)
+  getMeeting: tool({
+    execute: async (input) => {
+      const { meetingId } = input;
+      const meeting = await getMeetingById(meetingId);  // No ownership check!
+  Issue: The getMeeting tool doesn't verify that the meeting belongs to the user. An agent could potentially access any meeting by ID.
 
-  1. Magic numbers (team-templates-section.tsx:259):
-  <span>{template.agendaItems?.length ?? 0} items</span>
-  Consider extracting agenda item count logic similar to template-card.tsx:25.
+  Fix: Add ownership verification:
+  const meeting = await getMeetingById(meetingId, context.userId);
 
-  2. Inconsistent error message handling:
-  - template-picker.tsx:185-186 shows error: <EmptyDescription>{error}</EmptyDescription>
-  - team-templates-section.tsx logs to console but doesn't show errors to users
+  1.2 Email Recipient Validation (executor.ts:384-409)
+  sendEmail: tool({
+    inputSchema: z.object({
+      to: z.array(z.string().email()),
+  Issue: No validation to prevent sending emails to arbitrary recipients. An AI agent could potentially be manipulated to send spam or phishing emails.
 
-  3. Component size - TeamTemplatesSection at 365 lines handles both list display and card rendering. Consider extracting TeamTemplateCard to a separate file for better maintainability.
+  Recommendation: Add allowlist validation or rate limiting for email recipients.
 
-  ---
-  3. Security
+  🟡 Medium Issues
 
-  ✅ Good Practices:
-  - Permission checks use canManageTemplates before showing edit/delete actions
-  - Role-based access control properly configured in ROLE_PERMISSIONS
+  1.3 Potential Header Injection Residual (executor.ts:88-91)
+  const sanitizeEmail = (email: string) => email.replace(/[\r\n]/g, "").trim();
+  Issue: While sanitization exists, it only removes \r\n. Consider also handling other injection vectors like null bytes.
 
-  ⚠️ Issues Found:
-
-  1. Client-side only permission check (team-templates-section.tsx:191-211):
-  {canManageTemplates && (
-    <DropdownMenu>
-      ...
-      <DropdownMenuItem onClick={() => handleStartEdit(template)}>
-  This only hides UI elements. The API should also validate permissions server-side (verify this exists in backend).
-
-  2. No validation of teamId ownership - When creating a template with teamId: team.id, ensure the backend validates the user is actually a member of that team with appropriate permissions.
+  1.4 API Key Exposure Risk (executor.ts:58-60)
+  const openai = createOpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  Issue: If OPENAI_API_KEY is undefined, this may cause unclear errors. Add validation.
 
   ---
-  4. Performance and Efficiency
+  2. Functionality Review
 
-  ✅ Good Practices:
-  - useMemo used for filtering team/other templates in template-picker.tsx:61-74
-  - Debounced search in template-picker.tsx:45-51
+  🔴 Bugs Found
 
-  ⚠️ Issues Found:
+  2.1 Race Condition in Execution Status (route.ts:62-76)
+  const execution = await createAgentExecution({ agentId, triggeredBy: "manual" });
+  await markExecutionStarted(execution.id);
+  // If server crashes here, execution stays in "running" forever
+  const result = await executeAgent(agent, execution, executorContext);
+  Issue: No cleanup mechanism for orphaned "running" executions.
 
-  1. Unnecessary re-renders in TeamTemplatesSection:
-  const handleStartEdit = (template: TemplateWithItems) => {
-    setEditingTemplate(template);
-    setIsEditOpen(true);
+  Fix: Add a cron job or startup cleanup for stale executions.
+
+  2.2 Missing Transcript Access Control (executor.ts:297-318)
+  getMeetingTranscript: tool({
+    execute: async (input) => {
+      const { meetingId } = input;
+      const segments = await getMeetingTranscription(meetingId);  // No auth check
+  Issue: Same as getMeeting - no ownership verification.
+
+  🟡 Logic Issues
+
+  2.3 Team Tool Missing Ownership Check (executor.ts:328-341)
+  getTeam: tool({
+    execute: async (input) => {
+      const { teamId } = input;
+      const team = await getTeamWithMemberCount(teamId);  // Any team accessible
+
+  2.4 Step Count Limit (executor.ts:444)
+  stopWhen: stepCountIs(10),
+  Issue: Hardcoded limit of 10 steps. Consider making this configurable per agent or based on model.
+
+  ---
+  3. Performance & Efficiency
+
+  🟡 Issues
+
+  3.1 Redundant Execution Record Creation (route.ts:57-63)
+  const execution = await createAgentExecution({ ... });
+  await markExecutionStarted(execution.id);
+  Issue: Two database calls where one could suffice. Consider creating with status: 'running' directly.
+
+  3.2 Inefficient Token Counting (executor.ts:479-486)
+  const inputTokens = result.totalUsage?.inputTokens ?? 0;
+  const outputTokens = result.totalUsage?.outputTokens ?? 0;
+  const usage: AgentTokenUsage = {
+    promptTokens: inputTokens,
+    completionTokens: outputTokens,
+    totalTokens: inputTokens + outputTokens,
   };
-  Each state setter triggers a re-render. Consider combining into single state object:
-  const [editState, setEditState] = useState<{template: TemplateWithItems | null, isOpen: boolean}>({template: null, isOpen: false});
+  Issue: totalTokens is calculated but AI SDK likely already provides it. Minor redundancy.
 
-  2. Missing memoization in TeamTemplatesSection - The templates array from useTemplates is used directly without memoization, causing potential unnecessary re-renders of child components.
-  3. Redundant iteration in template-picker.tsx:61-74:
-  for (const template of templates) {
-    if (template.scope === "team") {
-      team.push(template);
-    } else {
-      other.push(template);
-    }
-  }
-  Then again in groupedTemplates at lines 77-90. Consider doing single-pass categorization.
+  3.3 No Caching for Context Data (executor.ts:249-267)
+  The listUpcomingMeetings and listPastMeetings tools fetch data on each call. For agents making multiple similar queries, this creates redundant database calls.
+
+  ---
+  4. Architecture & SOLID Principles
+
+  🟡 Single Responsibility Violations
+
+  4.1 executor.ts is Too Large (553 lines)
+  This file handles:
+  - OpenAI model configuration
+  - MIME message creation
+  - Gmail API integration
+  - Tool definitions
+  - Execution orchestration
+
+  Recommendation: Split into:
+  - lib/agents/models.ts - Model configuration
+  - lib/agents/gmail.ts - Gmail/email utilities
+  - lib/agents/tools/ - Individual tool files
+  - lib/agents/executor.ts - Orchestration only
+
+  4.2 Mixed Concerns in Tool Results
+  // executor.ts:467-475
+  if (tc.toolName === "sendEmail" && toolCall.result) {
+    const emailResult = toolCall.result as { success?: boolean; recipients?: string[] };
+  Issue: Email tracking logic is embedded in the main execution loop. Should be abstracted.
+
+  🟢 Good Practices Observed
+
+  - Clear interface definitions (ExecutorContext, ExecutorResult)
+  - Good use of TypeScript for type safety
+  - Appropriate use of Zod for input validation in tools
 
   ---
   5. Resource Management
 
-  ✅ Good Practices:
-  - AbortController pattern used in team-detail-view.tsx for fetch cleanup
-  - mountedRef prevents state updates after unmount
+  🟡 Issues
 
-  ⚠️ Issues Found:
+  5.1 No Timeout on AI SDK Call (executor.ts:439-445)
+  const result = await generateText({
+    model: getModel(agent.model),
+    // No timeout configuration
+  Issue: If OpenAI API hangs, the request will hang indefinitely.
 
-  1. Missing cleanup in useTemplates hook usage (team-templates-section.tsx:39-43):
-  const { templates, isLoading, error, createTemplate, updateTemplate, deleteTemplate, refetch } = useTemplates({
-    scope: "team",
-    teamId: team.id,
-  });
-  If the hook doesn't handle cleanup internally and the component unmounts during a fetch, it could cause memory issues. Verify useTemplates hook implementation.
-
-  2. No AbortController for template operations:
-  const handleCreate = async () => {
-    // ... no abort handling
-    await createTemplate({...});
-  };
-  If user navigates away during create/update/delete, the promise continues executing.
-
-  ---
-  6. Code Duplications
-
-  ⚠️ Issues Found:
-
-  1. Duplicate card rendering logic - TeamTemplateCard in team-templates-section.tsx:173-271 duplicates much of TemplateCard in template-card.tsx:
-
-  Both have:
-  - Same badge rendering pattern
-  - Same duration/items display
-  - Same hover states and selection styling
-
-  Recommendation: Extend TemplateCard to accept action slots or use composition:
-  <TemplateCard template={template} actions={canManageTemplates && <DropdownMenu>...</DropdownMenu>} />
-
-  2. Duplicate grid class strings:
-  - template-picker.tsx:138,219-224,251-256,272-278
-  - team-templates-section.tsx:81
-
-  Consider extracting to a shared constant or utility.
-
-  ---
-  7. Over-Engineering/Useless Code
-
-  ✅ Generally well-balanced implementation
-
-  ⚠️ Minor Issues:
-
-  1. Unused import - Check if TemplateScope is actually used in template-picker.tsx:19 (imported but may only be used for type inference).
-  2. Unnecessary conditional in template-picker.tsx:192:
-  {!error && templates.length === 0 && !showScratchOption && (
-  The !showScratchOption condition seems overly specific. If there are no templates and no scratch option, users have no way forward regardless of error state.
-
-  ---
-  8. Memory Leaks
-
-  ✅ Generally safe patterns used
-
-  ⚠️ Potential Issues:
-
-  1. State updates after unmount (team-templates-section.tsx:126-165):
+  Fix: Add AbortController with timeout:
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  try {
+    const result = await generateText({ ..., abortSignal: controller.signal });
   } finally {
-    setIsDeleting(false);
+    clearTimeout(timeout);
   }
-  If component unmounts during the async operation, this will attempt to update state on an unmounted component. Add a mounted ref:
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
 
-  // In finally:
-  if (mountedRef.current) setIsDeleting(false);
-
-  2. Effect cleanup missing - The useEffect for debounce in template-picker.tsx:45-51 correctly cleans up, but verify useTemplates hook handles its own cleanup.
-
-  ---
-  9. Architecture (SOLID Principles)
-
-  Single Responsibility Principle (SRP):
-  - ⚠️ TeamTemplatesSection handles: list rendering, card rendering, create modal, edit modal, delete dialog, and all CRUD operations. Consider splitting.
-
-  Open/Closed Principle (OCP):
-  - ✅ Template categories are extensible via TEMPLATE_CATEGORIES
-  - ✅ Role permissions are extensible
-
-  Liskov Substitution Principle (LSP):
-  - ✅ Components follow consistent interfaces
-
-  Interface Segregation Principle (ISP):
-  - ⚠️ TemplateWithItems type may include more data than needed for card display
-
-  Dependency Inversion Principle (DIP):
-  - ✅ Components depend on hooks (useTemplates, useTemplateEditor) rather than direct API calls
+  5.2 Gmail Token Refresh Not Handled (executor.ts:155-162)
+  const tokenResult = await getValidGmailToken(userId);
+  if (!tokenResult) {
+    return { success: false, error: "Gmail not connected..." };
+  }
+  Issue: If token expires mid-execution after multiple tool calls, later email attempts may fail. Consider pre-validating and refreshing.
 
   ---
-  10. Potential Bugs in Edge Cases
+  6. Code Duplication
 
-  1. Empty team.id (team-templates-section.tsx:40):
-  teamId: team.id,
-  If team.id is undefined/null, the API call may return unexpected results or fail silently.
+  🟡 Duplications Found
 
-  2. Template deletion with stale reference (team-templates-section.tsx:150-165):
-  If the templates list updates while delete dialog is open, deleteId may reference a template that no longer exists.
-  3. Race condition between edit and delete:
-  User could open edit dialog, then in another tab delete the same template. The edit submission would fail.
-  4. Missing loading state for create/update (team-templates-section.tsx:115-144):
-  Unlike delete which has isDeleting, create and update don't have loading states, allowing multiple submissions.
-  5. template-picker.tsx:242 - Type casting without validation:
-  (Object.entries(groupedTemplates) as [TemplateCategory, TemplateWithItems[]][])
-  If groupedTemplates contains unexpected keys, this could cause runtime issues.
+  6.1 Repetitive Tool Response Structure
+  Each tool has similar error handling pattern:
+  if (!meeting) {
+    return { error: "Meeting not found" };
+  }
+  Recommendation: Create a helper function:
+  const toolResult = <T>(data: T | null, notFoundMsg: string) =>
+    data ? data : { error: notFoundMsg };
 
-  ---
-  11. General Hidden Factors
-
-  1. Accessibility:
-    - ✅ tabIndex, role="button", aria-pressed properly used
-    - ⚠️ Missing aria-label on icon-only buttons in TeamTemplateCard
-  2. Error boundaries: No error boundaries wrap template sections. A rendering error in one template card could crash the entire picker.
-  3. Internationalization: Hardcoded strings like "Team Templates", "Create Template", etc. should use i18n if the app supports multiple languages.
-  4. Testing considerations:
-    - The tightly coupled TeamTemplatesSection would be difficult to unit test
-    - Consider extracting business logic into testable custom hooks
-  5. Cache invalidation: After create/update/delete, does useTemplates refetch automatically or use stale cache? Verify the hook handles cache invalidation.
+  6.2 Duplicate Status Update Patterns (route.ts:79-104)
+  if (result.success) {
+    const updatedExecution = await markExecutionCompleted(...);
+    if (!updatedExecution) {
+      return NextResponse.json({ error: "Failed to update execution record" }, { status: 500 });
+    }
+    return NextResponse.json({ execution: updatedExecution });
+  } else {
+    const updatedExecution = await markExecutionFailed(...);
+    // Same pattern repeated
+  }
+  Recommendation: Consolidate into single function.
 
   ---
-  Summary of Priority Fixes
+  7. Over-Engineering Assessment
 
-  | Priority | Issue                                                             | Location                   |
-  |----------|-------------------------------------------------------------------|----------------------------|
-  | High     | Add loading states for create/update to prevent double submission | team-templates-section.tsx |
-  | High     | Add mounted ref to prevent state updates after unmount            | team-templates-section.tsx |
-  | High     | Display errors to users instead of just console.error             | team-templates-section.tsx |
-  | Medium   | Extract TeamTemplateCard to reduce duplication with TemplateCard  | Both files                 |
-  | Medium   | Add aria-labels to icon buttons for accessibility                 | team-templates-section.tsx |
-  | Low      | Combine related state updates to reduce re-renders                | team-templates-section.tsx |
-  | Low      | Extract grid class constants                                      | Multiple files             |
+  🟢 Generally Appropriate
 
-  The implementation is solid overall and follows the project patterns well. The main concerns are around error handling visibility, preventing double-submissions, and some code duplication that could be refactored.
+  The implementation is appropriately sized for the feature scope. However:
+
+  7.1 MIME Message Builder Could Use Library
+  The custom createMimeMessage function (lines 79-132) handles MIME encoding manually. Consider using nodemailer or similar for robustness.
+
+  7.2 Execution History UI Component
+  The agent-execution-history.tsx component is well-scoped and not over-engineered.
+
+  ---
+  8. Memory Leak Analysis
+
+  🟢 No Obvious Leaks
+
+  The code doesn't hold long-lived references that would cause memory leaks. The execution is request-scoped and properly terminates.
+
+  🟡 Potential Issue
+
+  8.1 Large Transcript Loading (executor.ts:304-316)
+  const transcript = segments
+    .map((s) => `[${s.speakerName}]: ${s.text}`)
+    .join("\n");
+  Issue: For very long meetings, this could load extremely large strings into memory. Consider pagination or summarization.
+
+  ---
+  9. Edge Cases & Potential Bugs
+
+  🔴 Critical Edge Cases
+
+  9.1 Empty Instructions Execution (route.ts:76)
+  const result = await executeAgent(agent, execution, executorContext);
+  Issue: If agent.instructions is empty string, the AI will be prompted with empty instructions. Add validation:
+  if (!agent.instructions?.trim()) {
+    return NextResponse.json({ error: "Agent has no instructions" }, { status: 400 });
+  }
+
+  9.2 Null User Name (route.ts:69)
+  userName: session.user.name ?? "User",
+  Issue: Falls back to "User" but this appears in system prompt. Consider requiring name or using email.
+
+  🟡 Other Edge Cases
+
+  9.3 Tool Result Type Safety (executor.ts:461-462)
+  result: toolResult?.output,
+  Issue: output type is unknown. Should have better type guards.
+
+  9.4 Empty Email Recipients (executor.ts:398)
+  message: `Email sent via Gmail to ${to.length} recipient(s)`,
+  Issue: Zod requires array but doesn't enforce minimum length. Add .min(1).
+
+  9.5 GMT/Timezone Issues in formatTimestamp
+  // agent-execution-history.tsx:115-129
+  const d = new Date(date);
+  const now = new Date();
+  Issue: Using local time comparisons. Server and client may have different timezones causing inconsistent displays.
+
+  ---
+  10. Hidden Factors & Side Effects
+
+  🟡 Concerns
+
+  10.1 Gmail Rate Limits
+  The sendEmail tool doesn't track Gmail API usage. Heavy agent usage could hit Gmail rate limits, affecting other features.
+
+  10.2 OpenAI Cost Control
+  No cost tracking or budget limits per agent execution. A misbehaving agent could consume significant API credits.
+
+  10.3 Execution History Growth
+  // agent-execution-history.tsx - fetches recentExecutions
+  executions={agent?.recentExecutions ?? []}
+  Issue: If executions aren't pruned, the database and UI performance will degrade over time.
+
+  10.4 Cross-Feature Impact
+  The listMeetingsForUser function is shared with other features. Ensure any changes for agents don't break meeting list views.
+
+  ---
+  Summary Table
+  ┌───────────────┬──────────┬────────┬───────┐
+  │   Category    │ Critical │ Medium │ Minor │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Security      │ 2        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Functionality │ 2        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Performance   │ 0        │ 3      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Architecture  │ 0        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Resource Mgmt │ 0        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Duplication   │ 0        │ 2      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Edge Cases    │ 2        │ 3      │ 0     │
+  ├───────────────┼──────────┼────────┼───────┤
+  │ Total         │ 6        │ 16     │ 0     │
+  └───────────────┴──────────┴────────┴───────┘
+  ---
+  Priority Fixes Recommended
+
+  1. [Critical] Add ownership verification to all tool executions (getMeeting, getMeetingTranscript, getTeam, listTeamMembers)
+  2. [Critical] Add email recipient validation/allowlist
+  3. [Critical] Add validation for empty instructions before execution
+  4. [High] Add execution timeout using AbortController
+  5. [High] Split executor.ts into smaller modules
+  6. [Medium] Add cleanup mechanism for orphaned executions
+  7. [Medium] Add minimum recipient validation for emails
 
 
 ### Code Reviewer2: 
 
 • Findings
 
-  - Critical – components/templates/template-editor.tsx:165-185: the reset effect always overwrites the form with
-    getDefaultFormData(template) and ignores defaultScope/defaultTeamId. With the scope selector hidden in team dialogs, new
-    templates default to personal with no teamId, so “Create Team Template” produces a personal template that won’t show up in
-    the team section (and may skip team-level validation). Default scope/team need to be reapplied on reset.
-  - Minor – components/templates/template-picker.tsx:19: unused TemplateScope import; lint/TypeScript will fail CI.
+  - High – lib/agents/executor.ts:223-361: Agent tools (getMeeting, getMeetingTranscript, getTeam, listTeamMembers) fetch data
+    by raw IDs with no ownership or membership checks. An agent (or a prompt injection) that guesses an ID can read meetings,
+    transcripts, or team rosters across accounts. Scope every tool to context.userId/membership before returning data.
+  - High – app/api/agents/[agentId]/execute/route.ts:62-110: If executeAgent throws before returning (network/OpenAI/runtime),
+    the catch block returns 500 without calling markExecutionFailed. The execution remains “running” indefinitely, skewing
+    history and preventing retry/cleanup. Fail the execution record in the catch (and include the error message) before
+    responding.
+  - Medium – lib/agents/executor.ts:297-317: getMeetingTranscript returns the full transcript. Large meetings will dump multi‑MB
+    text into tool results and the model prompt, driving token cost/timeouts and risking API limits. Consider paging, size caps,
+    or summarization before passing to the model.
+  - Medium – app/api/agents/[agentId]/execute/route.ts:79-104: Failed executions are returned with HTTP 200, so API clients
+    can’t distinguish success vs. failure from status codes and must inspect the body. If this isn’t intentional, respond with a
+    non‑2xx on failure or include a clear status flag.
+  - Low – lib/agents/executor.ts:57-69: getModel doesn’t guard against missing OPENAI_API_KEY or unknown model IDs. This will
+    throw later inside generateText, producing a generic failure. Validate configuration up front and surface a clearer error to
+    the caller.
+
