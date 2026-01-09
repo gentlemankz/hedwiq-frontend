@@ -1165,7 +1165,8 @@ function calculateMonthlyNextRun(
   nowInTz: ReturnType<typeof getDatePartsInTimezone>,
   timezone: string
 ): Date {
-  let { year, month, day } = nowInTz;
+  let { year, month } = nowInTz;
+  const { day } = nowInTz;
   const nowMinutes = nowInTz.hour * 60 + nowInTz.minute;
   const targetMinutes = hour * 60 + minute;
 
