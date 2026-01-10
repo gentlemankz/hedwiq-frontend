@@ -142,6 +142,11 @@ export async function getMeetingHistory(
  * OPTIMIZED: Uses grouped COUNT queries instead of N+1 individual queries
  * Previous version ran ~4 queries per meeting (~200 queries for 50 meetings)
  * New version runs 5 queries total regardless of meeting count
+ *
+ * Shows meetings where user is EITHER:
+ * - The meeting host (meeting.hostId = userId), OR
+ * - A participant with a session (meetingSession.userId = userId)
+ * This ensures consistency with folder meeting counts.
  */
 export async function getUserMeetingHistory(
   userId: string,
@@ -168,7 +173,8 @@ export async function getUserMeetingHistory(
       : eq(meeting.folderId, folderId)
     : undefined;
 
-  // Get ended meetings where user participated
+  // Get ended meetings where user is host OR participated (has session)
+  // Using LEFT JOIN + OR condition to capture both cases
   const meetings = await db
     .selectDistinct({
       id: meeting.id,
@@ -180,16 +186,16 @@ export async function getUserMeetingHistory(
       folderId: meeting.folderId,
     })
     .from(meeting)
-    .innerJoin(meetingSession, eq(meeting.id, meetingSession.meetingId))
+    .leftJoin(meetingSession, eq(meeting.id, meetingSession.meetingId))
     .where(
       folderCondition
         ? and(
-            eq(meetingSession.userId, userId),
+            sql`(${meeting.hostId} = ${userId} OR ${meetingSession.userId} = ${userId})`,
             eq(meeting.status, "ended"),
             folderCondition
           )
         : and(
-            eq(meetingSession.userId, userId),
+            sql`(${meeting.hostId} = ${userId} OR ${meetingSession.userId} = ${userId})`,
             eq(meeting.status, "ended")
           )
     )
