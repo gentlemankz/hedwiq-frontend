@@ -15,7 +15,7 @@ interface ValidationResult {
 /**
  * Valid agent models.
  */
-const VALID_MODELS: AgentModel[] = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+const VALID_MODELS: AgentModel[] = ["gpt-4o", "gpt-4o-mini"];
 
 /**
  * Valid agent services with canonical casing.

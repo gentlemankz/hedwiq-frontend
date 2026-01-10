@@ -36,6 +36,8 @@ export {
   getServiceIcon,
   getEntityHexColor,
   getEntityColorClasses,
+  getCustomColorStyles,
+  hasCustomColor,
   getMentionableEntityIcon,
   getParsedReferenceIcon,
 } from "./ui-helpers";

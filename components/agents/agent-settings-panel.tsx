@@ -52,7 +52,6 @@ interface AgentSettingsPanelProps {
 const MODEL_DISPLAY: Record<AgentModel, { label: string; icon: string }> = {
   "gpt-4o": { label: "GPT-4o", icon: "🌟" },
   "gpt-4o-mini": { label: "GPT-4o Mini", icon: "⚡" },
-  "gpt-4-turbo": { label: "GPT-4 Turbo", icon: "🚀" },
 };
 
 // Available integrations for display (ids must match AgentService type)

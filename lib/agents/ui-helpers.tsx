@@ -117,7 +117,7 @@ export function getEntityHexColor(entity: MentionableEntity): string {
 
 /**
  * Get Tailwind classes for an entity type.
- * Used for MentionTag styling.
+ * Used for MentionTag styling when no custom color is available.
  */
 export function getEntityColorClasses(
   type: "folder" | "team" | "service",
@@ -132,6 +132,30 @@ export function getEntityColorClasses(
     text: "text-gray-700 dark:text-gray-300",
     border: "border-gray-200 dark:border-gray-800",
   };
+}
+
+/**
+ * Get inline styles for a custom color.
+ * Returns CSS properties for background, text, and border colors.
+ * Uses opacity variants for a softer appearance.
+ */
+export function getCustomColorStyles(hexColor: string): {
+  backgroundColor: string;
+  color: string;
+  borderColor: string;
+} {
+  return {
+    backgroundColor: `${hexColor}20`, // 12.5% opacity for background
+    color: hexColor,
+    borderColor: `${hexColor}40`, // 25% opacity for border
+  };
+}
+
+/**
+ * Check if a reference has a custom color that should be used.
+ */
+export function hasCustomColor(reference: ParsedReference): boolean {
+  return !!reference.color && !!reference.entityId;
 }
 
 // ============================================================================

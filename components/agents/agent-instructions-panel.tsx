@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Loader2,
-  Play,
   Pencil,
   Check,
   X,
@@ -35,7 +34,6 @@ interface AgentInstructionsPanelProps {
   isLoading: boolean;
   isLoadingAgent: boolean;
   onUpdate: (updates: Partial<AgentWithDetails>) => Promise<void>;
-  onRunAgent?: () => Promise<void>;
 }
 
 // ============================================================================
@@ -48,7 +46,6 @@ interface AgentInstructionsPanelProps {
  * Features:
  * - Header with agent name
  * - Large editable title
- * - Run agent button
  * - Steps display (instructions parsed as steps)
  * - Activity log (execution history preview)
  */
@@ -57,14 +54,12 @@ export function AgentInstructionsPanel({
   isLoading,
   isLoadingAgent,
   onUpdate,
-  onRunAgent,
 }: AgentInstructionsPanelProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
   const [isEditingInstructions, setIsEditingInstructions] = useState(false);
   const [editedInstructions, setEditedInstructions] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch folders, teams, and services for @ mention autocomplete
@@ -143,18 +138,6 @@ export function AgentInstructionsPanel({
     setEditedInstructions(agent?.instructions || "");
     setIsEditingInstructions(false);
   };
-
-  // Run agent
-  const handleRunAgent = async () => {
-    if (!onRunAgent) return;
-    setIsRunning(true);
-    try {
-      await onRunAgent();
-    } finally {
-      setIsRunning(false);
-    }
-  };
-
 
   // Header component
   const renderHeader = () => (
@@ -270,27 +253,6 @@ export function AgentInstructionsPanel({
                 {agent?.name}
                 <Pencil className="size-4 opacity-0 group-hover:opacity-50 transition-opacity" />
               </h1>
-            )}
-          </div>
-
-          {/* Run Agent Button */}
-          <div className="mt-4">
-            <Button
-              onClick={handleRunAgent}
-              disabled={!agent?.isActive || isRunning || !onRunAgent}
-              className="gap-2"
-            >
-              {isRunning ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Play className="size-4" />
-              )}
-              Run agent
-            </Button>
-            {!agent?.isActive && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Activate this agent in settings to run it.
-              </p>
             )}
           </div>
 

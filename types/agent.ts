@@ -47,8 +47,9 @@ export type AgentExecutionStatus = "pending" | "running" | "completed" | "failed
 
 /**
  * Supported AI models for agent execution.
+ * Using Azure OpenAI ecosystem (consistent with Python agent).
  */
-export type AgentModel = "gpt-4o" | "gpt-4o-mini" | "gpt-4-turbo";
+export type AgentModel = "gpt-4o" | "gpt-4o-mini";
 
 /**
  * Supported services that agents can reference.
@@ -322,6 +323,8 @@ export interface ParsedReference {
   entityId?: string;
   /** Display name */
   name: string;
+  /** Entity color from database (hex color string, e.g., "#3b82f6") */
+  color?: string | null;
 }
 
 /**
@@ -670,9 +673,8 @@ export const EXECUTION_STATUS_COLORS: Record<AgentExecutionStatus, string> = {
  * Human-readable model labels.
  */
 export const MODEL_LABELS: Record<AgentModel, string> = {
-  "gpt-4o": "GPT-4o (Recommended)",
+  "gpt-4o": "GPT-4o",
   "gpt-4o-mini": "GPT-4o Mini (Faster)",
-  "gpt-4-turbo": "GPT-4 Turbo",
 } as const;
 
 /**
@@ -680,8 +682,7 @@ export const MODEL_LABELS: Record<AgentModel, string> = {
  */
 export const MODEL_DESCRIPTIONS: Record<AgentModel, string> = {
   "gpt-4o": "Best balance of speed and capability",
-  "gpt-4o-mini": "Faster and more cost-effective for simple tasks",
-  "gpt-4-turbo": "High capability for complex reasoning",
+  "gpt-4o-mini": "Faster and more cost-effective",
 } as const;
 
 /**

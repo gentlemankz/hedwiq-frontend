@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { toast } from "sonner";
 import { useAgentContext } from "@/contexts/agent-context";
 import { AgentBuilderLayout } from "@/components/agents/agent-builder-layout";
 import { AgentInstructionsPanel } from "@/components/agents/agent-instructions-panel";
@@ -16,8 +15,8 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
  * Agents Dashboard Page
  *
  * Two-panel layout for the Agent Builder:
- * - Main: Instructions editor and run controls
- * - Right: Settings panel (model, schedules, triggers)
+ * - Main: Instructions editor and execution history
+ * - Right: Settings panel (status toggle, model, schedules, triggers)
  *
  * Agent selection and creation is handled via the sidebar (AgentSidebarSection)
  */
@@ -39,30 +38,6 @@ export default function AgentsPage() {
   useEffect(() => {
     ensureAgentsFetched();
   }, [ensureAgentsFetched]);
-
-  // Run agent (Phase 3 implementation)
-  const handleRunAgent = async () => {
-    if (!selectedAgentId || !selectedAgent?.isActive) return;
-
-    try {
-      const response = await fetch(`/api/agents/${selectedAgentId}/execute`, {
-        method: "POST",
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to run agent");
-      }
-
-      toast.success("Agent execution started");
-      // Refresh agent details to show new execution
-      await refreshSelectedAgent();
-    } catch (err) {
-      console.error("Failed to run agent:", err);
-      const errorMessage = err instanceof Error ? err.message : "Failed to run agent";
-      toast.error("Failed to run agent", { description: errorMessage });
-    }
-  };
 
   // Handle agent update
   const handleUpdateAgent = async (updates: Partial<AgentWithDetails>) => {
@@ -91,7 +66,6 @@ export default function AgentsPage() {
           isLoading={agentsLoading}
           isLoadingAgent={isLoadingAgent}
           onUpdate={handleUpdateAgent}
-          onRunAgent={handleRunAgent}
         />
       }
       rightPanel={

@@ -11,6 +11,8 @@ import {
 import type { ParsedReference } from "@/types/agent";
 import {
   getEntityColorClasses,
+  getCustomColorStyles,
+  hasCustomColor,
   getParsedReferenceIcon,
 } from "@/lib/agents";
 
@@ -52,19 +54,25 @@ export function MentionTag({
   className,
 }: MentionTagProps) {
   const isResolved = !!reference.entityId;
+  const useCustomColor = hasCustomColor(reference);
   const colors = getEntityColorClasses(reference.type, isResolved);
+  const customStyles = useCustomColor && reference.color
+    ? getCustomColorStyles(reference.color)
+    : undefined;
 
   const tag = (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-md border font-medium",
-        colors.bg,
-        colors.text,
-        colors.border,
+        // Only use Tailwind classes if no custom color
+        !customStyles && colors.bg,
+        !customStyles && colors.text,
+        !customStyles && colors.border,
         size === "sm" && "px-1.5 py-0.5 text-xs",
         size === "md" && "px-2 py-1 text-sm",
         className
       )}
+      style={customStyles}
     >
       {getParsedReferenceIcon(reference)}
       <span>{reference.name}</span>
@@ -134,7 +142,8 @@ export function TextWithMentions({
   let lastIndex = 0;
 
   // Find all mentions in order (using safe regex pattern with escaped quote support)
-  const mentionRegex = /@(?:"((?:[^"\\]|\\"){1,100})"|([A-Za-z0-9_-]{1,50}(?:\s[A-Za-z0-9_-]{1,50}){0,5}))/g;
+  // IMPORTANT: Must match the regex in instruction-parser.ts - single word only for unquoted mentions
+  const mentionRegex = /@(?:"((?:[^"\\]|\\"){1,100})"|([A-Za-z0-9_-]{1,50}))(?=\s|$|[.,!?;:)])/g;
   let match: RegExpExecArray | null;
 
   while ((match = mentionRegex.exec(text)) !== null) {

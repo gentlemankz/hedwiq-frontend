@@ -189,8 +189,8 @@ function TriggerForm({ onSubmit, onClose, isSubmitting }: TriggerFormProps) {
             {isFolderRequired && <span className="text-destructive ml-1">*</span>}
           </Label>
           <Select
-            value={scopeFolderId}
-            onValueChange={setScopeFolderId}
+            value={scopeFolderId || "__all__"}
+            onValueChange={(v) => setScopeFolderId(v === "__all__" ? "" : v)}
             disabled={loadingFolders}
           >
             <SelectTrigger>
@@ -198,7 +198,7 @@ function TriggerForm({ onSubmit, onClose, isSubmitting }: TriggerFormProps) {
             </SelectTrigger>
             <SelectContent>
               {!isFolderRequired && (
-                <SelectItem value="">All folders</SelectItem>
+                <SelectItem value="__all__">All folders</SelectItem>
               )}
               {folders.map((folder) => (
                 <SelectItem key={folder.id} value={folder.id}>
@@ -226,15 +226,15 @@ function TriggerForm({ onSubmit, onClose, isSubmitting }: TriggerFormProps) {
         <div className="space-y-2">
           <Label>Scope to Team</Label>
           <Select
-            value={scopeTeamId}
-            onValueChange={setScopeTeamId}
+            value={scopeTeamId || "__all__"}
+            onValueChange={(v) => setScopeTeamId(v === "__all__" ? "" : v)}
             disabled={loadingTeams}
           >
             <SelectTrigger>
               <SelectValue placeholder={loadingTeams ? "Loading..." : "All teams"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All teams</SelectItem>
+              <SelectItem value="__all__">All teams</SelectItem>
               {teams.map((team) => (
                 <SelectItem key={team.id} value={team.id}>
                   {team.name}

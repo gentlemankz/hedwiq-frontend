@@ -54,10 +54,10 @@ const MAX_MENTION_LENGTH = 100;
 /**
  * Safe regex to match @ mentions.
  * Supports:
- * - @Name (single word, max 50 chars)
+ * - @Name (single word only, max 50 chars)
  * - @"Multi Word Name" (quoted for spaces, max 100 chars)
  * - @"Name with \"escaped\" quotes" (escaped quotes inside quoted strings)
- * - @Name123 (alphanumeric)
+ * - @Name123 (alphanumeric with underscores and hyphens)
  *
  * This pattern is designed to prevent ReDoS by:
  * - Limiting repetition with explicit bounds
@@ -65,8 +65,12 @@ const MAX_MENTION_LENGTH = 100;
  * - Using non-capturing groups efficiently
  *
  * The quoted pattern matches either non-quote/non-backslash chars, or escaped quotes (\")
+ *
+ * IMPORTANT: Unquoted mentions are SINGLE WORD ONLY.
+ * Multi-word names MUST be quoted: @"Marketing Team" not @Marketing Team
+ * This prevents ambiguity with following sentence text.
  */
-const MENTION_REGEX = /@(?:"((?:[^"\\]|\\"){1,100})"|([A-Za-z0-9_-]{1,50}(?:\s[A-Za-z0-9_-]{1,50}){0,5}))/g;
+const MENTION_REGEX = /@(?:"((?:[^"\\]|\\"){1,100})"|([A-Za-z0-9_-]{1,50}))(?=\s|$|[.,!?;:)])/g;
 
 /**
  * Service IDs for quick lookup (case-insensitive).
@@ -89,8 +93,9 @@ const SERVICE_NAME_TO_ID = new Map<string, string>(
 
 /**
  * Service names for quick lookup in content validation.
+ * Currently unused but kept for potential future validation use.
  */
-const SERVICE_NAMES = new Set(
+const _SERVICE_NAMES = new Set(
   AVAILABLE_SERVICES.map((s) => s.name.toLowerCase())
 );
 
@@ -150,6 +155,7 @@ export function parseInstructions(
         rawText: mention.fullMatch,
         entityId: folder.id,
         name: folder.name,
+        color: folder.color,
       };
       references.push(ref);
       folders.push(ref);
@@ -164,6 +170,7 @@ export function parseInstructions(
         rawText: mention.fullMatch,
         entityId: team.id,
         name: team.name,
+        color: team.color,
       };
       references.push(ref);
       teams.push(ref);
@@ -412,26 +419,9 @@ function checkInstructionContent(instructions: string): string[] {
     warnings.push("Incomplete @ mention detected. Did you mean to reference something?");
   }
 
-  // Check for potentially unquoted multi-word mentions
-  const unquotedMultiWord = /@([A-Za-z]+)\s+([A-Za-z]+)(?!\s*[A-Za-z])/g;
-  let match;
-  while ((match = unquotedMultiWord.exec(instructions)) !== null) {
-    // Only warn if it looks like it should be a multi-word name
-    const possibleName = `${match[1]} ${match[2]}`;
-    if (
-      !SERVICE_NAMES.has(match[1].toLowerCase()) &&
-      possibleName.length < 30
-    ) {
-      // This might be intentional, so just a soft check
-      // Only add warning once
-      if (!warnings.some((w) => w.includes("multi-word"))) {
-        warnings.push(
-          "Multi-word names should be quoted: @\"Multi Word Name\""
-        );
-      }
-      break;
-    }
-  }
+  // No longer need to warn about multi-word mentions since regex now only captures single words.
+  // The unquoted @Name pattern stops at the first space, so @General for each team
+  // correctly captures only "General".
 
   return warnings;
 }

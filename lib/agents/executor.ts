@@ -6,8 +6,9 @@
  */
 
 import { generateText, tool, stepCountIs } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createAzure } from "@ai-sdk/azure";
 import { z } from "zod";
+import { getSecret, getSecretOrDefault } from "@/lib/secrets";
 import { getMeetingById, listMeetingsForUser, isMeetingHost } from "@/lib/db/meeting";
 import { getMeetingTranscriptionLimited } from "@/lib/db/meeting-data";
 import { getTeamWithMemberCount, listTeamMembers, listTeamsForUser, isTeamMember } from "@/lib/db/team";
@@ -61,37 +62,42 @@ export interface ExecutorResult {
 }
 
 // ============================================================================
-// OpenAI Model Configuration
+// Azure OpenAI Model Configuration
 // ============================================================================
 
 /**
- * Gets the OpenAI model instance based on agent model selection.
- * Throws an error if the API key is not configured.
+ * Gets the Azure OpenAI model instance based on agent model selection.
+ * Uses the same Azure OpenAI ecosystem as the Python agent.
+ *
+ * Secrets are read from files (production via Docker secrets) or env vars (development).
+ * Required:
+ * - AZURE_OPENAI_API_KEY: Azure OpenAI API key
+ * - AZURE_OPENAI_ENDPOINT: Azure OpenAI endpoint URL (e.g., https://your-resource.openai.azure.com/)
+ * Optional:
+ * - AZURE_OPENAI_DEPLOYMENT: Deployment name for gpt-4o (defaults to "gpt-4o")
+ * - AZURE_OPENAI_DEPLOYMENT_MINI: Deployment name for gpt-4o-mini (defaults to "gpt-4o-mini")
  */
-function getModel(modelId: Agent["model"]) {
-  const apiKey = process.env.OPENAI_API_KEY;
+function getModel(_modelId: Agent["model"]) {
+  // Read secrets from files (production) or env vars (development)
+  const apiKey = getSecret("AZURE_OPENAI_API_KEY");
+  const endpoint = getSecret("AZURE_OPENAI_ENDPOINT");
 
-  if (!apiKey) {
-    throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
+  // Extract resource name from endpoint URL
+  // Endpoint format: https://{resourceName}.openai.azure.com/
+  const resourceNameMatch = endpoint.match(/https:\/\/([^.]+)\.openai\.azure\.com/);
+  if (!resourceNameMatch) {
+    throw new Error("Invalid Azure OpenAI endpoint format. Expected: https://{resourceName}.openai.azure.com/");
   }
 
-  const openai = createOpenAI({
+  const azure = createAzure({
+    resourceName: resourceNameMatch[1],
     apiKey,
   });
 
-  // Map agent model IDs to OpenAI model identifiers
-  const modelMap: Record<Agent["model"], string> = {
-    "gpt-4o": "gpt-4o",
-    "gpt-4o-mini": "gpt-4o-mini",
-    "gpt-4-turbo": "gpt-4-turbo",
-  };
+  // Use single deployment for all models (configured in Azure Key Vault)
+  const deploymentName = getSecretOrDefault("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini");
 
-  const modelName = modelMap[modelId];
-  if (!modelName) {
-    throw new Error(`Unknown model ID: ${modelId}`);
-  }
-
-  return openai(modelName);
+  return azure(deploymentName);
 }
 
 // ============================================================================
