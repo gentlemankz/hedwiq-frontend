@@ -3,13 +3,13 @@
 import { useState, memo, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bot,
+  Folder,
   ChevronRight,
   Plus,
   Loader2,
   MoreHorizontal,
   Trash2,
-  Sparkles,
+  Asterisk,
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
@@ -115,7 +115,7 @@ export function AgentSidebarSection() {
               isActive={isAgentsActive}
               tooltip="Agents"
             >
-              <Bot />
+              <Folder />
               <span>Agents</span>
               <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
             </SidebarMenuButton>
@@ -226,7 +226,7 @@ const AgentSidebarItem = memo(function AgentSidebarItem({
         isActive={isSelected}
         className="pr-6 cursor-pointer"
       >
-        <Sparkles
+        <Asterisk
           className={cn(
             "size-3",
             agent.isActive ? "text-primary" : "text-muted-foreground"

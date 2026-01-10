@@ -55,10 +55,15 @@ export function MentionTag({
 }: MentionTagProps) {
   const isResolved = !!reference.entityId;
   const useCustomColor = hasCustomColor(reference);
+  const isGmailService =
+    reference.type === "service" && reference.name.toLowerCase() === "gmail";
   const colors = getEntityColorClasses(reference.type, isResolved);
-  const customStyles = useCustomColor && reference.color
-    ? getCustomColorStyles(reference.color)
-    : undefined;
+  const customStyles =
+    isGmailService
+      ? { backgroundColor: "transparent", color: "#000000", borderColor: "transparent" }
+      : useCustomColor && reference.color
+        ? getCustomColorStyles(reference.color)
+        : undefined;
 
   const tag = (
     <span

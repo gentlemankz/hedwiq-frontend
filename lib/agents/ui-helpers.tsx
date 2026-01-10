@@ -10,6 +10,8 @@ import { Folder, Users, Mail, Calendar, MessageSquare, AlertCircle } from "lucid
 import type { MentionableEntity } from "./instruction-parser";
 import type { ParsedReference } from "@/types/agent";
 
+const GMAIL_ICON_SRC = "/Gmail_icon_(2020).svg";
+
 // ============================================================================
 // Color Constants
 // ============================================================================
@@ -84,8 +86,17 @@ export function getEntityIcon(
 export function getServiceIcon(name: string, className: string = "size-4"): React.ReactNode {
   const nameLower = name.toLowerCase();
 
-  if (nameLower === "gmail" || nameLower.includes("mail")) {
-    return <Mail className={className} />;
+  if (nameLower === "gmail" || nameLower === "google mail") {
+    return (
+      <img
+        src={GMAIL_ICON_SRC}
+        alt="Gmail"
+        className={className}
+        width={16}
+        height={16}
+        loading="lazy"
+      />
+    );
   }
   if (nameLower === "calendar" || nameLower.includes("calendar") || nameLower === "google calendar") {
     return <Calendar className={className} />;
