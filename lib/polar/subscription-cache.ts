@@ -468,6 +468,10 @@ async function atomicIncrementWithIdempotency(
   // This prevents race conditions by doing check-and-set in one query
   const otherField = field === "minutesUsed" ? "emailDraftsUsed" : "minutesUsed";
 
+  // Convert Date to ISO string for PostgreSQL compatibility
+  // The postgres-js driver cannot serialize raw Date objects in sql template literals
+  const periodStartISO = currentPeriodStart.toISOString();
+
   // Map camelCase field names to snake_case column names for PostgreSQL
   const fieldColumn = FIELD_TO_COLUMN[field];
   const idempotencyColumn = FIELD_TO_COLUMN[idempotencyField];
@@ -489,7 +493,7 @@ async function atomicIncrementWithIdempotency(
           ELSE ${sql.identifier(otherColumn)}
         END,
         usage_period_start = CASE
-          WHEN ${needsReset} AND ${sql.identifier(idempotencyColumn)} != ${idempotencyKey} THEN ${currentPeriodStart}
+          WHEN ${needsReset} AND ${sql.identifier(idempotencyColumn)} != ${idempotencyKey} THEN ${periodStartISO}::timestamp
           ELSE usage_period_start
         END,
         ${sql.identifier(idempotencyColumn)} = CASE
@@ -522,7 +526,7 @@ async function atomicIncrementWithIdempotency(
           ELSE ${sql.identifier(fieldColumn)} + ${amount}
         END,
         ${sql.identifier(otherColumn)} = CASE WHEN ${needsReset} THEN 0 ELSE ${sql.identifier(otherColumn)} END,
-        usage_period_start = CASE WHEN ${needsReset} THEN ${currentPeriodStart} ELSE usage_period_start END,
+        usage_period_start = CASE WHEN ${needsReset} THEN ${periodStartISO}::timestamp ELSE usage_period_start END,
         updated_at = NOW()
       WHERE user_id = ${userId}
       RETURNING ${sql.identifier(fieldColumn)} as new_value

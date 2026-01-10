@@ -97,7 +97,20 @@ export async function POST(
       );
     }
 
-    const result = await endMeetingSession(body.sessionId, source);
+    // IMPORTANT: Pass requireBilling: false to ensure triggers fire even if billing fails.
+    // Billing failures are logged and marked as "pending" for retry reconciliation,
+    // but should NOT block meeting-end triggers (e.g., sending summary emails).
+    // The meeting actually ended - the user shouldn't lose their agent triggers
+    // just because of a transient billing service issue.
+    const result = await endMeetingSession(body.sessionId, source, { requireBilling: false });
+
+    // Log billing status for monitoring (helps track billing reconciliation needs)
+    if (result?.billingStatus === "pending") {
+      console.warn(
+        `[Session End] Billing pending for session ${body.sessionId}. ` +
+        `Triggers will still fire. Session marked for billing reconciliation.`
+      );
+    }
 
     // Dispatch meeting end triggers in the background
     // Note: For serverless environments with short timeouts, consider using a job queue
