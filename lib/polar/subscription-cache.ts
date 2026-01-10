@@ -437,6 +437,18 @@ export async function deleteSubscriptionCache(userId: string): Promise<void> {
 // ============================================================================
 
 /**
+ * Maps JavaScript camelCase field names to PostgreSQL snake_case column names.
+ * Required for raw SQL queries using sql.identifier() - PostgreSQL double-quoted
+ * identifiers are case-sensitive, so we must use the actual column names.
+ */
+const FIELD_TO_COLUMN: Record<string, string> = {
+  minutesUsed: "minutes_used",
+  emailDraftsUsed: "email_drafts_used",
+  lastMinutesIdempotencyKey: "last_minutes_idempotency_key",
+  lastDraftsIdempotencyKey: "last_drafts_idempotency_key",
+};
+
+/**
  * Atomic increment with idempotency check using PostgreSQL conditional update.
  * Returns { applied: true, newValue } if increment was applied.
  * Returns { applied: false, currentValue } if deduplicated.
@@ -456,34 +468,39 @@ async function atomicIncrementWithIdempotency(
   // This prevents race conditions by doing check-and-set in one query
   const otherField = field === "minutesUsed" ? "emailDraftsUsed" : "minutesUsed";
 
+  // Map camelCase field names to snake_case column names for PostgreSQL
+  const fieldColumn = FIELD_TO_COLUMN[field];
+  const idempotencyColumn = FIELD_TO_COLUMN[idempotencyField];
+  const otherColumn = FIELD_TO_COLUMN[otherField];
+
   if (idempotencyKey) {
     // With idempotency key: only update if key is different
     // postgres-js returns rows directly as array
     const result = await db.execute<{ new_value: number; was_deduped: boolean }>(sql`
       UPDATE subscription_cache
       SET
-        ${sql.identifier(field)} = CASE
-          WHEN ${sql.identifier(idempotencyField)} = ${idempotencyKey} THEN ${sql.identifier(field)}
+        ${sql.identifier(fieldColumn)} = CASE
+          WHEN ${sql.identifier(idempotencyColumn)} = ${idempotencyKey} THEN ${sql.identifier(fieldColumn)}
           WHEN ${needsReset} THEN ${amount}
-          ELSE ${sql.identifier(field)} + ${amount}
+          ELSE ${sql.identifier(fieldColumn)} + ${amount}
         END,
-        ${sql.identifier(otherField)} = CASE
-          WHEN ${needsReset} AND ${sql.identifier(idempotencyField)} != ${idempotencyKey} THEN 0
-          ELSE ${sql.identifier(otherField)}
+        ${sql.identifier(otherColumn)} = CASE
+          WHEN ${needsReset} AND ${sql.identifier(idempotencyColumn)} != ${idempotencyKey} THEN 0
+          ELSE ${sql.identifier(otherColumn)}
         END,
         usage_period_start = CASE
-          WHEN ${needsReset} AND ${sql.identifier(idempotencyField)} != ${idempotencyKey} THEN ${currentPeriodStart}
+          WHEN ${needsReset} AND ${sql.identifier(idempotencyColumn)} != ${idempotencyKey} THEN ${currentPeriodStart}
           ELSE usage_period_start
         END,
-        ${sql.identifier(idempotencyField)} = CASE
-          WHEN ${sql.identifier(idempotencyField)} = ${idempotencyKey} THEN ${sql.identifier(idempotencyField)}
+        ${sql.identifier(idempotencyColumn)} = CASE
+          WHEN ${sql.identifier(idempotencyColumn)} = ${idempotencyKey} THEN ${sql.identifier(idempotencyColumn)}
           ELSE ${idempotencyKey}
         END,
         updated_at = NOW()
       WHERE user_id = ${userId}
       RETURNING
-        ${sql.identifier(field)} as new_value,
-        (${sql.identifier(idempotencyField)} = ${idempotencyKey}) as was_deduped
+        ${sql.identifier(fieldColumn)} as new_value,
+        (${sql.identifier(idempotencyColumn)} = ${idempotencyKey}) as was_deduped
     `);
 
     const row = result[0];
@@ -500,15 +517,15 @@ async function atomicIncrementWithIdempotency(
     const result = await db.execute<{ new_value: number }>(sql`
       UPDATE subscription_cache
       SET
-        ${sql.identifier(field)} = CASE
+        ${sql.identifier(fieldColumn)} = CASE
           WHEN ${needsReset} THEN ${amount}
-          ELSE ${sql.identifier(field)} + ${amount}
+          ELSE ${sql.identifier(fieldColumn)} + ${amount}
         END,
-        ${sql.identifier(otherField)} = CASE WHEN ${needsReset} THEN 0 ELSE ${sql.identifier(otherField)} END,
+        ${sql.identifier(otherColumn)} = CASE WHEN ${needsReset} THEN 0 ELSE ${sql.identifier(otherColumn)} END,
         usage_period_start = CASE WHEN ${needsReset} THEN ${currentPeriodStart} ELSE usage_period_start END,
         updated_at = NOW()
       WHERE user_id = ${userId}
-      RETURNING ${sql.identifier(field)} as new_value
+      RETURNING ${sql.identifier(fieldColumn)} as new_value
     `);
 
     const row = result[0];

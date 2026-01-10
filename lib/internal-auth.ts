@@ -14,6 +14,7 @@
 
 import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
 import { NextRequest } from "next/server";
+import { getSecretOrDefault } from "./secrets";
 
 // ============================================================================
 // Token Management
@@ -35,8 +36,8 @@ import { NextRequest } from "next/server";
  *
  * This allows zero-downtime token rotation without coordinating deployments.
  */
-const INTERNAL_SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN;
-const INTERNAL_SERVICE_TOKEN_PREVIOUS = process.env.INTERNAL_SERVICE_TOKEN_PREVIOUS;
+const INTERNAL_SERVICE_TOKEN = getSecretOrDefault("INTERNAL_SERVICE_TOKEN", "");
+const INTERNAL_SERVICE_TOKEN_PREVIOUS = getSecretOrDefault("INTERNAL_SERVICE_TOKEN_PREVIOUS", "");
 
 /**
  * Get all valid tokens (current and previous for rotation)
