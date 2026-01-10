@@ -8,8 +8,9 @@ import { AgentInstructionsPanel } from "@/components/agents/agent-instructions-p
 import { AgentSettingsPanel } from "@/components/agents/agent-settings-panel";
 import type { AgentWithDetails } from "@/types/agent";
 
-// UUID v4 regex pattern for validation
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Agent ID format: agent-{userId8chars}-{base36timestamp}-{6charRandom}
+// Example: agent-n194Wj0r-mk6t8gbx-75wps8
+const AGENT_ID_REGEX = /^agent-[a-zA-Z0-9]{8}-[a-z0-9]+-[a-z0-9]{6}$/;
 
 /**
  * Agents Dashboard Page
@@ -45,12 +46,12 @@ export default function AgentsPage() {
     await updateAgent(selectedAgentId, updates);
   };
 
-  // Restore selection from URL on mount (with UUID validation)
+  // Restore selection from URL on mount (with agent ID validation)
   useEffect(() => {
     const agentId = searchParams.get("agentId");
     if (agentId && agentId !== selectedAgentId) {
-      // Validate UUID format before making API call
-      if (!UUID_REGEX.test(agentId)) {
+      // Validate agent ID format before making API call
+      if (!AGENT_ID_REGEX.test(agentId)) {
         console.warn("Invalid agentId format in URL:", agentId);
         return;
       }
