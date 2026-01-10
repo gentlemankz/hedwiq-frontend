@@ -4,7 +4,7 @@
  * Validates and sanitizes agent creation and update requests.
  */
 
-import type { AgentModel, AgentService, AgentScheduleType } from "@/types/agent";
+import type { AgentModel, AgentService, AgentScheduleType, AgentTriggerType } from "@/types/agent";
 import { AGENT_LIMITS } from "@/types/agent";
 
 interface ValidationResult {
@@ -920,6 +920,208 @@ export function validateUpdateScheduleRequest(body: unknown): ValidationResult &
     // For weekly, warn if dayOfWeek not provided (will use existing or default to Monday)
     // For monthly, warn if dayOfMonth not provided (will use existing or default to 1st)
     // These are warnings - the DB layer handles defaults, but explicit is better for type changes
+  }
+
+  return { isValid: true, sanitized };
+}
+
+// ============================================================================
+// Trigger Validation
+// ============================================================================
+
+/**
+ * Valid trigger types.
+ */
+const VALID_TRIGGER_TYPES: AgentTriggerType[] = [
+  "meeting_end",
+  "meeting_start",
+  "new_meeting_in_folder",
+  "manual",
+];
+
+/**
+ * Validates trigger type.
+ */
+export function validateTriggerType(
+  triggerType: unknown
+): ValidationResult & { value?: AgentTriggerType } {
+  if (typeof triggerType !== "string") {
+    return { isValid: false, error: "Trigger type must be a string" };
+  }
+
+  if (!VALID_TRIGGER_TYPES.includes(triggerType as AgentTriggerType)) {
+    return {
+      isValid: false,
+      error: `Trigger type must be one of: ${VALID_TRIGGER_TYPES.join(", ")}`,
+    };
+  }
+
+  return { isValid: true, value: triggerType as AgentTriggerType };
+}
+
+/**
+ * Validates a scope ID (folder or team).
+ * Must be a non-empty string if provided.
+ */
+export function validateScopeId(
+  scopeId: unknown,
+  fieldName: string
+): ValidationResult & { value?: string | null } {
+  if (scopeId === null || scopeId === undefined) {
+    return { isValid: true, value: null };
+  }
+
+  if (typeof scopeId !== "string") {
+    return { isValid: false, error: `${fieldName} must be a string` };
+  }
+
+  const trimmed = scopeId.trim();
+  if (trimmed.length === 0) {
+    return { isValid: true, value: null };
+  }
+
+  // Basic validation: must be a reasonable ID format
+  if (trimmed.length > 100) {
+    return { isValid: false, error: `${fieldName} is too long` };
+  }
+
+  return { isValid: true, value: trimmed };
+}
+
+/**
+ * Sanitized create trigger data returned after validation.
+ */
+export interface SanitizedCreateTriggerData {
+  triggerType: AgentTriggerType;
+  scopeFolderId: string | null;
+  scopeTeamId: string | null;
+}
+
+/**
+ * Validates a create trigger request.
+ * Returns sanitized data if valid.
+ */
+export function validateCreateTriggerRequest(body: unknown): ValidationResult & {
+  sanitized?: SanitizedCreateTriggerData;
+} {
+  if (!body || typeof body !== "object") {
+    return { isValid: false, error: "Invalid request body" };
+  }
+
+  const { triggerType, scopeFolderId, scopeTeamId } = body as Record<string, unknown>;
+
+  // Validate triggerType (required)
+  const triggerTypeValidation = validateTriggerType(triggerType);
+  if (!triggerTypeValidation.isValid || !triggerTypeValidation.value) {
+    return { isValid: false, error: triggerTypeValidation.error ?? "Trigger type is required" };
+  }
+
+  // Validate scopeFolderId (optional)
+  const scopeFolderValidation = validateScopeId(scopeFolderId, "scopeFolderId");
+  if (!scopeFolderValidation.isValid) {
+    return { isValid: false, error: scopeFolderValidation.error };
+  }
+
+  // Validate scopeTeamId (optional)
+  const scopeTeamValidation = validateScopeId(scopeTeamId, "scopeTeamId");
+  if (!scopeTeamValidation.isValid) {
+    return { isValid: false, error: scopeTeamValidation.error };
+  }
+
+  // For new_meeting_in_folder, scopeFolderId is required
+  if (triggerTypeValidation.value === "new_meeting_in_folder" && !scopeFolderValidation.value) {
+    return {
+      isValid: false,
+      error: "scopeFolderId is required for 'new_meeting_in_folder' trigger type",
+    };
+  }
+
+  return {
+    isValid: true,
+    sanitized: {
+      triggerType: triggerTypeValidation.value,
+      scopeFolderId: scopeFolderValidation.value ?? null,
+      scopeTeamId: scopeTeamValidation.value ?? null,
+    },
+  };
+}
+
+/**
+ * Sanitized update trigger data returned after validation.
+ */
+export interface SanitizedUpdateTriggerData {
+  triggerType?: AgentTriggerType;
+  scopeFolderId?: string | null;
+  scopeTeamId?: string | null;
+  isEnabled?: boolean;
+}
+
+/**
+ * Validates an update trigger request.
+ * Returns sanitized data if valid.
+ */
+export function validateUpdateTriggerRequest(body: unknown): ValidationResult & {
+  sanitized?: SanitizedUpdateTriggerData;
+} {
+  if (!body || typeof body !== "object") {
+    return { isValid: false, error: "Invalid request body" };
+  }
+
+  const { triggerType, scopeFolderId, scopeTeamId, isEnabled } = body as Record<string, unknown>;
+
+  // At least one field must be provided
+  if (
+    triggerType === undefined &&
+    scopeFolderId === undefined &&
+    scopeTeamId === undefined &&
+    isEnabled === undefined
+  ) {
+    return { isValid: false, error: "At least one field must be provided" };
+  }
+
+  const sanitized: SanitizedUpdateTriggerData = {};
+
+  // Validate triggerType (if provided)
+  if (triggerType !== undefined) {
+    const validation = validateTriggerType(triggerType);
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.error };
+    }
+    sanitized.triggerType = validation.value;
+  }
+
+  // Validate scopeFolderId (if provided)
+  if (scopeFolderId !== undefined) {
+    const validation = validateScopeId(scopeFolderId, "scopeFolderId");
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.error };
+    }
+    sanitized.scopeFolderId = validation.value;
+  }
+
+  // Validate scopeTeamId (if provided)
+  if (scopeTeamId !== undefined) {
+    const validation = validateScopeId(scopeTeamId, "scopeTeamId");
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.error };
+    }
+    sanitized.scopeTeamId = validation.value;
+  }
+
+  // Validate isEnabled (if provided)
+  if (isEnabled !== undefined) {
+    if (typeof isEnabled !== "boolean") {
+      return { isValid: false, error: "isEnabled must be a boolean" };
+    }
+    sanitized.isEnabled = isEnabled;
+  }
+
+  // If changing to new_meeting_in_folder and scopeFolderId is being set to null, reject
+  if (sanitized.triggerType === "new_meeting_in_folder" && sanitized.scopeFolderId === null) {
+    return {
+      isValid: false,
+      error: "scopeFolderId is required for 'new_meeting_in_folder' trigger type",
+    };
   }
 
   return { isValid: true, sanitized };

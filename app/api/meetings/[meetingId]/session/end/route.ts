@@ -19,6 +19,9 @@ import {
   endMeetingSession,
   validateSessionOwnership,
 } from "@/lib/db/meeting-data";
+import { getMeetingById } from "@/lib/db/meeting";
+import { listTeamInvitesForMeeting } from "@/lib/db/team";
+import { dispatchMeetingEndTrigger } from "@/lib/agents/trigger-dispatcher";
 
 /** Valid source values for session end tracking */
 const VALID_SOURCES = ["frontend", "agent"] as const;
@@ -95,6 +98,54 @@ export async function POST(
     }
 
     const result = await endMeetingSession(body.sessionId, source);
+
+    // Dispatch meeting end triggers in the background
+    // Note: For serverless environments with short timeouts, consider using a job queue
+    // (e.g., Inngest, QStash, or database-backed queue) for guaranteed delivery.
+    if (result) {
+      Promise.all([
+        getMeetingById(result.meetingId),
+        listTeamInvitesForMeeting(result.meetingId),
+      ])
+        .then(async ([meetingData, teamInvites]) => {
+          if (!meetingData) return;
+
+          const folderId = meetingData.folderId ?? undefined;
+          const baseParams = {
+            meetingId: result.meetingId,
+            userId: result.userId,
+            folderId,
+          };
+
+          // Dispatch for each team to catch team-scoped triggers
+          // Also dispatch once without teamId to catch global/folder-only triggers
+          // Dedupe teamIds in case multiple invites exist for the same team
+          const teamIds = [...new Set(teamInvites.map((invite) => invite.team.id))];
+          const dispatches = [
+            // Global dispatch (no team scope) - catches triggers without team scope
+            dispatchMeetingEndTrigger(baseParams),
+            // Per-team dispatches - catches ONLY team-scoped triggers (exactTeamScope prevents duplicates)
+            ...teamIds.map((teamId) =>
+              dispatchMeetingEndTrigger({ ...baseParams, teamId, exactTeamScope: true })
+            ),
+          ];
+
+          const results = await Promise.all(dispatches);
+          const totalMatched = results.reduce((sum, r) => sum + r.triggersMatched, 0);
+          const totalSucceeded = results.reduce((sum, r) => sum + r.executionsSucceeded, 0);
+          const totalFailed = results.reduce((sum, r) => sum + r.executionsFailed, 0);
+
+          if (totalMatched > 0) {
+            console.log(
+              `[Session End] Dispatched meeting_end triggers: ${totalMatched} matched, ` +
+              `${totalSucceeded} succeeded, ${totalFailed} failed`
+            );
+          }
+        })
+        .catch((err) => {
+          console.error("[Session End] Failed to dispatch meeting_end trigger:", err);
+        });
+    }
 
     return NextResponse.json({
       success: true,

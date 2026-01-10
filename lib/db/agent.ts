@@ -1354,13 +1354,17 @@ export async function countTriggersForAgent(agentId: string): Promise<number> {
  * Scope filtering logic (done at SQL level for performance):
  * - If folderId provided: match triggers with NULL scope OR matching folderId
  * - If folderId NOT provided: only match triggers with NULL folder scope
- * - Same logic applies for teamId
+ * - If teamId provided: match triggers with NULL scope OR matching teamId (unless exactTeamScope is true)
+ * - If teamId provided with exactTeamScope: only match triggers with that exact teamId (excludes NULL)
+ * - If teamId NOT provided: only match triggers with NULL team scope
  */
 export async function findTriggersForEvent(params: {
   triggerType: AgentTriggerType;
   folderId?: string;
   teamId?: string;
   userId?: string;
+  /** When true, only match triggers with exact team scope (not NULL). Use for per-team dispatches. */
+  exactTeamScope?: boolean;
 }): Promise<Array<AgentTrigger & { agent: Agent }>> {
   const conditions = [
     eq(agentTrigger.isEnabled, true),
@@ -1389,13 +1393,18 @@ export async function findTriggersForEvent(params: {
 
   // Team scope filter at SQL level
   if (params.teamId) {
-    // Match triggers with no team scope OR matching team scope
-    conditions.push(
-      or(
-        isNull(agentTrigger.scopeTeamId),
-        eq(agentTrigger.scopeTeamId, params.teamId)
-      )!
-    );
+    if (params.exactTeamScope) {
+      // Only match triggers with this exact team scope (excludes NULL)
+      conditions.push(eq(agentTrigger.scopeTeamId, params.teamId));
+    } else {
+      // Match triggers with no team scope OR matching team scope
+      conditions.push(
+        or(
+          isNull(agentTrigger.scopeTeamId),
+          eq(agentTrigger.scopeTeamId, params.teamId)
+        )!
+      );
+    }
   } else {
     // Only match triggers with no team scope
     conditions.push(isNull(agentTrigger.scopeTeamId));

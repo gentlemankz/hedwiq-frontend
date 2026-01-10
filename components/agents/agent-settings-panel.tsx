@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   Loader2,
-  Zap,
   Plus,
   X,
   Settings2,
@@ -31,8 +30,11 @@ import {
   type AgentWithDetails,
   type AgentSchedule,
   type CreateAgentScheduleRequest,
+  type AgentTriggerWithScope,
+  type CreateAgentTriggerRequest,
 } from "@/types/agent";
 import { ScheduleConfig } from "@/components/agents/schedule-config";
+import { TriggerConfig } from "@/components/agents/trigger-config";
 import { toast } from "sonner";
 
 // ============================================================================
@@ -78,74 +80,85 @@ export function AgentSettingsPanel({
   const [isUpdatingModel, setIsUpdatingModel] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  /**
+   * Generic API call helper that handles fetch, error parsing, and toast notifications.
+   * Swallows errors after showing toast to prevent unhandled rejections.
+   */
+  const apiCall = async (
+    url: string,
+    options: RequestInit | undefined,
+    successMessage: string,
+    errorContext: string
+  ): Promise<void> => {
+    if (!agent) return;
+    try {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to ${errorContext}`);
+      }
+      toast.success(successMessage);
+      await onRefresh?.();
+    } catch (err) {
+      console.error(`Failed to ${errorContext}:`, err);
+      const message = err instanceof Error ? err.message : `Failed to ${errorContext}`;
+      toast.error(message);
+    }
+  };
+
   // Schedule handlers
-  // Note: These handlers show toast and swallow errors to prevent unhandled rejections
-  const handleCreateSchedule = async (data: CreateAgentScheduleRequest) => {
-    if (!agent) return;
-    try {
-      const response = await fetch(`/api/agents/${agent.id}/schedules`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to create schedule");
-      }
-      toast.success("Schedule created");
-      await onRefresh?.();
-    } catch (err) {
-      console.error("Failed to create schedule:", err);
-      const message = err instanceof Error ? err.message : "Failed to create schedule";
-      toast.error(message);
-      // Don't rethrow - toast already notified user
-    }
-  };
+  const handleCreateSchedule = (data: CreateAgentScheduleRequest) =>
+    apiCall(
+      `/api/agents/${agent?.id}/schedules`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) },
+      "Schedule created",
+      "create schedule"
+    );
 
-  const handleUpdateSchedule = async (scheduleId: string, updates: Partial<AgentSchedule>) => {
-    if (!agent) return;
-    try {
-      const response = await fetch(`/api/agents/${agent.id}/schedules/${scheduleId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to update schedule");
-      }
-      toast.success(updates.isEnabled !== undefined
+  const handleUpdateSchedule = (scheduleId: string, updates: Partial<AgentSchedule>) =>
+    apiCall(
+      `/api/agents/${agent?.id}/schedules/${scheduleId}`,
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updates) },
+      updates.isEnabled !== undefined
         ? (updates.isEnabled ? "Schedule enabled" : "Schedule disabled")
-        : "Schedule updated"
-      );
-      await onRefresh?.();
-    } catch (err) {
-      console.error("Failed to update schedule:", err);
-      const message = err instanceof Error ? err.message : "Failed to update schedule";
-      toast.error(message);
-      // Don't rethrow - toast already notified user
-    }
-  };
+        : "Schedule updated",
+      "update schedule"
+    );
 
-  const handleDeleteSchedule = async (scheduleId: string) => {
-    if (!agent) return;
-    try {
-      const response = await fetch(`/api/agents/${agent.id}/schedules/${scheduleId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to delete schedule");
-      }
-      toast.success("Schedule deleted");
-      await onRefresh?.();
-    } catch (err) {
-      console.error("Failed to delete schedule:", err);
-      const message = err instanceof Error ? err.message : "Failed to delete schedule";
-      toast.error(message);
-      // Don't rethrow - toast already notified user
-    }
-  };
+  const handleDeleteSchedule = (scheduleId: string) =>
+    apiCall(
+      `/api/agents/${agent?.id}/schedules/${scheduleId}`,
+      { method: "DELETE" },
+      "Schedule deleted",
+      "delete schedule"
+    );
+
+  // Trigger handlers
+  const handleCreateTrigger = (data: CreateAgentTriggerRequest) =>
+    apiCall(
+      `/api/agents/${agent?.id}/triggers`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) },
+      "Trigger created",
+      "create trigger"
+    );
+
+  const handleUpdateTrigger = (triggerId: string, updates: Partial<AgentTriggerWithScope>) =>
+    apiCall(
+      `/api/agents/${agent?.id}/triggers/${triggerId}`,
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updates) },
+      updates.isEnabled !== undefined
+        ? (updates.isEnabled ? "Trigger enabled" : "Trigger disabled")
+        : "Trigger updated",
+      "update trigger"
+    );
+
+  const handleDeleteTrigger = (triggerId: string) =>
+    apiCall(
+      `/api/agents/${agent?.id}/triggers/${triggerId}`,
+      { method: "DELETE" },
+      "Trigger deleted",
+      "delete trigger"
+    );
 
   // Handle model change
   const handleModelChange = async (model: AgentModel) => {
@@ -304,39 +317,16 @@ export function AgentSettingsPanel({
                 />
               )}
 
-              {/* Triggers Section (Future Phase) */}
-              <section className="space-y-3">
-                <h3 className="text-sm font-medium text-muted-foreground">Triggers</h3>
-                {(agent?.triggers?.length ?? 0) > 0 && (
-                  <div className="space-y-2">
-                    {agent?.triggers?.map((trigger) => (
-                      <div
-                        key={trigger.id}
-                        className="flex items-center justify-between rounded-lg border px-3 py-2"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Zap className="size-4 text-muted-foreground" />
-                          <span className="text-sm capitalize">
-                            {trigger.triggerType.replace(/_/g, " ")}
-                          </span>
-                        </div>
-                        <Badge variant="outline" className="text-xs">
-                          {trigger.isEnabled ? "Active" : "Disabled"}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start text-muted-foreground"
-                  disabled // Future Phase
-                >
-                  <Plus className="size-4 mr-2" />
-                  Add trigger
-                </Button>
-              </section>
+              {/* Triggers Section */}
+              {agent && (
+                <TriggerConfig
+                  agentId={agent.id}
+                  triggers={agent.triggers ?? []}
+                  onCreateTrigger={handleCreateTrigger}
+                  onUpdateTrigger={handleUpdateTrigger}
+                  onDeleteTrigger={handleDeleteTrigger}
+                />
+              )}
 
               {/* Integrations Section */}
               <section className="space-y-3">
